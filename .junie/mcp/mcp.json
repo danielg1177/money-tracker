@@ -1,0 +1,20 @@
+{
+    "mcpServers": {
+        "laravel-boost": {
+            "command": "/opt/homebrew/Cellar/php/8.4.7/bin/php",
+            "args": [
+                "/Users/danielgordon/Desktop/BookKeeping/money-tracker/artisan",
+                "boost:mcp"
+            ]
+        },
+        "herd": {
+            "command": "/opt/homebrew/Cellar/php/8.4.7/bin/php",
+            "args": [
+                "/Applications/Herd.app/Contents/Resources/herd-mcp.phar"
+            ],
+            "env": {
+                "SITE_PATH": "/Users/danielgordon/Desktop/BookKeeping/money-tracker"
+            }
+        }
+    }
+}
