@@ -1,0 +1,189 @@
+# 06 — Feature Map
+
+This document maps each user-visible feature to the backend and frontend files that implement it.
+
+---
+
+## 1. Authentication
+
+**What it does:** Email/password login and logout. Session-based.
+
+| Layer | Files |
+|---|---|
+| Backend | Fortify routes (auto-registered), `app/Actions/Fortify/CreateNewUser.php`, `app/Providers/FortifyServiceProvider.php` |
+| Frontend | `resources/js/pages/Login.vue`, `resources/js/composables/useAuth.js`, `resources/js/support/authUser.js` |
+| Config | `config/fortify.php` |
+
+---
+
+## 2. Dashboard / Summary
+
+**What it does:** Shows income/expense totals and recent transactions for the user's family.
+
+| Layer | Files |
+|---|---|
+| Backend | `GET /transactions` → `TransactionController::index` |
+| Frontend | `resources/js/pages/Dashboard.vue` |
+
+---
+
+## 3. Transactions
+
+**What it does:** Record income and expense transactions for a family. Support date filtering, category assignment, split between members, edit, and delete.
+
+| Layer | Files |
+|---|---|
+| Backend | `TransactionController` (index, store, update, destroy) |
+| Service | `app/Services/TransactionService.php` |
+| Model | `app/Models/Transaction.php`, `app/Models/TransactionSplit.php` |
+| Request | `app/Http/Requests/StoreTransactionRequest.php` |
+| Frontend | `resources/js/pages/Transactions.vue`, `resources/js/components/TransactionForm.vue`, `resources/js/components/SplitEditor.vue` |
+
+**Split sub-feature:** When `is_split = true`, the transaction form shows `SplitEditor`. On save, `TransactionService` creates `TransactionSplit` records and `Debt` records (one per non-owner split participant). The transaction owner is the creditor; each other participant is a debtor.
+
+---
+
+## 4. Categories
+
+**What it does:** Manage income/expense categories per family. Categories can have a default split template.
+
+| Layer | Files |
+|---|---|
+| Backend | `CategoryController` (index, store, update, destroy) |
+| Model | `app/Models/Category.php` |
+| Request | `app/Http/Requests/StoreCategoryRequest.php` |
+| Frontend | `resources/js/pages/Categories.vue`, `resources/js/components/IconPicker.vue` |
+
+**`split_default`:** A JSON field storing a default split configuration `[{user_id, share_percentage}]`. When a transaction is created with this category, the frontend can pre-populate the split editor. Server-side, this field is stored and returned but not automatically applied.
+
+---
+
+## 5. Funds (Personal Savings Buckets)
+
+**What it does:** Each user has personal "funds" — named savings buckets with a running balance. Users can define allocation rules that automatically distribute income into funds.
+
+| Layer | Files |
+|---|---|
+| Backend | `FundController` (index, store, update, destroy, showRules, storeRule, updateRule, borrow, repayFund) |
+| Service | `app/Services/FundService.php` |
+| Models | `app/Models/Fund.php`, `app/Models/FundRule.php`, `app/Models/FundMovement.php` |
+| Requests | `app/Http/Requests/StoreFundRequest.php` (unused), `app/Http/Requests/StoreFundRuleRequest.php` (unused) |
+| Frontend | `resources/js/pages/Funds.vue` |
+| Policy | `app/Policies/FundPolicy.php` |
+
+**Fund Rules:** Define how income is automatically allocated. Each rule has:
+- `allocation_type`: `percentage` or `fixed`
+- `allocation_base`: `gross_income`, `net_income`, or `remaining`
+- `order`: processing priority
+- `is_active`: whether the rule runs
+
+---
+
+## 6. Fund Borrowing
+
+**What it does:** A user can borrow money from their fund. This creates an income transaction (tagged `is_borrow=true`), decrements the fund balance, and creates a debt record linking the user to their fund.
+
+| Layer | Files |
+|---|---|
+| Backend | `POST /funds/{fund}/borrow` → `FundController::borrow` |
+| Service | `app/Services/FundService.php::borrowFromFund` |
+| Models | `Fund`, `FundMovement`, `Debt`, `Transaction` |
+| Frontend | `resources/js/pages/Funds.vue` (borrow form inline) |
+
+---
+
+## 7. Fund Repayment
+
+**What it does:** A user repays a fund debt. This creates an expense transaction (`is_debt_payment=true`), increments the fund balance, creates a `FundMovement` (type=`repayment`), and decrements the debt balance.
+
+| Layer | Files |
+|---|---|
+| Backend | `POST /debts/{debt}/repay-fund` → `FundController::repayFund` |
+| Service | `app/Services/FundService.php::repayFund` |
+| Frontend | `resources/js/pages/Funds.vue` (repay form inline) |
+
+---
+
+## 8. Debts
+
+**What it does:** Track money owed between family members. Debts are created automatically from split transactions. They can also be created manually. Payments reduce the `balance` field.
+
+**Split debts & hard-close:** When a split transaction is created, temporary `is_pending_closeout=true` debts are created. These are hidden from the Debts page (GET /debts filters them out). On hard-close, all pending split debts for that month are **netted per person-pair** (if A owes B $10 and B owes A $5, only one $5 debt remains from B to A). Netting results are consolidated into single running debts per pair—either updating an existing confirmed debt or creating a new one. All temporary split records are then deleted. This reduces dozens of tiny split entries into one summary debt per pair.
+
+**Payment guard:** `DebtService::payDebt` rejects attempts to pay `is_pending_closeout=true` debts, directing users to wait for the month's hard-close.
+
+|| Layer | Files |
+||---|---|
+|| Backend | `DebtController` (index, store, payDebt), `DebtController::splitDebtSummary` |
+|| Service | `app/Services/DebtService.php`, `app/Services/MonthCloseoutService.php::consolidatePendingSplitDebts` |
+|| Model | `app/Models/Debt.php` |
+|| Request | `app/Http/Requests/PayDebtRequest.php` |
+|| Frontend | `resources/js/pages/Debts.vue` |
+|| Policy | `app/Policies/DebtPolicy.php` (not actively invoked) |
+
+**Debt creation sources:**
+1. Automatic (split transaction, `is_pending_closeout=true`): via `TransactionService`
+2. Automatic (fund borrow): via `FundService`
+3. Manual: `POST /debts`
+
+**Debt payment (`DebtService::payDebt`):** Creates two transactions — an expense for the debtor, and an income for the creditor (if `creditor_id` is not null / not a fund debt). Rejects pending split debts.
+
+---
+## 9. Family Management (My Family)
+
+**What it does:** Allows `head_of_household` or `admin` to view their family, add/remove members.
+
+| Layer | Files |
+|---|---|
+| Backend | `GET /my-family`, `POST /admin/families/{family}/users`, `DELETE /admin/families/{family}/users/{user}` → `AdminController` |
+| Middleware | `can:manage_family` |
+| Frontend | `resources/js/pages/MyFamily.vue` |
+
+---
+
+## 10. Admin — Users
+
+**What it does:** Global admin can view all users, create, update, delete.
+
+| Layer | Files |
+|---|---|
+| Backend | `GET/POST/PUT/DELETE /admin/users` → `AdminController` |
+| Middleware | `can:admin` |
+| Frontend | `resources/js/pages/admin/Users.vue` |
+
+---
+
+## 11. Admin — Families
+
+**What it does:** Global admin can view all families, create families.
+
+| Layer | Files |
+|---|---|
+| Backend | `GET /admin/families`, `POST /admin/families` → `AdminController` |
+| Middleware | `can:admin` |
+| Frontend | `resources/js/pages/admin/Families.vue` |
+
+---
+
+## 12. Admin — Categories (Broken / Incomplete)
+
+**What it does:** Intended to let admins manage categories. Route exists in the Vue router, but `POST /admin/categories` does not exist in `web.php`.
+
+| Layer | Files |
+|---|---|
+| Backend | `Route::view('/admin/categories', 'app')` (SPA shell only — no JSON endpoint) |
+| Frontend | `resources/js/pages/admin/Categories.vue` |
+| Status | **Broken** — category writes go to the regular `/categories` endpoints, not admin-specific ones |
+
+---
+
+## 13. Fund rules and closeout allocation
+
+**What it does:** Users define `FundRule` rows (percentage/fixed, gross vs remaining, destination fund/debt/title) on the **Closeout Rules** page (`GET`/`POST`/`PUT`/`DELETE /closeout-rules`). Those rules are applied when a month is **hard-closed** (`MonthCloseoutService`), not when each income transaction is posted.
+
+| Layer | Files |
+|---|---|
+| Trigger | `MonthCloseoutService` during hard-close (not `TransactionService::createTransaction`) |
+| Per-income helper | `app/Services/FundService.php::processIncome` — **not invoked** from `TransactionService` today |
+| Models | `FundRule`, `Fund`, `FundMovement`, `Debt`, `CloseoutTitleSaving` (as applicable) |
+| Tests | `tests/Feature/FundAllocationTest.php` — still asserts legacy per-income allocation; **out of sync** with current wiring (see `docs/ai/09-known-decisions.md`) |

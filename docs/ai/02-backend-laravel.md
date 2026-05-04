@@ -1,0 +1,171 @@
+# 02 — Backend (Laravel)
+
+## Entry points
+
+- `bootstrap/app.php` — Laravel 13 bootstrap; registers `AppServiceProvider` and `FortifyServiceProvider`
+- `routes/web.php` — all routes (no `api.php`)
+- `app/Providers/AppServiceProvider.php` — defines Gates: `admin`, `head_of_household`, `manage_family`
+- `app/Providers/FortifyServiceProvider.php` — wires Fortify actions + rate limiters
+
+## Models
+
+### User (`app/Models/User.php`)
+- Fields: `name`, `email`, `password`, `family_id` (nullable FK), `role`, `is_admin` (boolean)
+- Role values (strings): `head_of_household`, `member` (admin is now a separate boolean)
+- System admin: Boolean `is_admin` column; when true, grants admin permissions independent of family role
+- Appended computed attributes (serialized in JSON): `is_admin`, `is_head_of_household`, `can_manage_family`
+- Uses PHP 8 attribute annotations `#[Fillable]`, `#[Hidden]`
+- Relations: `belongsTo(Family)`, `hasMany(Transaction)`, `hasMany(Fund)`, `hasMany(FundMovement)`, `hasMany(Debt, 'debtor_id')`, `hasMany(Debt, 'creditor_id')`
+
+### Family (`app/Models/Family.php`)
+- Fields: `name`, `description`
+- Relations: `hasMany(User)`, `hasMany(Category)`, `hasMany(Transaction)`, `hasMany(Debt)`
+
+### Category (`app/Models/Category.php`)
+- Fields: `family_id`, `name`, `icon`, `is_income` (bool), `is_expense` (bool), `is_split_default` (bool), `split_default` (JSON array)
+- `split_default` stores a default split configuration for auto-populating `TransactionForm`
+- Relations: `belongsTo(Family)`, `hasMany(Transaction)`
+
+### Transaction (`app/Models/Transaction.php`)
+- Fields: `family_id`, `user_id`, `category_id` (nullable), `type` (`income`|`expense`), `amount` (decimal:2), `description`, `transaction_date` (date), `is_split` (bool), `split_data` (JSON array), `fund_id` (nullable), `is_borrow` (bool), `is_debt_payment` (bool)
+- `split_data` is a snapshot of split percentages stored on the transaction itself
+- Relations: `belongsTo(Family)`, `belongsTo(User)`, `belongsTo(Category)`, `belongsTo(Fund)`, `hasMany(TransactionSplit)`, `hasMany(Debt)`
+
+### TransactionSplit (`app/Models/TransactionSplit.php`)
+- Fields: `transaction_id`, `user_id`, `share_percentage` (decimal:2), `amount` (decimal:2)
+- Represents each user's computed dollar share of a split transaction
+- Relations: `belongsTo(Transaction)`, `belongsTo(User)`
+
+### Fund (`app/Models/Fund.php`)
+- Fields: `user_id`, `name`, `description`, `balance` (decimal:2, starts at 0)
+- Personal savings bucket; scoped to one user
+- Relations: `belongsTo(User)`, `hasMany(FundRule)`, `hasMany(FundMovement)`, `hasMany(Debt)`
+
+### FundRule (`app/Models/FundRule.php`)
+- Fields: `user_id`, `fund_id`, `name`, `order` (int), `allocation_type` (`percentage`|`fixed`), `amount` (decimal:2), `allocation_base` (`gross_income`|`net_income`|`remaining`), `is_active` (bool)
+- Rules are processed in `order` ASC when income arrives; inactive rules are skipped
+- `net_income` base is tracked but **not independently reduced** by deductions — it equals `gross` unless manually managed (Needs verification: whether net differs from gross in current implementation)
+- Relations: `belongsTo(User)`, `belongsTo(Fund)`
+
+### FundMovement (`app/Models/FundMovement.php`)
+- Fields: `fund_id`, `user_id`, `type` (`allocation`|`borrow`|`repayment`), `amount`, `transaction_id` (nullable)
+- Audit ledger for every fund balance change
+
+### Debt (`app/Models/Debt.php`)
+- Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `creditor_name` (nullable string for external creditors)
+- `creditor_id` is null when the debt is to a fund (borrow scenario) or to an external party
+- `creditor_name` stores plain text creditor names (e.g., "Bank of America") when `creditor_id` is null and `is_family_debt=false`
+- `is_family_debt` controls visibility: false = personal debt (debtor + creditor only); true = visible to all family members
+- `balance` decrements as payments are made; a debt with `balance = 0` is fully paid
+- Relations: `belongsTo(Family)`, `belongsTo(User, 'debtor_id')`, `belongsTo(User, 'creditor_id')`, `belongsTo(Fund)`, `belongsTo(Transaction)`
+
+## Controllers
+
+All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRequests`).
+
+### TransactionController
+- `index(Request)` — returns family transactions, filtered by `start_date`/`end_date`, eager-loads `user`, `category`, `splits.user`
+- `store(StoreTransactionRequest)` — delegates to `TransactionService::createTransaction`
+- `update(StoreTransactionRequest, Transaction)` — checks ownership or same family, delegates to `TransactionService::updateTransaction`
+- `destroy(Transaction)` — checks ownership or same family, deletes
+
+### FundController
+- `index()` — returns auth user's funds with `fundRules` and `movements` eager-loaded
+- `store(Request)` — inline validation, creates fund for auth user
+- `update(Request, Fund)` — authorizes via `FundPolicy`, inline validation
+- `showRules(Fund)` — authorizes via `FundPolicy`, returns rules ordered by `order`
+- `storeRule(Request)` — inline validation, creates `FundRule`; authorizes fund ownership
+- `updateRule(FundRule, Request)` — authorizes parent fund, inline validation
+- `destroy(Fund)` — authorizes via `FundPolicy`
+- `borrow(Fund, Request)` — authorizes via `FundPolicy`, delegates to `FundService::borrowFromFund`
+- `repayFund(Debt, Request)` — checks `debtor_id === auth()->id()`, delegates to `FundService::repayFund`
+
+### DebtController
+- `index()` — returns `{ owed: [...], owing: [...], family_debts: [...] }` where:
+  - `owed` = personal debts where auth user is **debtor** (non-family)
+  - `owing` = personal debts where auth user is **creditor** (non-family)
+  - `family_debts` = family-shared debts visible to all family members
+- `store(Request)` — creates debts supporting three types:
+  - **Personal to external parties:** `creditor_name` provided, `creditor_id` null, `is_interfamily=false`
+  - **In-family:** `creditor_id` provided, user is a different family member, `is_interfamily=true`
+  - **Family-shared:** `is_family_debt=true`, visible to all family members
+- `destroy(Debt)` — soft delete; only debtor or `can_manage_family` user can delete; cannot delete pending closeout debts
+- `payDebt(PayDebtRequest)` — delegates to `DebtService::payDebt`
+
+### CategoryController
+- `index()` — returns family categories
+- `store(StoreCategoryRequest)` — creates category for auth user's family
+- `update(StoreCategoryRequest, Category)` — updates category (no ownership check beyond family — Needs verification)
+- `destroy(Category)` — deletes (no explicit authorization policy — Needs verification)
+
+### AdminController
+- `users()` — all users with `family`
+- `createUser(Request)` — creates user with hashed password; role must be `member` or `head_of_household` (admin is now a separate checkbox); `is_admin` boolean field
+- `updateUser(Request, User)` — updates user (cannot change password via this route); includes `is_admin` in allowed updates
+- `deleteUser(User)` — cannot delete self
+- `families()` — all families with `users` and `categories`
+- `createFamily(Request)` — creates family
+- `updateFamily(Request, Family)` — `head_of_household` can only update own family; `is_admin` can update any
+- `deleteFamily(Family)` — nullifies `family_id` on all members before deleting
+- `addFamilyMember(Request, Family)` — sets `family_id` on target user
+- `removeFamilyMember(Family, User)` — nullifies `family_id` on target user
+- `myFamily()` — returns auth user's family with `users` and `categories`
+
+## Services
+
+### TransactionService (`app/Services/TransactionService.php`)
+- `createTransaction(array, User): Transaction` — wraps everything in `DB::transaction`; validates split percentages via `SplitCalculator::validate`; creates `TransactionSplit` records + `Debt` records for each non-owner split party; does **not** call `FundService::processIncome` (income fund rules are applied at month hard-close, not on each income transaction)
+- `updateTransaction(Transaction, array): Transaction` — deletes existing splits and debts, recreates them; does NOT re-trigger fund allocation
+
+### FundService (`app/Services/FundService.php`)
+- `processIncome(Transaction, User): void` — loads active `FundRule`s ordered by `order`; iterates rules; calculates allocation amount from `gross`, `net`, or `remaining` base; increments fund balance + creates `FundMovement` — **not called** from `TransactionService` in the current app (reserved / legacy path)
+- `borrowFromFund(Fund, float, string, User): Transaction` — validates balance; decrements fund, creates `is_borrow=true` income transaction, creates `FundMovement` (type=`borrow`), creates `Debt` (creditor_id=null, fund_id set)
+- `repayFund(Debt, float, User): void` — validates fund association, debtor match, amount; increments fund balance, creates `FundMovement` (type=`repayment`), creates expense transaction with `is_debt_payment=true`, decrements debt balance
+
+### DebtService (`app/Services/DebtService.php`)
+- `payDebt(Debt, float, string, User): void` — validates and records a debt payment:
+  - For **family debts** (`is_family_debt=true`): payer must be a family member
+  - For **personal debts**: payer must be the debtor
+  - Creates expense transaction for payer; creates income transaction for creditor if `creditor_id` is not null
+  - Decrements `debt.balance`
+
+### SplitCalculator (`app/Services/SplitCalculator.php`)
+- `validate(array): bool` — checks `share_percentage` sum ≈ 100 (epsilon 0.01)
+- `allocate(float, array): array` — distributes amount proportionally; last split absorbs rounding remainder
+- `sumAmounts(array): float` — utility to verify allocation totals
+- `distributeEqually(array $userIds, float): array` — equal split utility (used internally; not currently called from controllers)
+
+## Form Requests
+
+Located in `app/Http/Requests/`. Several exist but not all are used uniformly:
+
+| Request | Used by |
+|---|---|
+| `StoreTransactionRequest` | `TransactionController::store` + `update` |
+| `StoreCategoryRequest` | `CategoryController::store` + `update` |
+| `StoreFundRequest` | NOT used — `FundController` validates inline |
+| `StoreFundRuleRequest` | NOT used — `FundController` validates inline |
+| `UpdateFundRuleRequest` | NOT used — `FundController` validates inline |
+| `PayDebtRequest` | `DebtController::payDebt` |
+| `CreateFamilyRequest` | NOT used — `AdminController` validates inline |
+| `CreateUserRequest` | NOT used — `AdminController` validates inline |
+
+## Policies
+
+- `FundPolicy` — `view`, `update`, `delete` all check `$user->id === $fund->user_id`
+- `DebtPolicy` — `view` checks same family and user is debtor or creditor; **not actively invoked by `DebtController`** (Needs verification)
+
+Auto-discovery by Laravel maps `Fund` → `FundPolicy`, `Debt` → `DebtPolicy`.
+
+## Fortify configuration
+
+- `config/fortify.php` `home` → `/home` (but the app uses `/dashboard` — Needs verification if this causes redirect issues)
+- 2FA columns exist in migrations (from Fortify scaffold); 2FA UI is not present in the Vue app
+- Registration via `CreateNewUser` action; no email verification enforced
+
+## Known backend gaps
+
+1. `CategoryController` has no authorization policy — any authenticated family member can edit/delete any family category
+2. `TransactionController::update` does not re-run fund allocation (income amount changes are not re-allocated)
+3. `DebtPolicy` exists but `DebtController` does not call `$this->authorize()`
+4. `net_income` allocation base currently behaves identically to `gross_income` (no separate net calculation)

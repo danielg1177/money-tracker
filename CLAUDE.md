@@ -1,3 +1,5 @@
+This project uses `/docs/ai/` as persistent AI-readable documentation. Keep it updated after changes.
+
 <laravel-boost-guidelines>
 === foundation rules ===
 
@@ -214,3 +216,41 @@ protected function isAccessible(User $user, ?string $path = null): bool
 - To filter on a particular test name: `php artisan test --compact --filter=testName` (recommended after making a change to a related file).
 
 </laravel-boost-guidelines>
+
+---
+
+## AI Documentation & Context Rules
+
+### Source of truth hierarchy
+1. Actual code (always authoritative)
+2. `/docs/ai/` documentation (summaries for faster understanding)
+3. AI assumptions (lowest priority)
+
+### Before making changes
+- Read `/docs/ai/00-repo-overview.md`
+- Read any relevant files in `/docs/ai/`
+- Inspect the actual source code being modified
+- Do not rely solely on documentation
+
+### After making changes
+- Update all affected files in `/docs/ai/`
+- Add an entry to `/docs/ai/10-ai-change-log.md` including:
+  - date
+  - feature/change summary
+  - files touched
+  - behavioral impact
+- If documentation is outdated or incorrect, fix it immediately
+
+### Documentation rules
+- Do NOT create duplicate documentation files
+- Do NOT create new documentation folders outside `/docs/ai/`
+- Keep docs concise but complete
+- Mark unclear areas as `Needs verification`
+- Prefer referencing real files instead of re-explaining everything
+
+### When documentation conflicts with code
+- Trust the code
+- Update the documentation
+
+### Goal
+Minimize full-repo re-reads by keeping `/docs/ai/` accurate and up-to-date

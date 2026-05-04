@@ -1,0 +1,215 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\PayDebtRequest;
+use App\Models\Debt;
+use App\Models\User;
+use App\Services\DebtService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class DebtController extends Controller
+{
+    public function __construct(private DebtService $debtService) {}
+
+    /**
+     * Get all debts for the authenticated user, organized into personal, owing, and family debts.
+     */
+    public function index(): JsonResponse
+    {
+        $user = auth()->user();
+        if (! $user->family_id) {
+            return response()->json([]);
+        }
+
+        $personalOwed = Debt::query()
+            ->where('debtor_id', $user->id)
+            ->where('family_id', $user->family_id)
+            ->where('is_pending_closeout', false)
+            ->where('is_family_debt', false)
+            ->with('creditor')
+            ->get();
+
+        $personalOwing = Debt::query()
+            ->where('creditor_id', $user->id)
+            ->where('family_id', $user->family_id)
+            ->where('is_pending_closeout', false)
+            ->where('is_family_debt', false)
+            ->with('debtor')
+            ->get();
+
+        $familyDebts = Debt::query()
+            ->where('family_id', $user->family_id)
+            ->where('is_family_debt', true)
+            ->where('is_pending_closeout', false)
+            ->with('debtor', 'creditor')
+            ->get();
+
+        return response()->json([
+            'owed' => $personalOwed,
+            'owing' => $personalOwing,
+            'family_debts' => $familyDebts,
+        ]);
+    }
+
+    /**
+     * Create a new debt record.
+     *
+     * Supports three types:
+     * - Personal debts to external parties (creditor_name provided, creditor_id null)
+     * - In-family debts between users (is_interfamily=true, creditor_id provided)
+     * - Family-shared debts visible to the whole family (is_family_debt=true, viewed by all)
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+        if (! $user->family_id) {
+            return response()->json(['message' => 'User must be in a family'], 403);
+        }
+
+        $validated = $request->validate([
+            'is_family_debt' => 'boolean',
+            'is_interfamily' => 'boolean',
+            'creditor_id' => 'nullable|integer|exists:users,id',
+            'creditor_name' => 'nullable|string|max:255',
+            'amount' => 'required|numeric|min:0.01',
+            'description' => 'nullable|string',
+        ]);
+
+        if ($request->boolean('is_interfamily')) {
+            if (! $request->creditor_id) {
+                return response()->json(['message' => 'creditor_id is required for in-family debts'], 422);
+            }
+            $creditor = User::findOrFail($request->creditor_id);
+            if ($creditor->family_id !== $user->family_id || $creditor->id === $user->id) {
+                return response()->json(['message' => 'Creditor must be a different family member'], 422);
+            }
+        } else {
+            if (! $request->creditor_name) {
+                return response()->json(['message' => 'creditor_name is required for external debts'], 422);
+            }
+        }
+
+        $debt = Debt::create([
+            'family_id' => $user->family_id,
+            'debtor_id' => $user->id,
+            'creditor_id' => $request->boolean('is_interfamily') ? $request->creditor_id : null,
+            'creditor_name' => ! $request->boolean('is_interfamily') ? $request->creditor_name : null,
+            'amount' => $request->amount,
+            'balance' => $request->amount,
+            'description' => $request->description,
+            'is_family_debt' => $request->boolean('is_family_debt'),
+            'is_pending_closeout' => false,
+        ]);
+
+        return response()->json($debt->load('debtor', 'creditor'));
+    }
+
+    /**
+     * Record a debt payment.
+     */
+    public function payDebt(PayDebtRequest $request): JsonResponse
+    {
+        $user = auth()->user();
+        if (! $user->family_id) {
+            return response()->json(['message' => 'User must be in a family'], 403);
+        }
+
+        try {
+            $debt = Debt::query()->findOrFail($request->debt_id);
+
+            $this->debtService->payDebt(
+                $debt,
+                $request->amount,
+                $request->description ?? '',
+                $user
+            );
+
+            return response()->json(['message' => 'Debt payment recorded']);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * Delete a debt record.
+     *
+     * Only the debtor or a family manager can delete. Cannot delete pending closeout debts.
+     */
+    public function destroy(Debt $debt): JsonResponse
+    {
+        $user = auth()->user();
+
+        if ($debt->debtor_id !== $user->id && ! $user->can_manage_family) {
+            abort(403);
+        }
+
+        if ($debt->is_pending_closeout) {
+            return response()->json(['message' => 'Cannot delete a pending split debt'], 422);
+        }
+
+        $debt->delete();
+
+        return response()->json(['message' => 'Debt deleted']);
+    }
+
+    /**
+     * Get a summary of pending split debts for the current user's family, grouped by counterpart.
+     */
+    public function splitDebtSummary(Request $request): JsonResponse
+    {
+        $request->validate([
+            'year' => 'required|integer',
+            'month' => 'required|integer|min:1|max:12',
+        ]);
+
+        $user = auth()->user();
+        if (! $user->family_id) {
+            return response()->json([]);
+        }
+
+        $year = (int) $request->year;
+        $month = (int) $request->month;
+
+        $pendingDebts = Debt::query()
+            ->where('family_id', $user->family_id)
+            ->where('is_pending_closeout', true)
+            ->with(['debtor', 'creditor', 'transaction.category'])
+            ->whereHas('transaction', fn ($q) => $q->whereYear('transaction_date', $year)->whereMonth('transaction_date', $month))
+            ->get();
+
+        $myDebts = $pendingDebts->filter(fn ($d) => $d->debtor_id === $user->id || $d->creditor_id === $user->id);
+
+        $summary = [];
+        foreach ($myDebts as $debt) {
+            $isDebtor = $debt->debtor_id === $user->id;
+            $counterpartId = $isDebtor ? $debt->creditor_id : $debt->debtor_id;
+            $counterpart = $isDebtor ? $debt->creditor : $debt->debtor;
+
+            if (! isset($summary[$counterpartId])) {
+                $summary[$counterpartId] = [
+                    'counterpart' => $counterpart,
+                    'you_owe' => 0,
+                    'they_owe' => 0,
+                    'transactions' => [],
+                ];
+            }
+
+            if ($isDebtor) {
+                $summary[$counterpartId]['you_owe'] += (float) $debt->amount;
+            } else {
+                $summary[$counterpartId]['they_owe'] += (float) $debt->amount;
+            }
+
+            $summary[$counterpartId]['transactions'][] = [
+                'debt_id' => $debt->id,
+                'transaction' => $debt->transaction,
+                'amount' => (float) $debt->amount,
+                'direction' => $isDebtor ? 'you_owe' : 'they_owe',
+            ];
+        }
+
+        return response()->json(array_values($summary));
+    }
+}

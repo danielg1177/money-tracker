@@ -13,6 +13,7 @@ class Fund extends Model
 
     protected $fillable = [
         'user_id',
+        'family_id',
         'name',
         'description',
         'balance',
@@ -25,6 +26,11 @@ class Fund extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function family(): BelongsTo
+    {
+        return $this->belongsTo(Family::class);
     }
 
     public function fundRules(): HasMany

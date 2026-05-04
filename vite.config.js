@@ -8,6 +8,9 @@ export default defineConfig({
         laravel({
             input: ['resources/css/app.css', 'resources/js/app.js'],
             refresh: true,
+            // Herd/Valet TLS auto-detection breaks when a Herd config dir exists but
+            // `config.json` / certs are missing (common without a full Herd install).
+            detectTls: false,
         }),
         tailwindcss(),
         vue(),

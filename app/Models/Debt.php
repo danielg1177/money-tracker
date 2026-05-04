@@ -19,11 +19,16 @@ class Debt extends Model
         'amount',
         'balance',
         'description',
+        'is_pending_closeout',
+        'is_family_debt',
+        'creditor_name',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'balance' => 'decimal:2',
+        'is_pending_closeout' => 'bool',
+        'is_family_debt' => 'bool',
     ];
 
     public function family(): BelongsTo

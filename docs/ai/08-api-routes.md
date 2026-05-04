@@ -1,0 +1,195 @@
+# 08 — API Routes
+
+All routes are defined in `routes/web.php`. There is no `routes/api.php`.
+
+GET routes use the hybrid pattern: browser requests get the SPA shell (`view('app')`); Axios JSON requests (`Accept: application/json`) get JSON data.
+
+Fortify routes (login, logout, password reset, 2FA) are auto-registered by the `FortifyServiceProvider` and not listed in `web.php`.
+
+---
+
+## Public SPA shell routes (no auth required)
+
+These routes exist purely so Laravel doesn't 404 when the Vue router navigates directly:
+
+| Method | Path | Returns |
+|---|---|---|
+| GET | `/` | `view('app')` |
+| GET | `/login` | `view('app')` — route name `login` (required for `auth` middleware redirect when session expires) |
+| GET | `/dashboard` | `view('app')` |
+| GET | `/categories` | `view('app')` (SPA shell — JSON requires auth) |
+| GET | `/admin/categories` | `view('app')` (SPA shell — no JSON endpoint exists) |
+| GET | `/my-family` | `view('app')` (SPA shell — JSON requires auth + `manage_family`) |
+
+---
+
+## Fortify routes (auto-registered)
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/login` | Authenticate user |
+| POST | `/logout` | Log out |
+| POST | `/forgot-password` | Send reset link |
+| POST | `/reset-password` | Reset password |
+| GET/POST | `/two-factor-*` | 2FA endpoints (not used in UI) |
+
+---
+
+## Authenticated routes (`auth` middleware)
+
+### User
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/user` | inline closure | Returns `auth()->user()` as JSON; or SPA shell |
+
+### Transactions
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/transactions` | `TransactionController::index` | Accepts `?start_date=&end_date=` filters |
+| POST | `/transactions` | `TransactionController::store` | Body: see `StoreTransactionRequest` |
+| PUT | `/transactions/{transaction}` | `TransactionController::update` | Same body as store |
+| DELETE | `/transactions/{transaction}` | `TransactionController::destroy` | — |
+
+### Funds
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/funds` | `FundController::index` | Returns user's funds (personal + family-scoped) with rules + movements; each fund has `scope` ('personal' or 'family') |
+| POST | `/funds` | `FundController::store` | `{name, description?, is_family_fund?}`; if `is_family_fund=true` and user has `family_id`, fund is family-scoped |
+| PUT | `/funds/{fund}` | `FundController::update` | `{name, description?}`; requires fund ownership or family membership with `can_manage_family` for editing |
+| DELETE | `/funds/{fund}` | `FundController::destroy` | Requires fund ownership (personal) or family membership with `can_manage_family` (family-scoped) |
+| GET | `/funds/{fund}/rules` | `FundController::showRules` | **Backward compatibility:** returns the same JSON as `GET /closeout-rules` (all of the auth user’s rules, not scoped to `{fund}`) |
+| POST | `/funds/{fund}/borrow` | `FundController::borrow` | `{amount, description?}`; requires fund ownership or family membership |
+
+### Closeout rules (`FundRule` — month hard-close allocations)
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/closeout-rules` | `FundController::showRules` | JSON: auth user’s `FundRule` rows ordered by `order` |
+| POST | `/closeout-rules` | `FundController::storeRule` | `{name, order, allocation_type, amount, allocation_base?, is_active?, destination_type, destination_id?, destination_title?, fund_id?}` |
+| PUT | `/closeout-rules/{fundRule}` | `FundController::updateRule` | Same body as POST; `{fundRule}` must belong to auth user |
+| DELETE | `/closeout-rules/{fundRule}` | `FundController::destroyRule` | — |
+
+### Debts
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/debts` | `DebtController::index` | Returns `{owed: [...], owing: [...], family_debts: [...]}` |
+| GET | `/split-debt-summary` | `DebtController::splitDebtSummary` | Query: `year`, `month` (1–12). JSON: pending closeout split debts grouped by counterpart |
+| POST | `/debts` | `DebtController::store` | `{is_family_debt?, is_interfamily?, creditor_id?, creditor_name?, amount, description?}` |
+| POST | `/debts/pay` | `DebtController::payDebt` | `{debt_id, amount, description?}` |
+| DELETE | `/debts/{debt}` | `DebtController::destroy` | Only debtor or `can_manage_family` user can delete |
+| POST | `/debts/{debt}/repay-fund` | `FundController::repayFund` | `{amount}`; only for fund debts |
+
+
+### Month Closeout
+
+|| Method | Path | Controller | Notes |
+||---|---|---|---|
+|| GET | `/closeout/status` | `MonthCloseoutController::status` | Query: `year`, `month` (1–12). JSON: `{soft_closes, hard_close, all_soft_closed, family_user_count}` |
+|| POST | `/closeout/soft-close` | `MonthCloseoutController::softClose` | `{year, month}`; auto-hard-closes if family has only one member; returns `{message, data (soft_close), hard_close?, auto_hard_closed?}` |
+|| POST | `/closeout/undo-soft-close` | `MonthCloseoutController::undoSoftClose` | `{year, month}`; undoes soft close (must have no hard close) |
+|| POST | `/closeout/hard-close` | `MonthCloseoutController::hardClose` | `{year, month}`; requires `can_manage_family`; processes all members' closeout rules |
+|| GET | `/closeout/closed-months` | `MonthCloseoutController::closedMonths` | JSON: array of hard-closed months for family as `{year, month}` |
+
+### Family members
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/family/users` | inline closure | Returns users in auth user's family |
+
+### Categories
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/categories` | `CategoryController::index` | Returns family categories (JSON) |
+| POST | `/categories` | `CategoryController::store` | See `StoreCategoryRequest` |
+| PUT | `/categories/{category}` | `CategoryController::update` | See `StoreCategoryRequest` |
+| DELETE | `/categories/{category}` | `CategoryController::destroy` | — |
+
+---
+
+## Admin routes (`can:admin` middleware)
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/admin/users` | `AdminController::users` | All users with family |
+| POST | `/admin/users` | `AdminController::createUser` | `{name, email, password, family_id?, role}` |
+| PUT | `/admin/users/{user}` | `AdminController::updateUser` | `{name, email, family_id?, role}` (no password change) |
+| DELETE | `/admin/users/{user}` | `AdminController::deleteUser` | Cannot delete self |
+| GET | `/admin/families` | `AdminController::families` | All families with users + categories |
+| POST | `/admin/families` | `AdminController::createFamily` | `{name, description?}` |
+
+---
+
+## Family management routes (`can:manage_family` middleware)
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| PUT | `/admin/families/{family}` | `AdminController::updateFamily` | head_of_household restricted to own family |
+| DELETE | `/admin/families/{family}` | `AdminController::deleteFamily` | Nullifies members' family_id first |
+| POST | `/admin/families/{family}/users` | `AdminController::addFamilyMember` | `{user_id}` |
+| DELETE | `/admin/families/{family}/users/{user}` | `AdminController::removeFamilyMember` | — |
+| GET | `/my-family` | `AdminController::myFamily` | Returns auth user's family with users + categories |
+
+---
+
+## Request bodies (key Form Requests)
+
+### `StoreTransactionRequest`
+```json
+{
+  "type": "income|expense",
+  "amount": 100.00,
+  "transaction_date": "2026-05-03",
+  "category_id": 1,
+  "description": "optional",
+  "is_split": false,
+  "split_data": [
+    {"user_id": 1, "share_percentage": 60},
+    {"user_id": 2, "share_percentage": 40}
+  ]
+}
+```
+
+### `StoreCategoryRequest`
+```json
+{
+  "name": "Groceries",
+  "icon": "🛒",
+  "is_income": false,
+  "is_expense": true,
+  "is_split_default": true,
+  "split_default": [{"user_id": 1, "share_percentage": 50}, {"user_id": 2, "share_percentage": 50}]
+}
+```
+
+### `PayDebtRequest`
+```json
+{
+  "debt_id": 5,
+  "amount": 50.00,
+  "description": "optional"
+}
+```
+
+---
+
+## Response notes
+
+- GET endpoints return model JSON directly (no Eloquent API Resources)
+- `User` JSON always includes appended attributes: `is_admin`, `is_head_of_household`, `can_manage_family`
+- `Fund` JSON includes `fund_rules` and `movements` (eager-loaded on index)
+- `Transaction` JSON includes `user`, `category`, `splits` (with `splits.user`)
+- `Debt` JSON includes `creditor` (on `owed`) or `debtor` (on `owing`)
+
+---
+
+## Missing / broken routes
+
+| Path | Issue |
+|---|---|
+| `POST /admin/categories` | Does not exist — `admin/Categories.vue` tries to POST here |
+| `GET /admin/categories/{family_id}` | Does not exist — referenced in legacy `App.vue` |

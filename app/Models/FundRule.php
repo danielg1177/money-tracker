@@ -19,6 +19,9 @@ class FundRule extends Model
         'amount',
         'allocation_base',
         'is_active',
+        'destination_type',
+        'destination_id',
+        'destination_title',
     ];
 
     protected $casts = [

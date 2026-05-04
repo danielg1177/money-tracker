@@ -1,0 +1,80 @@
+# 00 — Repository Overview
+
+## What this app is
+
+**Money Tracker** is a family-oriented personal finance web application. It allows household members to:
+
+- Record income and expense transactions shared across a family group
+- Split costs between family members (auto-generating inter-member debt records)
+- Manage personal savings "funds" with automatic allocation rules triggered on income
+- Borrow from personal funds and track repayment
+- Track debts owed between family members and record payments
+- Organize transactions by category (per family)
+- Administrate users and families (admin/head-of-household roles)
+
+## Tech stack
+
+| Layer | Technology | Version |
+|---|---|---|
+| Backend | Laravel | v13 |
+| Auth | Laravel Fortify | ^1.36 |
+| PHP | PHP | 8.4 |
+| Frontend | Vue 3 (Composition API, `<script setup>`) | ^3.5 |
+| Routing (FE) | Vue Router 4 | ^4.6 |
+| Styling | Tailwind CSS (v4, via `@tailwindcss/vite`) | ^4.0 |
+| Build tool | Vite | ^8.0 |
+| Database | SQLite (dev/test) / MySQL (local test env) | — |
+| Testing | PHPUnit | v12 |
+| Code style | Laravel Pint | ^1.27 |
+
+## Repository root structure
+
+```
+money-tracker/
+├── app/
+│   ├── Actions/Fortify/       # Fortify action overrides (user creation, password update)
+│   ├── Http/
+│   │   ├── Controllers/       # 5 resource controllers + base Controller
+│   │   └── Requests/          # 8 Form Request classes (several partially unused)
+│   ├── Models/                # 9 Eloquent models
+│   ├── Policies/              # FundPolicy, DebtPolicy
+│   ├── Providers/             # AppServiceProvider (Gates), FortifyServiceProvider
+│   └── Services/              # DebtService, FundService, SplitCalculator, TransactionService
+├── database/
+│   ├── factories/             # 7 factories
+│   ├── migrations/            # 14 migrations (all dated 2026-04-30)
+│   └── seeders/               # DatabaseSeeder (empty)
+├── resources/
+│   ├── css/app.css            # Tailwind v4 entry
+│   ├── js/                    # Vue SPA source
+│   │   ├── app.js             # Entry point — mounts AppShell
+│   │   ├── AppShell.vue       # Root layout (nav wrapper)
+│   │   ├── components/        # AppNav, TransactionForm, SplitEditor, IconPicker, App.vue (legacy)
+│   │   ├── composables/       # useApi.js, useAuth.js
+│   │   ├── pages/             # 7 user pages + 3 admin pages
+│   │   ├── router/index.js    # Vue Router config + beforeEach guards
+│   │   └── support/authUser.js # normalizeAuthUser helper
+│   └── views/
+│       ├── app.blade.php      # SPA shell (single <div id="app">)
+│       └── welcome.blade.php  # Default Laravel welcome (not used in app flow)
+├── routes/
+│   ├── web.php                # All application routes (SPA views + JSON endpoints)
+│   └── console.php            # Artisan `inspire` command only
+├── tests/
+│   ├── Feature/               # ExampleTest, FundAllocationTest, TransactionTest
+│   └── Unit/                  # ExampleTest stub
+├── config/                    # Standard Laravel config files + fortify.php
+├── docs/ai/                   # This documentation folder
+├── AGENTS.md / CLAUDE.md      # AI agent rules (identical content)
+└── vite.config.js             # Vite + laravel-vite-plugin + tailwindcss + vue
+```
+
+## Key constraints for AI agents
+
+- All PHP files must pass `vendor/bin/pint --dirty --format agent` after edits.
+- Tests use PHPUnit (not Pest). Run `php artisan test --compact`.
+- No Enums exist yet. Roles and allocation types are plain strings.
+- No API versioning — routes are in `web.php`, not `api.php`.
+- No Eloquent API Resources — controllers return models/collections directly.
+- Funds are **per-user**, not per-family. Categories and transactions are **per-family**.
+- A user without a `family_id` is essentially unusable (most endpoints 403 or return empty).

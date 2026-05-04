@@ -34,4 +34,19 @@ class Family extends Model
     {
         return $this->hasMany(Debt::class);
     }
+
+    public function funds(): HasMany
+    {
+        return $this->hasMany(Fund::class);
+    }
+
+    public function monthSoftCloses(): HasMany
+    {
+        return $this->hasMany(MonthSoftClose::class);
+    }
+
+    public function monthHardCloses(): HasMany
+    {
+        return $this->hasMany(MonthHardClose::class);
+    }
 }
