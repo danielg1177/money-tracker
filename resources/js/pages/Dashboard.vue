@@ -153,8 +153,8 @@
           class="block bg-gray-800 border border-gray-700 rounded-xl p-3 hover:border-gray-600 transition-colors"
         >
           <p class="text-gray-400 text-xs font-semibold uppercase tracking-wide">Transactions</p>
-          <p class="text-2xl font-bold text-white mt-1">{{ transactionCount }}</p>
-          <p class="text-gray-500 text-xs mt-1">View all</p>
+          <p class="text-2xl font-bold text-white mt-1">{{ transactionCountThisMonth }}</p>
+          <p class="text-gray-500 text-xs mt-1">This month · View all</p>
         </router-link>
 
         <router-link
@@ -275,7 +275,29 @@ const greeting = computed(() => {
   return 'Good evening';
 });
 
-const transactionCount = computed(() => transactions.value.length);
+/**
+ * @param {{ transaction_date?: string }} tx
+ */
+function isTransactionInCalendarMonth(tx, year, month) {
+  const raw = tx?.transaction_date;
+  if (!raw) {
+    return false;
+  }
+  const part = String(raw).split('T')[0];
+  const [ys, ms] = part.split('-');
+  const y = Number(ys);
+  const m = Number(ms);
+
+  return y === year && m === month;
+}
+
+const transactionCountThisMonth = computed(() => {
+  const d = new Date();
+
+  return transactions.value.filter(tx =>
+    isTransactionInCalendarMonth(tx, d.getFullYear(), d.getMonth() + 1),
+  ).length;
+});
 const fundCount = computed(() => funds.value.length);
 const debtCount = computed(() => {
   const d = debtsPayload.value;

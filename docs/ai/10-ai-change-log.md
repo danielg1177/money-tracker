@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-05 — Dashboard: Transactions card shows this month’s count
+
+- Files touched: `resources/js/pages/Dashboard.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: The Dashboard **Transactions** stat card now displays the number of viewer-scoped transactions with a `transaction_date` in the **current calendar month**, not the total number of loaded rows. Subtitle text reads **This month · View all**. The page still fetches the full `GET /transactions` list so **Family close progress** (earliest open month) is unchanged.
+
 ## 2026-05-05 — Month summary now includes all monthly fund in/out activity
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

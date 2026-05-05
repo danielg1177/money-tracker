@@ -25,7 +25,7 @@ This document maps each user-visible feature to the backend and frontend files t
 | Backend | `GET /transactions` → `TransactionController::index`; `GET /dashboard/monthly-totals` → `DashboardController::monthlyTotals` |
 | Frontend | `resources/js/pages/Dashboard.vue` |
 
-**Monthly totals:** `DashboardController::monthlyTotals` calculates income and expense sums for the auth user for the current calendar month (excluding debt-payment transactions). Values are displayed in a two-column card above the transaction count cards.
+**Monthly totals:** `DashboardController::monthlyTotals` calculates income and expense sums for the auth user for the current calendar month (excluding debt-payment transactions). Values are displayed in a two-column card above the stat cards. The **Transactions** stat card shows the count of loaded transactions whose `transaction_date` falls in the **current calendar month** (not lifetime total); the full unfiltered list is still used for family closeout month detection.
 
 ---
 
