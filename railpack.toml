@@ -1,2 +1,2 @@
 [deploy]
-preDeployCommand = "php artisan migrate --force"
+preDeployCommand = "cp .env.example .env && php artisan migrate --force"
