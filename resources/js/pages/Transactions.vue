@@ -346,6 +346,7 @@
               v-if="showForm"
               :categories="categories"
               :family-users="familyUsers"
+              :funds="funds"
               :transaction="editingTransactionId ? getTransactionById(editingTransactionId) : null"
               @created="handleTransactionCreated"
               @updated="handleTransactionUpdated"
@@ -439,6 +440,7 @@ const { get, put, del, post, loading, error } = useApi();
 const transactions = ref([]);
 const categories = ref([]);
 const familyUsers = ref([]);
+const funds = ref([]);
 const showForm = ref(false);
 const editingTransactionId = ref(null);
 const confirmDelete = ref({});
@@ -596,14 +598,16 @@ async function fetchData(startDate = null, endDate = null) {
     if (endDate) params.append('end_date', endDate);
     const query = params.toString() ? `?${params.toString()}` : '';
 
-    const [txData, catData, usersData] = await Promise.all([
+    const [txData, catData, usersData, fundsData] = await Promise.all([
       get(`/transactions${query}`),
       get('/categories'),
       get('/family/users'),
+      get('/funds'),
     ]);
     transactions.value = txData;
     categories.value = catData;
     familyUsers.value = usersData;
+    funds.value = fundsData;
 
     // Fetch closeout status for current month
     if (selectedMonthFilter.value && selectedMonthFilter.value !== 'custom') {

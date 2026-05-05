@@ -125,6 +125,38 @@
       </div>
     </div>
 
+    <!-- Advance Against Fund -->
+    <div v-if="form.type === 'expense'" class="space-y-2">
+      <div
+        @click="toggleAdvanceFund"
+        class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg cursor-pointer hover:border-gray-600 transition-colors"
+      >
+        <div>
+          <p class="text-sm font-medium text-gray-300">Advance against fund</p>
+          <p class="text-xs text-gray-500 mt-0.5">Deduct from a fund's allocation at month close</p>
+        </div>
+        <div
+          class="w-10 h-6 rounded-full transition-colors relative flex-shrink-0"
+          :class="form.advance_fund_id !== null ? 'bg-amber-600' : 'bg-gray-700'"
+        >
+          <div
+            class="absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform"
+            :class="form.advance_fund_id !== null ? 'translate-x-5' : 'translate-x-1'"
+          />
+        </div>
+      </div>
+      <select
+        v-if="form.advance_fund_id !== null"
+        v-model.number="form.advance_fund_id"
+        class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-amber-500"
+      >
+        <option :value="null" disabled>Select a fund</option>
+        <option v-for="fund in funds" :key="fund.id" :value="fund.id">
+          {{ fund.name }} ({{ fund.scope === 'family' || fund.family_id ? 'Family' : 'Personal' }})
+        </option>
+      </select>
+    </div>
+
     <!-- Split Editor -->
     <div v-if="form.is_split">
       <SplitEditor
@@ -182,6 +214,10 @@ const props = defineProps({
     type: Array,
     required: true,
   },
+  funds: {
+    type: Array,
+    default: () => [],
+  },
   transaction: {
     type: Object,
     default: null,
@@ -201,6 +237,7 @@ const form = ref({
   transaction_date: new Date().toISOString().split('T')[0],
   is_split: false,
   split_data: [],
+  advance_fund_id: null,
 });
 
 const filteredCategories = computed(() => {
@@ -246,6 +283,7 @@ watch(
         transaction_date: normalizeDateForInput(newTransaction.transaction_date),
         is_split: newTransaction.is_split,
         split_data: normalizeSplits(newTransaction.split_data || []),
+        advance_fund_id: newTransaction.advance_fund_id ?? null,
       };
     } else {
       resetForm();
@@ -260,10 +298,19 @@ watch(() => form.value.is_split, (newVal) => {
   }
 });
 
+watch(() => form.value.type, (newType) => {
+  if (newType === 'income') {
+    form.value.advance_fund_id = null;
+  }
+});
+
 watch(() => form.value.category_id, () => {
   if (selectedCategory.value?.is_split_default && selectedCategory.value?.split_default?.length) {
     form.value.is_split = true;
     form.value.split_data = normalizeSplits(selectedCategory.value.split_default);
+  }
+  if (selectedCategory.value?.advance_fund_id) {
+    form.value.advance_fund_id = selectedCategory.value.advance_fund_id;
   }
 });
 
@@ -276,8 +323,17 @@ function resetForm() {
     transaction_date: new Date().toISOString().split('T')[0],
     is_split: false,
     split_data: [],
+    advance_fund_id: null,
   };
   formError.value = null;
+}
+
+function toggleAdvanceFund() {
+  if (form.value.advance_fund_id !== null) {
+    form.value.advance_fund_id = null;
+  } else {
+    form.value.advance_fund_id = props.funds.length > 0 ? props.funds[0].id : null;
+  }
 }
 
 function handleClose() {
@@ -306,6 +362,7 @@ async function handleSubmit() {
       description: form.value.description,
       transaction_date: form.value.transaction_date,
       is_split: form.value.is_split,
+      advance_fund_id: form.value.type === 'expense' ? (form.value.advance_fund_id || null) : null,
       ...(form.value.is_split ? { split_data: form.value.split_data } : {}),
     };
 

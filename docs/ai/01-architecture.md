@@ -81,15 +81,17 @@ routes/web.php
 |---|---|
 | Family | Global (admin creates) |
 | User | Global; assigned to one `family_id` |
-| Category | Per `family_id` |
-| Transaction | Per `family_id`, owned by one `user_id`; optionally linked to `debt_id` if a debt payment |
+| Category | Per `family_id`; optional `advance_fund_id` sets default advance fund for transactions in that category |
+| Transaction | Per `family_id`, owned by one `user_id`; optionally linked to `debt_id` if a debt payment; optional `advance_fund_id` marks an expense as advancing against a fund |
 | TransactionSplit | Per transaction |
 
 **Transaction list (`GET /transactions`):** responses include only rows **relevant to the authenticated user**: `user_id` matches them, or they have a `TransactionSplit` on the row (so co-participants see others’ split expenses/income they share, but not unrelated family members’ solo transactions). For **split** inter-family debt payments, the payer’s debt-payment **expense** is omitted for the **creditor** when they are both the repayment recipient (`debt.creditor_id`) and a split participant on that expense, so they only see the matching **income** leg (one line per payment).
 | Fund | Personal: `user_id` + `family_id` null. Family-shared: `family_id` set (still has `user_id` creator). `GET /funds` returns personal funds (`whereNull('family_id')` on the user’s relation) plus all funds for the user’s `family_id`, each with `scope` so family rows are not listed twice for the creator |
 | FundRule | Per `user_id` + `fund_id` |
-| FundMovement | Per `fund_id` + `user_id` |
-| Debt | Per `family_id`; links `debtor_id` ↔ `creditor_id` (or `fund_id` for fund borrows); may have linked payment transactions |
+| FundMovement | Per `fund_id` + `user_id`; types include `initial_value` (fund start), `allocation`, `borrow`, `repayment`, `closeout_allocation`, `advance_settlement` (advance fund payout at close) |
+| Debt | Per `family_id`; links `debtor_id` ↔ `creditor_id` (or `fund_id` for fund borrows); may have linked payment transactions; the debt's original amount and creation date are appended to payment history as an `initial_value` entry |
+
+**Advance fund settlement:** When a month is hard-closed, `MonthCloseoutService::applyFundAdvances()` sums all expense transactions with `advance_fund_id` set (per fund, per user, per month) and decrements the fund balance by the total. A `FundMovement` of type `'advance_settlement'` is created to track this. This happens regardless of whether the user has closeout rules or income for that month.
 
 ## Build pipeline
 

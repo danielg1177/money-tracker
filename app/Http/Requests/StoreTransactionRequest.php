@@ -23,6 +23,7 @@ class StoreTransactionRequest extends FormRequest
             'split_data' => ['exclude_if:is_split,false', 'required_if:is_split,true', 'array'],
             'split_data.*.user_id' => ['required_with:split_data', 'exists:users,id'],
             'split_data.*.share_percentage' => ['required_with:split_data', 'numeric', 'min:0', 'max:100'],
+            'advance_fund_id' => ['nullable', 'exists:funds,id'],
         ];
     }
 
@@ -45,6 +46,7 @@ class StoreTransactionRequest extends FormRequest
             'split_data.*.share_percentage.numeric' => 'Share percentage must be a valid number.',
             'split_data.*.share_percentage.min' => 'Share percentage must be at least 0.',
             'split_data.*.share_percentage.max' => 'Share percentage cannot exceed 100.',
+            'advance_fund_id.exists' => 'The selected advance fund does not exist.',
         ];
     }
 }

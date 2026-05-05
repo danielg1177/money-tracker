@@ -50,6 +50,7 @@ class TransactionService
                 'transaction_date' => $data['transaction_date'],
                 'is_split' => $data['is_split'],
                 'split_data' => $data['split_data'] ?? null,
+                'advance_fund_id' => $data['advance_fund_id'] ?? null,
             ];
 
             $transaction = Transaction::query()->create($transactionData);
@@ -119,6 +120,7 @@ class TransactionService
                 'transaction_date' => $data['transaction_date'],
                 'is_split' => $data['is_split'],
                 'split_data' => $data['split_data'] ?? null,
+                'advance_fund_id' => $data['advance_fund_id'] ?? null,
             ];
 
             $transaction->update($transactionData);

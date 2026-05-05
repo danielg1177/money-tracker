@@ -200,9 +200,20 @@ class DebtController extends Controller
                         'name' => $payment->paidByUser->name,
                     ] : null,
                 ];
-            });
+            })
+            ->push([
+                'id' => null,
+                'amount' => $debt->amount,
+                'description' => 'Initial Value Set At',
+                'transaction_date' => $debt->created_at->toDateString(),
+                'type' => 'initial_value',
+                'created_at' => $debt->created_at,
+                'paid_by_user_id' => null,
+                'is_closeout_initiated' => false,
+                'paid_by_user' => null,
+            ]);
 
-        return response()->json($payments);
+        return response()->json($payments->values());
     }
 
     /**

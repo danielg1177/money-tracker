@@ -6,10 +6,11 @@
 
 - Record income and expense transactions shared across a family group
 - Split costs between family members (auto-generating inter-member debt records)
-- Manage personal savings "funds" with automatic allocation rules triggered on income
+- Manage personal savings "funds" with automatic allocation rules triggered on income, including optional starting balances
 - Borrow from personal funds and track repayment
-- Track debts owed between family members and record payments
-- Organize transactions by category (per family)
+- Mark expense transactions as advancing against (settling at month close against) a specific fund
+- Track debts owed between family members and record payments, including the initial value of the debt in history
+- Organize transactions by category (per family), with optional default advance fund per category
 - Administrate users and families (admin/head-of-household roles)
 
 ## Tech stack

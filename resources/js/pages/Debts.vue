@@ -607,14 +607,27 @@
                 <div
                   v-for="payment in debtPayments"
                   :key="payment.id"
-                  class="bg-gray-800 border border-gray-700 rounded-lg p-3"
+                  :class="[
+                    'bg-gray-800 border rounded-lg p-3',
+                    payment.type === 'initial_value'
+                      ? 'border-blue-700/50 bg-blue-900/20'
+                      : 'border-gray-700'
+                  ]"
                 >
                   <div class="flex items-start justify-between gap-3">
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center gap-2 mb-1">
-                        <p class="text-sm font-medium text-white">{{ payment.description || 'Debt payment' }}</p>
+                        <!-- Initial Value entry label -->
                         <span
-                          v-if="payment.is_closeout_initiated"
+                          v-if="payment.type === 'initial_value'"
+                          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/30 text-blue-300 border border-blue-700/50"
+                        >
+                          Initial Value Set At
+                        </span>
+                        <!-- Regular payment description -->
+                        <p v-else class="text-sm font-medium text-white">{{ payment.description || 'Debt payment' }}</p>
+                        <span
+                          v-if="payment.is_closeout_initiated && payment.type !== 'initial_value'"
                           class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-900/30 text-purple-300 border border-purple-700/50"
                           title="Payment was initiated from month closeout"
                         >
@@ -624,16 +637,20 @@
                       <p class="text-xs text-gray-500">
                         {{ new Date(payment.transaction_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) }}
                       </p>
-                      <p v-if="payment.paid_by_user" class="text-xs text-gray-600 mt-1">
+                      <p v-if="payment.paid_by_user && payment.type !== 'initial_value'" class="text-xs text-gray-600 mt-1">
                         {{ payment.type === 'income' ? 'From:' : 'Paid by:' }}
                         <span class="text-gray-300 font-medium">{{ payment.paid_by_user.name }}</span>
                       </p>
                     </div>
                     <p
                       class="text-sm font-bold ml-3 flex-shrink-0"
-                      :class="payment.type === 'income' ? 'text-green-400' : 'text-red-400'"
+                      :class="
+                        payment.type === 'initial_value'
+                          ? 'text-blue-400'
+                          : (payment.type === 'income' ? 'text-green-400' : 'text-red-400')
+                      "
                     >
-                      {{ payment.type === 'income' ? '+' : '-' }}{{ formatCurrency(payment.amount) }}
+                      {{ payment.type === 'income' ? '+' : '' }}{{ formatCurrency(payment.amount) }}
                     </p>
                   </div>
                 </div>

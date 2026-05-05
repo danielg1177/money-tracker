@@ -111,6 +111,7 @@
               v-if="showTransactionForm"
               :categories="categories"
               :family-users="familyUsers"
+              :funds="funds"
               @created="handleTransactionCreated"
               @close="handleTransactionFormClose"
             />
@@ -234,6 +235,7 @@ const showUserMenu = ref(false);
 const showTransactionForm = ref(false);
 const categories = ref([]);
 const familyUsers = ref([]);
+const funds = ref([]);
 
 const isAdminPage = computed(() => {
   return route.path.startsWith('/admin');
@@ -263,12 +265,14 @@ async function handleTransactionCreated(transaction) {
 
 onMounted(async () => {
   try {
-    const [catData, usersData] = await Promise.all([
+    const [catData, usersData, fundsData] = await Promise.all([
       get('/categories'),
       get('/family/users'),
+      get('/funds'),
     ]);
     categories.value = catData;
     familyUsers.value = usersData;
+    funds.value = fundsData;
   } catch (err) {
     console.error('Failed to fetch data:', err);
   }

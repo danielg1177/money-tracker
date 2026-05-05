@@ -241,6 +241,23 @@
               />
             </div>
 
+            <!-- Default Advance Fund -->
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-2">
+                Default Advance Fund <span class="text-gray-500">(optional)</span>
+              </label>
+              <select
+                v-model.number="form.advance_fund_id"
+                class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              >
+                <option :value="null">None</option>
+                <option v-for="fund in funds" :key="fund.id" :value="fund.id">
+                  {{ fund.name }} ({{ fund.scope === 'family' || fund.family_id ? 'Family' : 'Personal' }})
+                </option>
+              </select>
+              <p class="text-xs text-gray-500 mt-1">Transactions in this category will default to advancing against this fund</p>
+            </div>
+
             <!-- Error -->
             <div v-if="formError" class="p-3 bg-red-900/20 border border-red-700/50 rounded-lg">
               <p class="text-red-400 text-sm">{{ formError }}</p>
@@ -331,6 +348,7 @@ const { get, post, put, delete: apiDelete, loading } = useApi();
 
 const categories = ref([]);
 const familyUsers = ref([]);
+const funds = ref([]);
 const error = ref(null);
 const formError = ref(null);
 const showAddModal = ref(false);
@@ -347,6 +365,7 @@ const form = ref({
   is_expense: false,
   is_split_default: false,
   split_default: [],
+  advance_fund_id: null,
 });
 
 const filteredCategories = computed(() => {
@@ -363,6 +382,7 @@ const filteredCategories = computed(() => {
 
 onMounted(() => {
   fetchCategories();
+  fetchFunds();
 });
 
 async function fetchCategories() {
@@ -380,6 +400,15 @@ async function fetchCategories() {
   }
 }
 
+async function fetchFunds() {
+  try {
+    const data = await get('/funds');
+    funds.value = data;
+  } catch (err) {
+    console.error('Failed to fetch funds:', err);
+  }
+}
+
 function resetForm() {
   form.value = {
     name: '',
@@ -388,6 +417,7 @@ function resetForm() {
     is_expense: false,
     is_split_default: false,
     split_default: [],
+    advance_fund_id: null,
   };
 }
 
@@ -409,6 +439,7 @@ function editCategory(category) {
     is_expense: category.is_expense,
     is_split_default: category.is_split_default,
     split_default: category.split_default || [],
+    advance_fund_id: category.advance_fund_id || null,
   };
   showAddModal.value = true;
 }
@@ -443,6 +474,7 @@ async function handleSubmit() {
       is_expense: form.value.is_expense,
       is_split_default: form.value.is_split_default,
       split_default: form.value.is_split_default ? form.value.split_default : null,
+      advance_fund_id: form.value.advance_fund_id || null,
     };
 
     if (editingCategory.value) {

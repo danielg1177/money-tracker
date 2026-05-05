@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Debt;
 use App\Models\Fund;
+use App\Models\FundMovement;
 use App\Models\FundRule;
 use App\Services\FundService;
 use Illuminate\Http\Request;
@@ -44,16 +45,34 @@ class FundController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'is_family_fund' => 'boolean',
+            'starting_balance' => 'nullable|numeric|min:0',
         ]);
 
         $user = auth()->user();
         $data = $request->only(['name', 'description']);
+        $startingBalance = (float) ($request->input('starting_balance') ?? 0);
 
         if ($request->boolean('is_family_fund') && $user->family_id) {
             $data['family_id'] = $user->family_id;
         }
 
-        return $user->funds()->create($data);
+        if ($startingBalance > 0) {
+            $data['balance'] = $startingBalance;
+        }
+
+        $fund = $user->funds()->create($data);
+
+        if ($startingBalance > 0) {
+            FundMovement::query()->create([
+                'fund_id' => $fund->id,
+                'user_id' => $user->id,
+                'type' => 'initial_value',
+                'amount' => $startingBalance,
+                'description' => 'Initial value set at fund creation',
+            ]);
+        }
+
+        return $fund->load('movements.user');
     }
 
     public function update(Request $request, Fund $fund)

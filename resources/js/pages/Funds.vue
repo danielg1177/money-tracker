@@ -210,6 +210,22 @@
               class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 resize-none"
               rows="3"
             />
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-2">
+                Starting Balance <span class="text-gray-500">(optional)</span>
+              </label>
+              <div class="relative">
+                <span class="absolute left-4 top-2 text-gray-400">$</span>
+                <input
+                  v-model.number="newFund.starting_balance"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  class="w-full pl-8 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
             <label v-if="user?.family_id" class="flex items-center gap-3">
               <input
                 v-model="newFund.is_family_fund"
@@ -487,8 +503,8 @@
                       <span
                         class="text-xs px-2 py-0.5 rounded-full"
                         :class="{
-                          'bg-green-900/30 text-green-400 border border-green-700/50': movement.type === 'allocation' || movement.type === 'closeout_allocation' || movement.type === 'repayment',
-                          'bg-amber-900/30 text-amber-400 border border-amber-700/50': movement.type === 'borrow',
+                          'bg-green-900/30 text-green-400 border border-green-700/50': movement.type === 'allocation' || movement.type === 'closeout_allocation' || movement.type === 'repayment' || movement.type === 'initial_value',
+                          'bg-amber-900/30 text-amber-400 border border-amber-700/50': movement.type === 'borrow' || movement.type === 'advance_settlement',
                         }"
                       >
                         {{ movementTypeLabel(movement.type) }}
@@ -504,9 +520,9 @@
                   </div>
                   <p
                     class="text-sm font-bold ml-3"
-                    :class="movement.type === 'borrow' ? 'text-amber-400' : 'text-green-400'"
+                    :class="(movement.type === 'borrow' || movement.type === 'advance_settlement') ? 'text-amber-400' : 'text-green-400'"
                   >
-                    {{ movement.type === 'borrow' ? '-' : '+' }}{{ formatCurrency(movement.amount) }}
+                    {{ (movement.type === 'borrow' || movement.type === 'advance_settlement') ? '-' : '+' }}{{ formatCurrency(movement.amount) }}
                   </p>
                 </div>
               </div>
@@ -545,6 +561,7 @@ const newFund = ref({
   name: '',
   description: '',
   is_family_fund: false,
+  starting_balance: null,
 });
 
 const borrowForm = ref({
@@ -609,6 +626,8 @@ function movementTypeLabel(type) {
     closeout_allocation: 'Closeout Allocation',
     borrow: 'Borrow',
     repayment: 'Repayment',
+    initial_value: 'Initial Value Set At',
+    advance_settlement: 'Advance Settlement',
   };
   return labels[type] || type;
 }
@@ -644,10 +663,11 @@ async function createFund() {
       name: newFund.value.name,
       description: newFund.value.description,
       is_family_fund: newFund.value.is_family_fund,
+      starting_balance: newFund.value.starting_balance || 0,
     });
     funds.value.push(fund);
     showNewFundForm.value = false;
-    newFund.value = { name: '', description: '', is_family_fund: false };
+    newFund.value = { name: '', description: '', is_family_fund: false, starting_balance: null };
   } catch (err) {
     console.error('Failed to create fund:', err);
   } finally {

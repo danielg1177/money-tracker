@@ -21,6 +21,7 @@ class StoreCategoryRequest extends FormRequest
             'is_expense' => ['boolean'],
             'is_split_default' => ['boolean'],
             'split_default' => ['nullable', 'array'],
+            'advance_fund_id' => ['nullable', 'exists:funds,id'],
         ];
     }
 

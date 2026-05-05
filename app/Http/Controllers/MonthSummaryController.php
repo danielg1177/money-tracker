@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Debt;
 use App\Models\Fund;
+use App\Models\FundMovement;
 use App\Models\FundRule;
 use App\Models\Transaction;
 use App\Models\TransactionSplit;
@@ -41,6 +42,7 @@ class MonthSummaryController extends Controller
         $memberBalances = $this->getMemberBalances($user, $year, $month);
 
         $rulePreview = $this->getRulePreview($user, $year, $month);
+        $fundMovements = $this->getFundMovements($user, $year, $month);
 
         return response()->json([
             'year' => $year,
@@ -50,7 +52,121 @@ class MonthSummaryController extends Controller
             'category_totals' => $categoryTotals,
             'member_balances' => $memberBalances,
             'rule_preview' => $rulePreview,
+            'fund_movements' => $fundMovements,
         ]);
+    }
+
+    /**
+     * Return fund in/out activity for the selected month.
+     *
+     * Includes non-rule movements (borrow, repayment, initial value) and closeout-linked
+     * movements by matching either transaction date, movement creation month, or closeout tag.
+     *
+     * @return array{
+     *     totals: array{in: float, out: float, net: float},
+     *     by_fund: array<int, array{
+     *         fund_id: int,
+     *         fund_name: string,
+     *         fund_scope: string,
+     *         totals: array{in: float, out: float, net: float},
+     *         movements: array<int, array{
+     *             id: int,
+     *             type: string,
+     *             amount: float,
+     *             direction: string,
+     *             signed_amount: float,
+     *             description: string|null
+     *         }>
+     *     }>
+     * }
+     */
+    private function getFundMovements(object $user, int $year, int $month): array
+    {
+        $monthTag = sprintf('%04d-%02d', $year, $month);
+
+        $movements = FundMovement::query()
+            ->whereHas('fund', function ($q) use ($user): void {
+                $q->where(function ($fundQuery) use ($user): void {
+                    $fundQuery->where(function ($personalQuery) use ($user): void {
+                        $personalQuery->where('user_id', $user->id)
+                            ->whereNull('family_id');
+                    })->orWhere('family_id', $user->family_id);
+                });
+            })
+            ->with('fund')
+            ->where(function ($q) use ($year, $month, $monthTag): void {
+                $q->whereHas('transaction', fn ($txQuery) => $txQuery
+                    ->whereYear('transaction_date', $year)
+                    ->whereMonth('transaction_date', $month)
+                )->orWhere(function ($movementQuery) use ($year, $month): void {
+                    $movementQuery->whereNull('transaction_id')
+                        ->whereYear('created_at', $year)
+                        ->whereMonth('created_at', $month);
+                })->orWhere('description', 'like', "%({$monthTag})%");
+            })
+            ->latest('id')
+            ->get();
+
+        $totalsIn = 0.0;
+        $totalsOut = 0.0;
+        $byFund = [];
+
+        foreach ($movements as $movement) {
+            $direction = in_array($movement->type, ['borrow', 'advance_settlement'], true)
+                ? 'out'
+                : 'in';
+
+            $amount = (float) $movement->amount;
+            $signedAmount = $direction === 'out' ? -$amount : $amount;
+
+            if ($direction === 'out') {
+                $totalsOut += $amount;
+            } else {
+                $totalsIn += $amount;
+            }
+
+            if (! isset($byFund[$movement->fund_id])) {
+                $byFund[$movement->fund_id] = [
+                    'fund_id' => $movement->fund_id,
+                    'fund_name' => $movement->fund?->name ?? 'Unknown Fund',
+                    'fund_scope' => $movement->fund?->family_id ? 'family' : 'personal',
+                    'totals' => [
+                        'in' => 0.0,
+                        'out' => 0.0,
+                        'net' => 0.0,
+                    ],
+                    'movements' => [],
+                ];
+            }
+
+            if ($direction === 'out') {
+                $byFund[$movement->fund_id]['totals']['out'] += $amount;
+            } else {
+                $byFund[$movement->fund_id]['totals']['in'] += $amount;
+            }
+
+            $byFund[$movement->fund_id]['movements'][] = [
+                'id' => $movement->id,
+                'type' => $movement->type,
+                'amount' => $amount,
+                'direction' => $direction,
+                'signed_amount' => $signedAmount,
+                'description' => $movement->description,
+            ];
+        }
+
+        foreach ($byFund as $fundId => $fundData) {
+            $byFund[$fundId]['totals']['net'] = $fundData['totals']['in'] - $fundData['totals']['out'];
+        }
+
+        return [
+            'totals' => [
+                'in' => $totalsIn,
+                'out' => $totalsOut,
+                'net' => $totalsIn - $totalsOut,
+            ],
+            'by_fund' => array_values($byFund),
+        ];
     }
 
     /**

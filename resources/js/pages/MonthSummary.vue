@@ -154,6 +154,22 @@ const expenseCategories = computed(() => {
 const incomeCategories = computed(() => {
   return (summary.value?.category_totals || []).filter(cat => cat.type === 'income');
 });
+
+const fundMovementGroups = computed(() => {
+  return summary.value?.fund_movements?.by_fund || [];
+});
+
+function movementTypeLabel(type) {
+  const labels = {
+    allocation: 'Allocation',
+    closeout_allocation: 'Closeout Allocation',
+    borrow: 'Borrow',
+    repayment: 'Repayment',
+    initial_value: 'Initial Value Set At',
+    advance_settlement: 'Advance Settlement',
+  };
+  return labels[type] || type;
+}
 </script>
 
 <template>
@@ -337,7 +353,61 @@ const incomeCategories = computed(() => {
         </div>
       </div>
 
-      <!-- Section 3: Closeout Rules Preview -->
+      <!-- Section 3: Fund In/Out -->
+      <div class="px-4 mt-6">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Fund In/Out</h2>
+
+        <div v-if="fundMovementGroups.length === 0" class="text-sm text-gray-500">
+          No fund movement activity in this month.
+        </div>
+
+        <template v-else>
+          <div class="px-3 py-2 mb-4 text-xs text-gray-400 bg-gray-800 rounded-lg">
+            In: <span class="text-green-400">{{ formatCurrency(summary.fund_movements.totals.in) }}</span>
+            | Out: <span class="text-amber-400">{{ formatCurrency(summary.fund_movements.totals.out) }}</span>
+            | Net:
+            <span :class="summary.fund_movements.totals.net >= 0 ? 'text-green-400' : 'text-amber-400'">
+              {{ summary.fund_movements.totals.net >= 0 ? '+' : '' }}{{ formatCurrency(summary.fund_movements.totals.net) }}
+            </span>
+          </div>
+
+          <div class="space-y-3">
+            <div
+              v-for="fundGroup in fundMovementGroups"
+              :key="fundGroup.fund_id"
+              class="bg-gray-800 rounded-xl p-3 border border-gray-700"
+            >
+              <div class="flex items-center justify-between gap-2 mb-2">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-gray-200 truncate">{{ fundGroup.fund_name }}</p>
+                  <p class="text-xs text-gray-500">{{ fundGroup.fund_scope === 'family' ? 'Family fund' : 'Personal fund' }}</p>
+                </div>
+                <span :class="fundGroup.totals.net >= 0 ? 'text-green-400' : 'text-amber-400'" class="text-sm font-semibold">
+                  {{ fundGroup.totals.net >= 0 ? '+' : '' }}{{ formatCurrency(fundGroup.totals.net) }}
+                </span>
+              </div>
+
+              <div class="space-y-1.5">
+                <div
+                  v-for="movement in fundGroup.movements"
+                  :key="movement.id"
+                  class="flex items-center justify-between gap-3 rounded-lg border border-gray-700 bg-gray-900/50 px-2.5 py-2"
+                >
+                  <div class="min-w-0">
+                    <p class="text-xs text-gray-200 truncate">{{ movementTypeLabel(movement.type) }}</p>
+                    <p v-if="movement.description" class="text-[11px] text-gray-500 truncate">{{ movement.description }}</p>
+                  </div>
+                  <span :class="movement.direction === 'out' ? 'text-amber-400' : 'text-green-400'" class="text-xs font-semibold shrink-0">
+                    {{ movement.direction === 'out' ? '−' : '+' }}{{ formatCurrency(movement.amount) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Section 4: Closeout Rules Preview -->
       <div class="px-4 mt-6">
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
           {{ isHardClosed ? 'Closeout Results' : 'Projected Closeout' }}

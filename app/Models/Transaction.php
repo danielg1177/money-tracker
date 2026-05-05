@@ -22,6 +22,7 @@ class Transaction extends Model
         'is_split',
         'split_data',
         'fund_id',
+        'advance_fund_id',
         'is_borrow',
         'is_debt_payment',
         'debt_id',
@@ -37,6 +38,7 @@ class Transaction extends Model
         'is_borrow' => 'bool',
         'is_debt_payment' => 'bool',
         'is_closeout_initiated' => 'bool',
+        'advance_fund_id' => 'integer',
     ];
 
     public function family(): BelongsTo
@@ -62,6 +64,11 @@ class Transaction extends Model
     public function fund(): BelongsTo
     {
         return $this->belongsTo(Fund::class);
+    }
+
+    public function advanceFund(): BelongsTo
+    {
+        return $this->belongsTo(Fund::class, 'advance_fund_id');
     }
 
     public function debt(): BelongsTo

@@ -79,6 +79,10 @@ This document maps each user-visible feature to the backend and frontend files t
 - `order`: processing priority
 - `is_active`: whether the rule runs
 
+**Starting Balance:** Funds can be created with an optional `starting_balance`. If provided and > 0, a `FundMovement` of type `'initial_value'` is created to track the initial funding, and the fund balance is set to that value.
+
+**Advance Fund Settlement:** Funds can be targeted by expense transactions via the `advance_fund_id` field. During month hard-close, `MonthCloseoutService::applyFundAdvances()` sums all advances and decrements the fund balance with an `'advance_settlement'` movement. This happens independently of normal fund rules.
+
 ---
 
 ## 6. Fund Borrowing
@@ -128,7 +132,9 @@ This document maps each user-visible feature to the backend and frontend files t
 2. Automatic (fund borrow): via `FundService`
 3. Manual: `POST /debts`
 
-**Debt payment (`DebtService::payDebt`):** Creates two transactions — an expense for the debtor, and an income for the creditor (if `creditor_id` is not null / not a fund debt). Rejects pending split debts. **`GET /debts/{debt}/payments`** lists one entry per pay action for those debts by excluding the mirror **income** row when a matching **expense** exists (paired on `debt_id`, date, amount, `paid_by_user_id`, and `created_at`).
+**Debt payment (`DebtService::payDebt`):** Creates two transactions — an expense for the debtor, and an income for the creditor (if `creditor_id` is not null / not a fund debt). Rejects pending split debts. **`GET /debts/{debt}/payments`** lists one entry per pay action for those debts by excluding the mirror **income** row when a matching **expense** exists (paired on `debt_id`, date, amount, `paid_by_user_id`, and `created_at`). A synthetic `'initial_value'` entry is appended at the end showing the debt's original amount and creation date.
+
+**Initial value history:** The debt's origin is displayed in the payment history modal as an `'initial_value'` entry, showing the debt's original amount and the date it was created. This entry is appended to the `GET /debts/{debt}/payments` response.
 
 ---
 ## 9. Family Management (My Family)
@@ -181,7 +187,7 @@ This document maps each user-visible feature to the backend and frontend files t
 
 ## 14. Month Summary
 
-**What it does:** Read-only financial overview for a specific past or current month. Shows close status, spending by category, family member split balances, and a projected dry-run of the user's closeout rules. Accessible from the Dashboard (and any deep link).
+**What it does:** Read-only financial overview for a specific past or current month. Shows close status, spending by category, family member split balances, monthly fund in/out activity, and a projected dry-run of the user's closeout rules. Accessible from the Dashboard (and any deep link).
 
 | Layer | Files |
 |---|---|
@@ -190,10 +196,11 @@ This document maps each user-visible feature to the backend and frontend files t
 | Models | `Transaction`, `TransactionSplit`, `FundRule`, `Debt`, `Fund` (all read-only) |
 | Frontend | `resources/js/pages/MonthSummary.vue` (route: `/month-summary/:yearMonth`) |
 
-**Response shape:** `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview}`
+**Response shape:** `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements}`
 
 - `category_totals`: family transactions grouped by category (expenses then income, sorted by total descending), excluding debt payments
 - `member_balances`: net amount owed between the auth user and each other family member from split expenses; only shown when non-zero balances exist
+- `fund_movements`: monthly fund movement summary for funds visible to the auth user, grouped by fund with in/out/net totals and movement lines (covers closeout and non-closeout movement types)
 - `rule_preview`: `{basis: {gross_income, total_expenses, remaining_after_expenses}, rules: [...]}` — dry-run projection; no writes occur
 
 ---

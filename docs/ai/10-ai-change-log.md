@@ -11,6 +11,90 @@ Format:
 
 ---
 
+## 2026-05-05 — Month summary now includes all monthly fund in/out activity
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: The month summary API now returns `fund_movements` with grouped in/out/net totals and movement rows per visible fund. Matching includes non-rule and rule-driven activity for the selected month (borrow, repayment, initial value, closeout allocation, advance settlement) using transaction date, movement created month, and closeout month tags in movement descriptions. `MonthSummary.vue` now renders a new **Fund In/Out** section so the View page shows fund money moving in or out regardless of whether it came from closeout rules.
+
+## 2026-05-05 — Fix FAB transaction form crash when toggling advance-against-fund
+
+- Files touched: `resources/js/components/AppNav.vue`, `resources/js/components/TransactionForm.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Fixed a frontend runtime error (`Cannot read properties of undefined (reading 'length')`) in `TransactionForm.toggleAdvanceFund()` when opened from the global FAB. `AppNav.vue` now fetches funds (`GET /funds`) alongside categories and family users, and passes `:funds="funds"` into `TransactionForm`. `TransactionForm.vue` now defaults the `funds` prop to an empty array for defensive safety, preventing crashes if funds are not yet loaded.
+
+## 2026-05-05 — Advance against fund feature + Fund starting balance + Debt initial value history
+
+- Files touched: `database/migrations/2026_05_05_201653_add_advance_fund_id_to_transactions_table.php`, `database/migrations/2026_05_05_201653_add_advance_fund_id_to_categories_table.php`, `app/Models/Transaction.php`, `app/Models/Category.php`, `app/Http/Controllers/FundController.php`, `app/Http/Controllers/DebtController.php`, `app/Http/Requests/StoreTransactionRequest.php`, `app/Http/Requests/StoreCategoryRequest.php`, `app/Services/TransactionService.php`, `app/Services/MonthCloseoutService.php`, `resources/js/pages/Funds.vue`, `resources/js/pages/Debts.vue`, `resources/js/components/TransactionForm.vue`, `resources/js/pages/Transactions.vue`, `resources/js/pages/Categories.vue`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`
+
+- Behavioral impact: Added three interconnected features:
+
+  **1. Fund Starting Balance:** When creating a fund via `POST /funds`, an optional `starting_balance` parameter (nullable numeric, min 0) can be provided. If > 0, the fund is created with that balance and a `FundMovement` record of type `'initial_value'` is automatically created to track the initialization in the fund's history. The `Funds.vue` page includes a new optional "Starting Balance" number input when creating a fund.
+
+  **2. Advance Against Fund (Expense Feature):** New `advance_fund_id` field on `transactions` table (nullable FK → `funds.id`, `nullOnDelete`). Expense transactions can be marked as advancing against a fund. The fund balance is NOT affected at transaction creation. During month hard-close, `MonthCloseoutService::applyFundAdvances()` sums all advance transactions per fund per user per month and creates a `FundMovement` of type `'advance_settlement'` that decrements the fund balance. This settlement happens even if the user has no closeout rules or zero gross income.
+    - `StoreTransactionRequest` and `StoreCategoryRequest` now validate the optional `advance_fund_id` field
+    - `TransactionService` includes `advance_fund_id` in transaction data
+    - `TransactionForm.vue` now accepts a `funds` prop and shows an "Advance against fund" toggle (amber, expense-only) with fund selection dropdown
+    - `Transactions.vue` fetches `GET /funds` and passes the list to `TransactionForm`
+
+  **3. Category Default Advance Fund:** New `advance_fund_id` field on `categories` table (nullable FK → `funds.id`, `nullOnDelete`). Categories can specify a default advance fund, similar to `split_default`. When a transaction is created with a category that has `advance_fund_id` set, the form pre-populates the advance fund selection. `Categories.vue` includes a new "Default Advance Fund" optional select field when creating/editing a category.
+
+  **4. Debt Initial Value in History:** `DebtController::paymentHistory()` now appends a synthetic `'initial_value'` entry to the payment history array, displayed at the end (oldest chronologically). This entry shows the debt's original amount with type `'initial_value'`, description "Initial Value Set At", and the debt's creation date. The entry has no transaction ID and represents the debt's origin point in its timeline. `Debts.vue` renders `'initial_value'` entries distinctively: blue-tinted card, blue badge, blue amount text, no paid-by or action buttons.
+
+  **5. New FundMovement Types:** Backend now supports movement types `'initial_value'` (positive, green in UI) and `'advance_settlement'` (negative, amber in UI). `Funds.vue` movement history modal displays these with appropriate labels and color coding.
+
+  **6. Month Closeout Restructuring:** `MonthCloseoutService::processUserCloseoutRules()` was restructured so that `applyFundAdvances()` is always called at the end, regardless of whether `grossIncome <= 0`. This allows advance settlement to occur even for users with no income or active rules in that month.
+
+  All endpoints return the new fields in their JSON responses; no breaking changes to existing features.
+
+## 2026-05-05 — Categories.vue: add "Default Advance Fund" field for category defaults
+
+- Files touched: `resources/js/pages/Categories.vue`, `docs/ai/03-frontend-vue.md`
+- Behavioral impact: **Frontend only.** `Categories.vue` now supports optional `advance_fund_id` field on categories, mirroring the split_default pattern. (1) Added `funds` ref and `fetchFunds()` function that fetches from `GET /funds`, called in onMounted alongside other data loads. (2) Added `advance_fund_id: null` to the form object. (3) New "Default Advance Fund" select field in the create/edit modal, positioned after the split distribution section, shows fund names with scope labels (Family/Personal). (4) When editing a category, `advance_fund_id` is populated from the existing category data. (5) Form reset clears `advance_fund_id` back to null. (6) POST and PUT payloads include `advance_fund_id || null` so transactions in this category can default to advancing against the selected fund.
+
+## 2026-05-05 — Transactions.vue: fetch funds and pass to TransactionForm component
+
+- Files touched: `resources/js/pages/Transactions.vue`
+- Behavioral impact: **Frontend only.** `Transactions.vue` now fetches funds from `GET /funds` alongside categories and family users. Added `funds` ref to reactive state, integrated `get('/funds')` into the existing `fetchData()` Promise.all() block, and passed `:funds="funds"` prop to the `TransactionForm` component in the edit modal. This enables TransactionForm to render the "Advance against fund" toggle and fund selection dropdown for expense transactions (required prop for the newly added fund-advance feature).
+
+## 2026-05-05 — TransactionForm: add "Advance against fund" toggle with fund selection
+
+- Files touched: `resources/js/components/TransactionForm.vue`, `docs/ai/03-frontend-vue.md`
+- Behavioral impact: **Frontend only.** TransactionForm component now supports marking expense transactions as advancing against a specific fund (settled at month close, not immediately affecting fund balance). (1) New `funds` prop (Array, required) accepts list of available funds. (2) Form reactive object now includes `advance_fund_id: null` field. (3) New toggle "Advance against fund" appears after the "Split between family members" toggle, only when `form.type === 'expense'`, using amber color scheme (matches Split toggle's blue pattern). (4) When enabled, toggle shows a fund selection dropdown with fund names and scope labels (Family or Personal). (5) New watcher clears `advance_fund_id` when type changes to 'income' so advance is only available for expenses. (6) Category watcher auto-populates `advance_fund_id` when selected category has `advance_fund_id` set. (7) Edit mode loads and preserves existing `advance_fund_id` from transaction. (8) Submit payload includes `advance_fund_id` only for expense-type transactions (null for income). (9) New `toggleAdvanceFund()` function handles toggle clicks: enables with first fund selected, disables sets to null.
+
+## 2026-05-05 — Debts payment history: render initial_value entries distinctively in modal
+
+- Files touched: `resources/js/pages/Debts.vue`
+- Behavioral impact: **Frontend only.** The payment history modal now conditionally renders payment entries based on their `type`. For entries with `type === 'initial_value'` (appended by the backend `GET /debts/{id}/payments` endpoint to show the debt's origin): (1) the entry uses a blue-tinted card background (`bg-blue-900/20`) with blue border (`border-blue-700/50`) instead of the standard gray; (2) displays a blue badge label "Initial Value Set At" instead of the regular payment description; (3) shows the amount in blue text (`text-blue-400`) without a +/- sign prefix (unlike regular income/expense entries); (4) displays the transaction date; (5) does **not** show the `paid_by_user` line or any action buttons. Regular payment entries (income/expense) continue to display as before with their normal colors and action affordances.
+
+## 2026-05-05 — Funds: support starting balance; fund movement labels for initial_value and advance_settlement
+
+- Files touched: `resources/js/pages/Funds.vue`, `docs/ai/03-frontend-vue.md`
+- Behavioral impact: **Frontend only.** (1) New Fund form now includes optional "Starting Balance" number input (currency field with $ prefix). When creating a fund, `starting_balance` is sent to the backend (defaults to 0 if not provided). Form input is reset to `null` after successful creation. (2) `movementTypeLabel()` function now recognizes two new movement types: `initial_value` (displays as "Initial Value Set At") and `advance_settlement` (displays as "Advance Settlement"). (3) Fund History modal badge color logic updated: green for positive movements (allocation, closeout_allocation, repayment, initial_value); amber for negative/outbound (borrow, advance_settlement). (4) Fund History amount display logic updated: green + prefix for positive movements, amber - prefix for negative (borrow and advance_settlement now both show as negative amber amounts).
+
+## 2026-05-05 — Month closeout: settle advance-against-fund expenses
+
+- Files touched: `app/Services/MonthCloseoutService.php`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: During month hard-close, after all user closeout allocation rules execute, a new `applyFundAdvances()` step runs for each user. This method finds all expense-type transactions with `advance_fund_id` set (non-null) in that month, sums them by fund, and deducts the total from each fund's balance. A `FundMovement` of type `'advance_settlement'` is created for each fund to track the settlement. This allows advance expense transactions to automatically settle against their linked funds at closeout, potentially causing fund balances to go negative. The `processUserCloseoutRules()` method was refactored to only skip rules processing when `grossIncome <= 0`, but always calls `applyFundAdvances()` regardless of income.
+
+## 2026-05-05 — Thread advance_fund_id through validation and TransactionService
+
+- Files touched: `app/Http/Requests/StoreTransactionRequest.php`, `app/Http/Requests/StoreCategoryRequest.php`, `app/Services/TransactionService.php`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Added optional `advance_fund_id` field (nullable, must exist in funds table) to both `StoreTransactionRequest` and `StoreCategoryRequest` validation rules with appropriate error messages. `TransactionService::createTransaction()` and `updateTransaction()` now include `advance_fund_id` in transaction data when creating/updating transactions. This allows transactions and categories to optionally track an associated advance fund, enabling future application logic to use this relationship.
+
+## 2026-05-05 — Debt payment history now shows initial value as oldest event
+
+- Files touched: `app/Http/Controllers/DebtController.php`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `DebtController::paymentHistory()` now appends a synthetic `'initial_value'` entry to the payment history collection. This entry appears at the end of the ordered payments (making it the oldest event chronologically) and displays the debt's original amount with description "Initial Value Set At" and the debt's creation date. The entry has no transaction ID (`id: null`), represents the debt's origin point, and helps the frontend render a complete timeline of a debt from creation through all payments.
+
+## 2026-05-05 — Allow optional starting balance when creating a fund
+
+- Files touched: `app/Http/Controllers/FundController.php`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `FundController::store()` now accepts optional `starting_balance` parameter (nullable numeric, min 0). When provided and > 0, the fund is created with that balance and a `FundMovement` record of type `'initial_value'` is automatically created to track the initial value in the fund's movement history. The endpoint returns the fund with eager-loaded `movements.user` relationship so the initial movement is visible in the response.
+
+## 2026-05-05 — Add advance_fund_id foreign key to transactions and categories
+
+- Files touched: `database/migrations/2026_05_05_201653_add_advance_fund_id_to_transactions_table.php`, `database/migrations/2026_05_05_201653_add_advance_fund_id_to_categories_table.php`, `app/Models/Transaction.php`, `app/Models/Category.php`
+- Behavioral impact: Added optional `advance_fund_id` foreign key to `transactions` and `categories` tables, both referencing `funds.id` with `nullOnDelete()`. Updated `Transaction` model with new `advance_fund_id` fillable field, cast to integer, and new `advanceFund()` BelongsTo relationship. Updated `Category` model with new `advance_fund_id` fillable field and integer cast. Two migrations created and executed successfully. No user-facing feature yet — establishes schema foundation for future advance fund tracking.
+
 ## 2026-05-05 — Admin user edit can now update password
 
 - Files touched: `resources/js/pages/admin/Users.vue`, `app/Http/Controllers/AdminController.php`, `tests/Feature/AdminUserManagementTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`

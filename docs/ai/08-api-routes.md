@@ -123,7 +123,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
-| GET | `/month-summary` | `MonthSummaryController::show` | Query: `year`, `month`. Returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview}`; requires `family_id` (403 if unset). All read-only. |
+| GET | `/month-summary` | `MonthSummaryController::show` | Query: `year`, `month`. Returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements}`; requires `family_id` (403 if unset). All read-only. |
 
 ---
 

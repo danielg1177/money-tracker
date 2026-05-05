@@ -217,92 +217,90 @@ class MonthCloseoutService
             ->whereMonth('transaction_date', $month)
             ->sum('amount');
 
-        if ($grossIncome <= 0) {
-            return;
-        }
+        if ($grossIncome > 0) {
+            $grossRules = FundRule::query()
+                ->where('user_id', $user->id)
+                ->where('is_active', true)
+                ->where('allocation_base', '!=', 'remaining')
+                ->orderBy('order')
+                ->get();
 
-        $grossRules = FundRule::query()
-            ->where('user_id', $user->id)
-            ->where('is_active', true)
-            ->where('allocation_base', '!=', 'remaining')
-            ->orderBy('order')
-            ->get();
+            $remainingRules = FundRule::query()
+                ->where('user_id', $user->id)
+                ->where('is_active', true)
+                ->where('allocation_base', 'remaining')
+                ->orderBy('order')
+                ->get();
 
-        $remainingRules = FundRule::query()
-            ->where('user_id', $user->id)
-            ->where('is_active', true)
-            ->where('allocation_base', 'remaining')
-            ->orderBy('order')
-            ->get();
+            $grossRemaining = $grossIncome;
+            $grossAllocationsTotal = 0;
 
-        $grossRemaining = $grossIncome;
-        $grossAllocationsTotal = 0;
+            foreach ($grossRules as $rule) {
+                if ($rule->allocation_type === 'percentage') {
+                    $allocate = round($grossIncome * $rule->amount / 100, 2);
+                } else {
+                    $allocate = min((float) $rule->amount, $grossRemaining);
+                }
 
-        foreach ($grossRules as $rule) {
-            if ($rule->allocation_type === 'percentage') {
-                $allocate = round($grossIncome * $rule->amount / 100, 2);
-            } else {
-                $allocate = min((float) $rule->amount, $grossRemaining);
+                if ($allocate <= 0) {
+                    continue;
+                }
+
+                $actualAllocated = $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
+                $grossRemaining -= $actualAllocated;
+                $grossAllocationsTotal += $actualAllocated;
+
+                if ($grossRemaining <= 0) {
+                    break;
+                }
             }
 
-            if ($allocate <= 0) {
-                continue;
-            }
+            $soloExpenses = Transaction::query()
+                ->where('user_id', $user->id)
+                ->where('type', 'expense')
+                ->where('is_split', false)
+                ->where('is_debt_payment', false)
+                ->where('is_borrow', false)
+                ->whereYear('transaction_date', $year)
+                ->whereMonth('transaction_date', $month)
+                ->sum('amount');
 
-            $actualAllocated = $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
-            $grossRemaining -= $actualAllocated;
-            $grossAllocationsTotal += $actualAllocated;
+            $splitExpenses = TransactionSplit::query()
+                ->where('user_id', $user->id)
+                ->whereHas('transaction', function ($q) use ($year, $month) {
+                    $q->whereYear('transaction_date', $year)
+                        ->whereMonth('transaction_date', $month)
+                        ->where('type', 'expense');
+                })
+                ->sum('amount');
 
-            if ($grossRemaining <= 0) {
-                break;
-            }
-        }
+            $totalExpenses = $soloExpenses + $splitExpenses;
 
-        $soloExpenses = Transaction::query()
-            ->where('user_id', $user->id)
-            ->where('type', 'expense')
-            ->where('is_split', false)
-            ->where('is_debt_payment', false)
-            ->where('is_borrow', false)
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
-            ->sum('amount');
+            $remainingPool = $grossIncome - $grossAllocationsTotal - $totalExpenses;
 
-        $splitExpenses = TransactionSplit::query()
-            ->where('user_id', $user->id)
-            ->whereHas('transaction', function ($q) use ($year, $month) {
-                $q->whereYear('transaction_date', $year)
-                    ->whereMonth('transaction_date', $month)
-                    ->where('type', 'expense');
-            })
-            ->sum('amount');
+            if ($remainingPool > 0) {
+                foreach ($remainingRules as $rule) {
+                    if ($rule->allocation_type === 'percentage') {
+                        $allocate = round($remainingPool * $rule->amount / 100, 2);
+                    } else {
+                        $allocate = min((float) $rule->amount, $remainingPool);
+                    }
 
-        $totalExpenses = $soloExpenses + $splitExpenses;
+                    if ($allocate <= 0) {
+                        continue;
+                    }
 
-        $remainingPool = $grossIncome - $grossAllocationsTotal - $totalExpenses;
+                    $actualAllocated = $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
+                    $remainingPool -= $actualAllocated;
 
-        if ($remainingPool <= 0) {
-            return;
-        }
-
-        foreach ($remainingRules as $rule) {
-            if ($rule->allocation_type === 'percentage') {
-                $allocate = round($remainingPool * $rule->amount / 100, 2);
-            } else {
-                $allocate = min((float) $rule->amount, $remainingPool);
-            }
-
-            if ($allocate <= 0) {
-                continue;
-            }
-
-            $actualAllocated = $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
-            $remainingPool -= $actualAllocated;
-
-            if ($remainingPool <= 0) {
-                break;
+                    if ($remainingPool <= 0) {
+                        break;
+                    }
+                }
             }
         }
+
+        $this->applyFundAdvances($user, $year, $month);
     }
 
     /**
@@ -413,6 +411,42 @@ class MonthCloseoutService
         $titleSaving->save();
 
         return $amount;
+    }
+
+    /**
+     * Deduct advance-against-fund expenses from fund balances at closeout.
+     *
+     * @private
+     */
+    private function applyFundAdvances(User $user, int $year, int $month): void
+    {
+        $advances = Transaction::query()
+            ->where('user_id', $user->id)
+            ->where('type', 'expense')
+            ->whereNotNull('advance_fund_id')
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->selectRaw('advance_fund_id, SUM(amount) as total_advanced')
+            ->groupBy('advance_fund_id')
+            ->get();
+
+        foreach ($advances as $advance) {
+            $fund = Fund::query()->find($advance->advance_fund_id);
+            if (! $fund) {
+                continue;
+            }
+
+            $total = (float) $advance->total_advanced;
+            $fund->decrement('balance', $total);
+
+            FundMovement::query()->create([
+                'fund_id' => $fund->id,
+                'user_id' => $user->id,
+                'type' => 'advance_settlement',
+                'amount' => $total,
+                'description' => "Advance settlement ({$year}-{$month})",
+            ]);
+        }
     }
 
     /**

@@ -101,7 +101,7 @@ Full transaction list with date filters (`start_date`, `end_date`); the API retu
 Period **income** total and per-day income sums use each transaction’s **full amount**. Period **expense** total and per-day **expense** sums use **your split share** for split expenses (same rule as the primary amount on split rows); non-split expenses use the full amount. A short footnote under the period totals card explains split expense behavior. For a selected calendar month (not custom range), a lock icon beside the month dropdown reflects hard-close (amber locked), your soft-close (blue locked), or open-for-you (open lock outline). The sticky header **Close Out** / **Undo** control (top right) only appears when that month is **not** hard-closed and the loaded list has **at least one transaction**, except **Undo** still appears if you have already soft-closed (so you can reopen). **Family close progress** and **hard close** live on the **Dashboard**, not on this page. Rows with `is_debt_payment` show **`Debt Payment: {counterparty}`** using the eager-loaded `debt` relation (`debt.creditor_name`, `debt.creditor`, `debt.fund`, or debt `description` for payee on expenses; creditor-side **income** rows use the debtor’s name). If `debt` is missing, the UI falls back to parsing a legacy `Debt Payment:` description prefix, then **`Debt Payment`**. Shared helper: `resources/js/support/debtPaymentLabel.js`.
 
 ### `Funds.vue` (`resources/js/pages/Funds.vue`)
-Lists the auth user's personal funds. Shows balance and rules. Allows creating funds, editing rules, borrowing from a fund, repaying fund debts, and viewing movement history via a bottom-sheet modal. **Note:** "Add Rule" functionality has been removed; only "Edit Rule" is available. The History modal displays all fund movements (allocation, repayment, borrow, closeout_allocation) sorted by date (newest first), with movement types labeled and color-coded (green for positive/income-like, amber for borrow).
+Lists the auth user's personal funds. Shows balance and rules. Allows creating funds (with optional starting balance), editing rules, borrowing from a fund, repaying fund debts, and viewing movement history via a bottom-sheet modal. **Note:** "Add Rule" functionality has been removed; only "Edit Rule" is available. The History modal displays all fund movements (allocation, repayment, borrow, closeout_allocation, initial_value, advance_settlement) sorted by date (newest first), with movement types labeled and color-coded (green for positive/income-like movements, amber for borrow/advance_settlement).
 
 ### `Debts.vue` (`resources/js/pages/Debts.vue`)
 Shows "You Owe" and "Owed to You" sections.
@@ -112,8 +112,10 @@ Shows "You Owe" and "Owed to You" sections.
 
 The Vue page uses `debts.owing` for "You Owe" and `debts.owed` for "Owed to You" — **this is reversed from the backend key names**. This is a known bug.
 
+**Payment History Modal:** When viewing a debt's payment history via the **History** button, the modal displays all payment transactions from `GET /debts/{id}/payments`. The endpoint appends a synthetic `initial_value` entry at the end of the array (the debt's origin point) with `type='initial_value'`, `amount=debt.original_amount`, `description='Initial Value Set At'`, and `transaction_date=debt.created_at`. The modal template conditionally renders these entries distinctively: entries with `type === 'initial_value'` use a blue-tinted card background, display a blue badge label "Initial Value Set At" instead of payment descriptions, show the amount in blue without +/- prefix, and omit the paid-by user line and action buttons. Regular payment entries (income/expense type) display normally.
+
 ### `Categories.vue` (`resources/js/pages/Categories.vue`)
-Family category management. Create/edit/delete categories. Includes `IconPicker` component. Supports `is_income`, `is_expense`, `is_split_default`, and `split_default` (JSON split template).
+Family category management. Create/edit/delete categories. Includes `IconPicker` component. Supports `is_income`, `is_expense`, `is_split_default`, `split_default` (JSON split template), and `advance_fund_id` (optional fund for advance-against-fund default on transactions in that category). Fetches funds on mount and displays them in a dropdown field in the create/edit modal with labels showing fund name and scope (Family or Personal).
 
 ### `MyFamily.vue` (`resources/js/pages/MyFamily.vue`)
 Shows current user's family info and members. Only accessible to `head_of_household` or `admin` (guarded server-side by `can:manage_family`). Allows adding/removing members.
@@ -123,6 +125,7 @@ Displays a comprehensive financial summary for a specific month (route param: `/
 - **Close status header:** Lock icon indicating hard-closed (amber), all members soft-closed (blue), or open (gray outline)
 - **Spending by Category:** Lists all transactions grouped by category, showing expense totals in red and income totals in green
 - **Family Balances:** Shows inter-member debts from split transactions (only if balances exist), indicating whether each member owes you or you owe them
+- **Fund In/Out:** Displays monthly fund movement activity grouped by fund, including non-rule and rule-related movements (borrow, repayment, initial value, closeout allocation, advance settlement) with in/out/net totals
 - **Projected Closeout / Closeout Results:** Dry-run preview of the month's fund allocation rules with basis (gross income, expenses, remaining) and projected amounts for each active rule
 All data is read-only; displays loading/error/empty states. Uses `useApi` and `useRoute`/`useRouter`.
 
@@ -138,13 +141,13 @@ Admin-only route in the router. **Has no corresponding POST route on the backend
 ## Components
 
 ### `TransactionForm.vue` (`resources/js/components/TransactionForm.vue`)
-Modal form for creating or editing a transaction. Fields: type, amount, description, date, category, is_split toggle. When `is_split` is enabled, renders `SplitEditor`. On submit, calls `POST /transactions` or `PUT /transactions/{id}`. Emits `saved` event.
+Modal form for creating or editing a transaction. Props: `categories` (Array), `familyUsers` (Array), `funds` (Array), `transaction` (Object, optional for edit mode). Fields: type (income/expense), amount, description, date, category. For expenses, includes toggle for "Split between family members" (renders `SplitEditor` when enabled) and toggle for "Advance against fund" (shows fund select dropdown when enabled). The advance-against-fund feature links an expense to a fund for settlement at month close, only available when type='expense'. Category changes can auto-populate both split and advance_fund_id if the category has those defaults. On submit, calls `POST /transactions` or `PUT /transactions/{id}` with payload including `advance_fund_id` (only for expenses, null otherwise). Emits `created`, `updated`, or `close` events.
 
 ### `SplitEditor.vue` (`resources/js/components/SplitEditor.vue`)
 Sub-component of `TransactionForm`. Renders a list of family members with percentage inputs. Validates that percentages sum to 100 before allowing submission.
 
 ### `AppNav.vue` (`resources/js/components/AppNav.vue`)
-Bottom navigation bar with 4 primary nav links (Dashboard, Transactions, Funds, Debts) and an Account button. The Account button opens a bottom-sheet menu containing Categories, Closeout Rules, My Family (if applicable), Admin links (if admin), and Logout. Also contains the FAB (floating action button) that opens the `TransactionForm` modal.
+Bottom navigation bar with 4 primary nav links (Dashboard, Transactions, Funds, Debts) and an Account button. The Account button opens a bottom-sheet menu containing Categories, Closeout Rules, My Family (if applicable), Admin links (if admin), and Logout. Also contains the FAB (floating action button) that opens the `TransactionForm` modal. On mount it fetches categories, family users, and funds; all three are passed into `TransactionForm` so the advance-against-fund toggle works from the global FAB on every page.
 
 ### `IconPicker.vue` (`resources/js/components/IconPicker.vue`)
 Simple emoji/icon selector used within `Categories.vue`.
