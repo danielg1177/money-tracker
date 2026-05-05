@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-05-05 — PHPUnit DB config now environment-driven
+
+- Files touched: `phpunit.xml`, `docs/ai/01-architecture.md`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Removed hardcoded DB_* entries from `phpunit.xml`; PHPUnit now uses DB settings provided by runtime environment (typically `.env.testing`), reducing credential drift between local and deployed environments.
+
+## 2026-05-05 — Enforce MySQL-only defaults
+
+- Files touched: `config/database.php`, `config/queue.php`, `phpunit.xml`, `composer.json`, `database/.gitignore`, `database/migrations/2026_05_03_160512_update_fund_rules_for_closeout_system.php`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Application and queue DB fallbacks now default to MySQL, PHPUnit defaults were switched to MySQL test settings, and legacy file-database bootstrap/config references were removed from project scripts/docs to prevent accidental use of the wrong driver in non-explicit environments.
+
 ## 2026-05-04 — Documentation audit and update
 
 - Files touched: `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/05-auth-permissions.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

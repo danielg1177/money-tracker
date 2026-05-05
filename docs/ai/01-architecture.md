@@ -99,6 +99,6 @@ routes/web.php
 
 ## Testing environment
 
-- PHPUnit with `RefreshDatabase` trait; SQLite in-memory (configured in `phpunit.xml`)
+- PHPUnit with `RefreshDatabase` trait; test DB values are sourced from environment (`.env.testing` / process env), not hardcoded in `phpunit.xml`
 - MySQL instance also present at `.local/mysql/` for manual testing (`money_tracker_test` database)
 - No browser/E2E tests

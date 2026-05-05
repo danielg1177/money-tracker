@@ -23,7 +23,7 @@
 | Routing (FE) | Vue Router 4 | ^4.6 |
 | Styling | Tailwind CSS (v4, via `@tailwindcss/vite`) | ^4.0 |
 | Build tool | Vite | ^8.0 |
-| Database | SQLite (dev/test) / MySQL (local test env) | — |
+| Database | MySQL | — |
 | Testing | PHPUnit | v12 |
 | Code style | Laravel Pint | ^1.27 |
 

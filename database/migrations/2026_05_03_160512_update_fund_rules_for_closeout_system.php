@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // SQLite (and some other drivers) do not reliably apply `->change()` together
+        // Some database drivers do not reliably apply `->change()` together
         // with `->after()` in a single blueprint. Split into two steps so closeout
         // columns exist and `fund_id` can be nullable for destination-based rules.
         Schema::table('fund_rules', function (Blueprint $table) {

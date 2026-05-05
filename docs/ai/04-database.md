@@ -2,10 +2,10 @@
 
 ## Engine
 
-- **Development/test:** SQLite (`database/database.sqlite`)
-- **Local MySQL instance:** `.local/mysql/data/money_tracker_test/` (used for manual testing)
-- **PHPUnit:** SQLite in-memory (see `phpunit.xml`)
-- Default `DB_CONNECTION` in `.env.example` is `sqlite`
+- **Development/test:** MySQL
+- **Local MySQL instance:** `.local/mysql/data/money_tracker_test/` (used for local testing)
+- **PHPUnit:** Uses environment-provided DB config (`.env.testing` / process env); `phpunit.xml` does not hardcode DB credentials
+- Default `DB_CONNECTION` in `.env.example` is `mysql`
 
 ## Migrations
 
