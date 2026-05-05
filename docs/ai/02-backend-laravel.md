@@ -106,7 +106,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 ### AdminController
 - `users()` — all users with `family`
 - `createUser(Request)` — creates user with hashed password; role must be `member` or `head_of_household` (admin is now a separate checkbox); `is_admin` boolean field
-- `updateUser(Request, User)` — updates user (cannot change password via this route); includes `is_admin` in allowed updates
+- `updateUser(Request, User)` — updates user profile fields and supports optional password reset when `password` is provided (`min:8`); includes `is_admin` in allowed updates
 - `deleteUser(User)` — cannot delete self
 - `families()` — all families with `users` and `categories`
 - `createFamily(Request)` — creates family

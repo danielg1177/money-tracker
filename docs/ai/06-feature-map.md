@@ -145,7 +145,7 @@ This document maps each user-visible feature to the backend and frontend files t
 
 ## 10. Admin — Users
 
-**What it does:** Global admin can view all users, create, update, delete.
+**What it does:** Global admin can view all users, create, update, delete. Update supports optional password reset for the edited user (blank password keeps existing hash).
 
 | Layer | Files |
 |---|---|

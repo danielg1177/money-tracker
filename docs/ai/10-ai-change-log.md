@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-05 — Admin user edit can now update password
+
+- Files touched: `resources/js/pages/admin/Users.vue`, `app/Http/Controllers/AdminController.php`, `tests/Feature/AdminUserManagementTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Admins can set a new password when editing a user from the Users page. The password field is optional in the edit form (blank keeps the current password); when provided, backend validation enforces minimum length and stores a hashed value.
+
 ## 2026-05-05 — Seeder now creates one admin user + family without factories
 
 - Files touched: `database/seeders/DatabaseSeeder.php`, `docs/ai/00-repo-overview.md`, `docs/ai/04-database.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`

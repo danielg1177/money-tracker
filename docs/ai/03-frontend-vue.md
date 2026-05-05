@@ -127,7 +127,7 @@ Displays a comprehensive financial summary for a specific month (route param: `/
 All data is read-only; displays loading/error/empty states. Uses `useApi` and `useRoute`/`useRouter`.
 
 ### `admin/Users.vue` (`resources/js/pages/admin/Users.vue`)
-Admin-only. Lists all users, create/edit/delete. Lets admin assign `family_id` and `role`.
+Admin-only. Lists all users, create/edit/delete. Lets admin assign `family_id`, `role`, and optionally set a new password while editing (blank keeps the current password).
 
 ### `admin/Families.vue` (`resources/js/pages/admin/Families.vue`)
 Admin-only. Lists all families. Create families, manage members.

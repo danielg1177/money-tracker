@@ -63,6 +63,16 @@
                   <option value="head_of_household">Head of Household</option>
                 </select>
               </label>
+              <label class="block">
+                <span class="text-gray-400 text-xs">New Password (optional)</span>
+                <input
+                  v-model="u.editForm.password"
+                  type="password"
+                  autocomplete="new-password"
+                  class="mt-1 w-full rounded-lg bg-gray-900 border border-gray-600 px-3 py-2 text-white text-sm"
+                  placeholder="Leave blank to keep current password"
+                >
+              </label>
               <label class="block sm:col-span-2">
                 <div class="flex items-center gap-3 mt-2 p-3 bg-gray-700/50 rounded-lg">
                   <input v-model="u.editForm.is_admin" type="checkbox" class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500">
@@ -285,6 +295,7 @@ async function refresh() {
         email: user.email,
         family_id: user.family_id,
         role: user.role,
+        password: '',
         is_admin: user.is_admin,
       },
     })) : [];
@@ -346,6 +357,7 @@ function startEdit(u) {
     email: u.email,
     family_id: u.family_id,
     role: u.role,
+    password: '',
     is_admin: u.is_admin,
   };
   u.editing = true;
@@ -359,6 +371,7 @@ async function saveEdit(u) {
       email: u.editForm.email,
       family_id: u.editForm.family_id || null,
       role: u.editForm.role,
+      password: u.editForm.password || null,
       is_admin: u.editForm.is_admin,
     });
     Object.assign(u, updated);

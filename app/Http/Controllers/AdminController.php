@@ -45,10 +45,17 @@ class AdminController extends Controller
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
             'family_id' => 'nullable|exists:families,id',
             'role' => ['required', Rule::in(['member', 'head_of_household'])],
+            'password' => 'nullable|string|min:8',
             'is_admin' => 'boolean',
         ]);
 
-        $user->update($request->only(['name', 'email', 'family_id', 'role', 'is_admin']));
+        $attributes = $request->only(['name', 'email', 'family_id', 'role', 'is_admin']);
+
+        if ($request->filled('password')) {
+            $attributes['password'] = Hash::make($request->string('password')->value());
+        }
+
+        $user->update($attributes);
 
         return $user->load('family');
     }
