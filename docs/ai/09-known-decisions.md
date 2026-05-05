@@ -6,6 +6,9 @@ This document tracks intentional design decisions, known bugs, incomplete featur
 
 ## Confirmed Design Decisions
 
+### Mobile-first UI as the primary client
+The product is used **mainly on phones and mobile browsers**. All new or changed UI should assume **narrow viewports and touch** first; wider layouts are optional enhancement. Agents should read `docs/ai/03-frontend-vue.md` (§ Mobile-first UI) before substantial UI changes.
+
 ### No API versioning
 All routes are in `web.php` under no version prefix. The app uses Laravel's web middleware stack (sessions, CSRF) rather than stateless API tokens. This is intentional for the current SPA-on-same-origin architecture.
 
@@ -15,11 +18,16 @@ Controllers return raw Eloquent model/collection JSON. This keeps code simpler b
 ### No global state management (Vuex/Pinia)
 Each page fetches its own data on mount. `localStorage` is the only cross-component state mechanism (auth user). This is a deliberate simplicity choice at the cost of potential stale data and redundant API calls.
 
-### Funds are per-user, not per-family
-A fund belongs to a single user and is not visible to other family members. This is a core data model decision reflected in `funds.user_id` (not `family_id`).
+### Funds: personal vs family-scoped
+**Personal** funds belong to one user (`funds.user_id`, `family_id` null) and are private to that user. **Family** funds set `funds.family_id` (creator still has `user_id`); all members of that family see them via `GET /funds`. The index lists personal rows only when `family_id` is null so a family fund is not returned twice (once as “personal” and once as family).
 
 ### Debt `balance` field is never auto-zeroed
 Paid debts (balance = 0) remain in the database permanently. There is no "paid" boolean or deletion on full payment. The UI is expected to filter or display them accordingly.
+
+### Closeout debt-payment transaction date policy
+When closeout rules allocate to a debt, the generated debt-payment transaction date is:
+- **today** if the hard-close month is the same month/year as the current date
+- **month-end** (`endOfMonth`) for any non-current closeout month (including past months)
 
 ### Fund rules are not applied on income save
 `TransactionService::createTransaction` and `updateTransaction` do **not** call `FundService::processIncome`. Fund rules (`FundRule`) are applied during **month hard-close** (`MonthCloseoutService`), not when posting income. `tests/Feature/FundAllocationTest.php` still expects per-income allocation and **fails** until those tests are updated or `processIncome` is wired back in deliberately.

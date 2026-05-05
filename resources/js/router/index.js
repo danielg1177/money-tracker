@@ -11,6 +11,7 @@ const routes = [
   { path: '/debts', component: () => import('../pages/Debts.vue'), meta: { requiresAuth: true } },
   { path: '/categories', component: () => import('../pages/Categories.vue'), meta: { requiresAuth: true } },
   { path: '/my-family', component: () => import('../pages/MyFamily.vue'), meta: { requiresAuth: true } },
+  { path: '/month-summary/:yearMonth', component: () => import('../pages/MonthSummary.vue'), meta: { requiresAuth: true } },
   { path: '/admin/users', component: () => import('../pages/admin/Users.vue'), meta: { requiresAuth: true, adminOnly: true } },
   { path: '/admin/families', component: () => import('../pages/admin/Families.vue'), meta: { requiresAuth: true, adminOnly: true } },
   { path: '/admin/categories', component: () => import('../pages/admin/Categories.vue'), meta: { requiresAuth: true, adminOnly: true } },

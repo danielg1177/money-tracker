@@ -17,6 +17,8 @@ class PayDebtRequest extends FormRequest
             'debt_id' => ['required', 'exists:debts,id'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['nullable', 'string'],
+            'split_with_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'split_percentage' => ['nullable', 'numeric', 'min:1', 'max:99'],
         ];
     }
 
@@ -28,6 +30,9 @@ class PayDebtRequest extends FormRequest
             'amount.required' => 'The amount is required.',
             'amount.numeric' => 'The amount must be a valid number.',
             'amount.min' => 'The amount must be at least 0.01.',
+            'split_with_user_id.exists' => 'The selected user does not exist.',
+            'split_percentage.min' => 'Split percentage must be at least 1.',
+            'split_percentage.max' => 'Split percentage must be at most 99.',
         ];
     }
 }

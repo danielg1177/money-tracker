@@ -52,7 +52,7 @@
 - Audit ledger for every fund balance change
 
 ### Debt (`app/Models/Debt.php`)
-- Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `creditor_name` (nullable string for external creditors)
+- Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable FK → transactions, `cascadeOnDelete` for split-linked rows), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `creditor_name` (nullable string for external creditors)
 - `creditor_id` is null when the debt is to a fund (borrow scenario) or to an external party
 - `creditor_name` stores plain text creditor names (e.g., "Bank of America") when `creditor_id` is null and `is_family_debt=false`
 - `is_family_debt` controls visibility: false = personal debt (debtor + creditor only); true = visible to all family members
@@ -64,13 +64,13 @@
 All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRequests`).
 
 ### TransactionController
-- `index(Request)` — returns family transactions, filtered by `start_date`/`end_date`, eager-loads `user`, `category`, `splits.user`
+- `index(Request)` — returns viewer-scoped family transactions (`user_id` or `transaction_splits` participation), filtered by `start_date`/`end_date`, eager-loads `user`, `category`, `splits.user`, `debt` (+ nested relations); excludes split debt-payment expenses for the creditor when they duplicate that creditor’s repayment income row
 - `store(StoreTransactionRequest)` — delegates to `TransactionService::createTransaction`
 - `update(StoreTransactionRequest, Transaction)` — checks ownership or same family, delegates to `TransactionService::updateTransaction`
 - `destroy(Transaction)` — checks ownership or same family, deletes
 
 ### FundController
-- `index()` — returns auth user's funds with `fundRules` and `movements` eager-loaded
+- `index()` — personal funds: `auth()->user()->funds()->whereNull('family_id')`; family funds: `Fund::where('family_id', $user->family_id)` when set; merged JSON with `scope` per row; `fundRules` and `movements.user` eager-loaded
 - `store(Request)` — inline validation, creates fund for auth user
 - `update(Request, Fund)` — authorizes via `FundPolicy`, inline validation
 - `showRules(Fund)` — authorizes via `FundPolicy`, returns rules ordered by `order`
@@ -91,6 +91,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
   - **Family-shared:** `is_family_debt=true`, visible to all family members
 - `destroy(Debt)` — soft delete; only debtor or `can_manage_family` user can delete; cannot delete pending closeout debts
 - `payDebt(PayDebtRequest)` — delegates to `DebtService::payDebt`
+- `paymentHistory(Debt)` — JSON array of `transactions` for `debt_id`; for debts with member `creditor_id`, omits mirror **income** rows when a paired **expense** exists so the History modal shows one line per payment
 
 ### CategoryController
 - `index()` — returns family categories

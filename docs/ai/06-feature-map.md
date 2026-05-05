@@ -18,18 +18,20 @@ This document maps each user-visible feature to the backend and frontend files t
 
 ## 2. Dashboard / Summary
 
-**What it does:** Shows income/expense totals and recent transactions for the user's family.
+**What it does:** Shows current-month income/expense totals and displays the same **viewer-scoped** transaction list as the Transactions page (see section 3). Also displays **This Month's Split Expenses** (per-counterpart net and a View Details sheet); there is no separate aggregate “split balance” card.
 
 | Layer | Files |
 |---|---|
-| Backend | `GET /transactions` → `TransactionController::index` |
+| Backend | `GET /transactions` → `TransactionController::index`; `GET /dashboard/monthly-totals` → `DashboardController::monthlyTotals` |
 | Frontend | `resources/js/pages/Dashboard.vue` |
+
+**Monthly totals:** `DashboardController::monthlyTotals` calculates income and expense sums for the auth user for the current calendar month (excluding debt-payment transactions). Values are displayed in a two-column card above the transaction count cards.
 
 ---
 
 ## 3. Transactions
 
-**What it does:** Record income and expense transactions for a family. Support date filtering, category assignment, split between members, edit, and delete.
+**What it does:** Record income and expense transactions for a family. Support date filtering, category assignment, split between members, edit, and delete. The index list is **scoped to the signed-in user**: their own transactions plus any family transaction where they appear in `transaction_splits` (shared splits created by someone else). **All transactions are included**, including debt payment rows (`is_debt_payment=true`), except the mirrored **expense** leg for a **creditor** who is also on that expense’s splits (same payment as their `debt_id` income row). The month picker state is persisted in the route query as `month=YYYY-MM`, so refresh/back-forward navigation restores the selected month.
 
 | Layer | Files |
 |---|---|
@@ -60,7 +62,7 @@ This document maps each user-visible feature to the backend and frontend files t
 
 ## 5. Funds (Personal Savings Buckets)
 
-**What it does:** Each user has personal "funds" — named savings buckets with a running balance. Users can define allocation rules that automatically distribute income into funds.
+**What it does:** Each user has personal "funds" — named savings buckets with a running balance. Households can also have **family** funds (`family_id` on the row). `GET /funds` merges the signed-in user’s **personal** funds (`family_id` null) with all **family** funds for their family so a fund the user created as family-scoped appears once (`scope: 'family'`), not again as personal.
 
 | Layer | Files |
 |---|---|
@@ -68,7 +70,7 @@ This document maps each user-visible feature to the backend and frontend files t
 | Service | `app/Services/FundService.php` |
 | Models | `app/Models/Fund.php`, `app/Models/FundRule.php`, `app/Models/FundMovement.php` |
 | Requests | `app/Http/Requests/StoreFundRequest.php` (unused), `app/Http/Requests/StoreFundRuleRequest.php` (unused) |
-| Frontend | `resources/js/pages/Funds.vue` |
+| Frontend | `resources/js/pages/Funds.vue` (fund History modal shows **By {name}** per movement; `GET /funds` eager-loads `movements.user`) |
 | Policy | `app/Policies/FundPolicy.php` |
 
 **Fund Rules:** Define how income is automatically allocated. Each rule has:
@@ -108,13 +110,13 @@ This document maps each user-visible feature to the backend and frontend files t
 
 **What it does:** Track money owed between family members. Debts are created automatically from split transactions. They can also be created manually. Payments reduce the `balance` field.
 
-**Split debts & hard-close:** When a split transaction is created, temporary `is_pending_closeout=true` debts are created. These are hidden from the Debts page (GET /debts filters them out). On hard-close, all pending split debts for that month are **netted per person-pair** (if A owes B $10 and B owes A $5, only one $5 debt remains from B to A). Netting results are consolidated into single running debts per pair—either updating an existing confirmed debt or creating a new one. All temporary split records are then deleted. This reduces dozens of tiny split entries into one summary debt per pair.
+**Split debts & hard-close:** When a split transaction is created, temporary `is_pending_closeout=true` debts are created. These are hidden from the Debts page (GET /debts filters them out). On hard-close, `MonthCloseoutService::consolidatePendingSplitDebts` includes pending rows whose linked transaction is in the closed month **or** whose `transaction_id` is null (orphans left when a split transaction was deleted under the old `nullOnDelete` FK). Those rows are **netted per person-pair** (if A owes B $10 and B owes A $5, only one $5 debt remains from B to A). Netting results are consolidated into single running debts per pair—either updating an existing confirmed debt or creating a new one. All included pending split rows are then deleted. Deleting a split transaction now cascades to remove its linked split-debt rows (`debts.transaction_id` → `cascadeOnDelete`).
 
 **Payment guard:** `DebtService::payDebt` rejects attempts to pay `is_pending_closeout=true` debts, directing users to wait for the month's hard-close.
 
 || Layer | Files |
 ||---|---|
-|| Backend | `DebtController` (index, store, payDebt), `DebtController::splitDebtSummary` |
+|| Backend | `DebtController` (index, store, payDebt, `paymentHistory`), `DebtController::splitDebtSummary` |
 || Service | `app/Services/DebtService.php`, `app/Services/MonthCloseoutService.php::consolidatePendingSplitDebts` |
 || Model | `app/Models/Debt.php` |
 || Request | `app/Http/Requests/PayDebtRequest.php` |
@@ -126,7 +128,7 @@ This document maps each user-visible feature to the backend and frontend files t
 2. Automatic (fund borrow): via `FundService`
 3. Manual: `POST /debts`
 
-**Debt payment (`DebtService::payDebt`):** Creates two transactions — an expense for the debtor, and an income for the creditor (if `creditor_id` is not null / not a fund debt). Rejects pending split debts.
+**Debt payment (`DebtService::payDebt`):** Creates two transactions — an expense for the debtor, and an income for the creditor (if `creditor_id` is not null / not a fund debt). Rejects pending split debts. **`GET /debts/{debt}/payments`** lists one entry per pay action for those debts by excluding the mirror **income** row when a matching **expense** exists (paired on `debt_id`, date, amount, `paid_by_user_id`, and `created_at`).
 
 ---
 ## 9. Family Management (My Family)
@@ -187,3 +189,7 @@ This document maps each user-visible feature to the backend and frontend files t
 | Per-income helper | `app/Services/FundService.php::processIncome` — **not invoked** from `TransactionService` today |
 | Models | `FundRule`, `Fund`, `FundMovement`, `Debt`, `CloseoutTitleSaving` (as applicable) |
 | Tests | `tests/Feature/FundAllocationTest.php` — still asserts legacy per-income allocation; **out of sync** with current wiring (see `docs/ai/09-known-decisions.md`) |
+
+**Debt destination date behavior:** If a closeout rule allocates to a debt, the generated debt-payment transaction is dated:
+- today's date when closing the current month
+- month-end of the closed month when closing a non-current month

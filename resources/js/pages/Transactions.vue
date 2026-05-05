@@ -94,6 +94,14 @@
             <option value="custom">Custom Range</option>
           </optgroup>
         </select>
+        <button
+          v-if="selectedMonthFilter && selectedMonthFilter !== 'custom'"
+          type="button"
+          @click="navigateToMonthSummary"
+          class="shrink-0 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm rounded-lg font-medium transition-colors"
+        >
+          View
+        </button>
       </div>
 
       <!-- Custom Date Range Inputs -->
@@ -210,13 +218,13 @@
               >
                 <div class="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1 min-w-0">
                   <span
-                    v-if="transaction.category?.icon"
+                    v-if="transaction.category?.icon && !transaction.is_debt_payment"
                     class="text-sm sm:text-base shrink-0"
                   >
                     {{ transaction.category.icon }}
                   </span>
                   <span class="text-[11px] sm:text-base text-gray-300 font-medium truncate min-w-0 flex-1 leading-tight">
-                    {{ transaction.category?.name || 'Uncategorized' }}
+                    {{ getTransactionCategoryLabel(transaction) }}
                   </span>
                 </div>
                 <p v-if="transaction.description" class="hidden sm:block text-gray-400 text-xs truncate">
@@ -379,12 +387,13 @@
           </div>
           <div class="min-h-0 space-y-2 overflow-y-auto p-4">
             <p
-              v-if="splitDetailModalTransaction.category?.name || splitDetailModalTransaction.description"
+              v-if="splitDetailModalTransaction.is_debt_payment || splitDetailModalTransaction.category?.name || splitDetailModalTransaction.description"
               class="text-sm text-gray-400"
             >
-              <span v-if="splitDetailModalTransaction.category?.name">{{ splitDetailModalTransaction.category.name }}</span>
-              <span v-if="splitDetailModalTransaction.category?.name && splitDetailModalTransaction.description"> · </span>
-              <span v-if="splitDetailModalTransaction.description">{{ splitDetailModalTransaction.description }}</span>
+              <span v-if="splitDetailModalTransaction.is_debt_payment || splitDetailModalTransaction.category?.name">{{ getTransactionCategoryLabel(splitDetailModalTransaction) }}</span>
+              <span
+                v-if="splitDetailModalTransaction.description && !splitDetailModalTransaction.is_debt_payment"
+              > · {{ splitDetailModalTransaction.description }}</span>
             </p>
             <div
               v-for="split in splitsSortedForModal(splitDetailModalTransaction)"
@@ -417,10 +426,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi';
 import TransactionForm from '../components/TransactionForm.vue';
+import { debtPaymentCategoryLine } from '../support/debtPaymentLabel.js';
 
+const router = useRouter();
+const route = useRoute();
 const { get, put, del, post, loading, error } = useApi();
 
 const transactions = ref([]);
@@ -436,6 +449,12 @@ const closeoutStatus = ref(null);
 const closedMonths = ref([]);
 const currentUser = ref(null);
 const splitDetailModalTransaction = ref(null);
+
+function navigateToMonthSummary() {
+  if (selectedMonthFilter.value && selectedMonthFilter.value !== 'custom') {
+    router.push(`/month-summary/${selectedMonthFilter.value}`);
+  }
+}
 
 function handleTransactionCreatedFromFab(event) {
   transactions.value.unshift(event.detail);
@@ -483,15 +502,76 @@ function getDefaultMonthValue() {
   return `${year}-${month}`;
 }
 
-onMounted(async () => {
-  const defaultMonth = getDefaultMonthValue();
-  selectedMonthFilter.value = defaultMonth;
-  const [startDate, endDate] = getMonthDateRange(defaultMonth);
-  await fetchCurrentUser();
+function parseMonthQueryValue(value) {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  if (typeof normalized !== 'string') {
+    return null;
+  }
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+function syncMonthQuery(monthValue) {
+  const normalizedMonth = parseMonthQueryValue(monthValue);
+  const currentMonthQuery = parseMonthQueryValue(route.query.month);
+
+  if (normalizedMonth === currentMonthQuery) {
+    return;
+  }
+
+  const nextQuery = { ...route.query };
+  if (normalizedMonth) {
+    nextQuery.month = normalizedMonth;
+  } else {
+    delete nextQuery.month;
+  }
+
+  router.replace({ query: nextQuery });
+}
+
+function applyMonthSelection(monthValue) {
+  selectedMonthFilter.value = monthValue;
+  const [startDate, endDate] = getMonthDateRange(monthValue);
   fetchData(startDate, endDate);
+}
+
+function initializeMonthFilterFromQuery() {
+  const monthFromQuery = parseMonthQueryValue(route.query.month);
+  const resolvedMonth = monthFromQuery || getDefaultMonthValue();
+  applyMonthSelection(resolvedMonth);
+
+  if (!monthFromQuery) {
+    syncMonthQuery(resolvedMonth);
+  }
+}
+
+onMounted(async () => {
+  await fetchCurrentUser();
+  initializeMonthFilterFromQuery();
   fetchClosedMonths();
   window.addEventListener('transaction-created', handleTransactionCreatedFromFab);
 });
+
+watch(
+  () => route.query.month,
+  (monthQueryValue) => {
+    const monthFromQuery = parseMonthQueryValue(monthQueryValue);
+    if (!monthFromQuery) {
+      const defaultMonth = getDefaultMonthValue();
+      if (defaultMonth !== selectedMonthFilter.value) {
+        applyMonthSelection(defaultMonth);
+      }
+      syncMonthQuery(defaultMonth);
+      return;
+    }
+    if (monthFromQuery === selectedMonthFilter.value) {
+      return;
+    }
+    applyMonthSelection(monthFromQuery);
+  }
+);
 
 async function fetchCurrentUser() {
   try {
@@ -554,7 +634,9 @@ function handleMonthFilterChange() {
     const today = new Date();
     customStartDate.value = today.toISOString().split('T')[0];
     customEndDate.value = today.toISOString().split('T')[0];
+    syncMonthQuery(null);
   } else {
+    syncMonthQuery(selectedMonthFilter.value);
     const [startDate, endDate] = getMonthDateRange(selectedMonthFilter.value);
     fetchData(startDate, endDate);
   }
@@ -721,6 +803,13 @@ function transactionPayerDisplayLabel(transaction) {
     return 'You';
   }
   return transaction.user?.name || 'Unknown';
+}
+
+function getTransactionCategoryLabel(transaction) {
+  if (transaction.is_debt_payment) {
+    return debtPaymentCategoryLine(transaction);
+  }
+  return transaction.category?.name || 'Uncategorized';
 }
 
 function openSplitDetailModal(transaction) {

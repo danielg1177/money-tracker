@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\PayDebtRequest;
 use App\Models\Debt;
+use App\Models\Transaction;
 use App\Models\User;
 use App\Services\DebtService;
 use Illuminate\Http\JsonResponse;
@@ -28,7 +29,7 @@ class DebtController extends Controller
             ->where('family_id', $user->family_id)
             ->where('is_pending_closeout', false)
             ->where('is_family_debt', false)
-            ->with('creditor')
+            ->with('creditor', 'debtor')
             ->get();
 
         $personalOwing = Debt::query()
@@ -36,7 +37,7 @@ class DebtController extends Controller
             ->where('family_id', $user->family_id)
             ->where('is_pending_closeout', false)
             ->where('is_family_debt', false)
-            ->with('debtor')
+            ->with('creditor', 'debtor')
             ->get();
 
         $familyDebts = Debt::query()
@@ -107,6 +108,29 @@ class DebtController extends Controller
     }
 
     /**
+     * Update a debt's description and creditor name.
+     *
+     * Only the debtor or a family manager may update.
+     */
+    public function update(Request $request, Debt $debt): JsonResponse
+    {
+        $user = auth()->user();
+        if ($debt->debtor_id !== $user->id && ! $user->can_manage_family) {
+            abort(403);
+        }
+        if ($debt->is_pending_closeout) {
+            return response()->json(['message' => 'Cannot edit a pending split debt'], 422);
+        }
+        $validated = $request->validate([
+            'description' => 'nullable|string|max:1000',
+            'creditor_name' => 'nullable|string|max:255',
+        ]);
+        $debt->update($validated);
+
+        return response()->json($debt->load('debtor', 'creditor'));
+    }
+
+    /**
      * Record a debt payment.
      */
     public function payDebt(PayDebtRequest $request): JsonResponse
@@ -123,13 +147,62 @@ class DebtController extends Controller
                 $debt,
                 $request->amount,
                 $request->description ?? '',
-                $user
+                $user,
+                false,
+                $request->split_with_user_id ? (int) $request->split_with_user_id : null,
+                $request->split_percentage ? (float) $request->split_percentage : null,
             );
 
             return response()->json(['message' => 'Debt payment recorded']);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
+    }
+
+    /**
+     * Return payment transactions linked to a specific debt (one row per pay action for inter-member debts).
+     */
+    public function paymentHistory(Debt $debt): JsonResponse
+    {
+        $user = auth()->user();
+        if ($debt->debtor_id !== $user->id && $debt->creditor_id !== $user->id && ! $user->can_manage_family) {
+            abort(403);
+        }
+
+        $paymentsQuery = Transaction::query()
+            ->where('debt_id', $debt->id)
+            ->with('paidByUser');
+
+        $isViewerCreditor = $debt->creditor_id !== null && $debt->creditor_id === $user->id;
+        if ($isViewerCreditor) {
+            $paymentsQuery->where('type', 'income')
+                ->where('user_id', $user->id);
+        } else {
+            $paymentsQuery->where('type', 'expense');
+        }
+
+        $payments = $paymentsQuery
+            ->orderByDesc('transaction_date')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function ($payment) {
+                return [
+                    'id' => $payment->id,
+                    'amount' => $payment->amount,
+                    'description' => $payment->description,
+                    'transaction_date' => $payment->transaction_date,
+                    'type' => $payment->type,
+                    'created_at' => $payment->created_at,
+                    'paid_by_user_id' => $payment->paid_by_user_id,
+                    'is_closeout_initiated' => $payment->is_closeout_initiated,
+                    'paid_by_user' => $payment->paidByUser ? [
+                        'id' => $payment->paidByUser->id,
+                        'name' => $payment->paidByUser->name,
+                    ] : null,
+                ];
+            });
+
+        return response()->json($payments);
     }
 
     /**
@@ -175,7 +248,14 @@ class DebtController extends Controller
         $pendingDebts = Debt::query()
             ->where('family_id', $user->family_id)
             ->where('is_pending_closeout', true)
-            ->with(['debtor', 'creditor', 'transaction.category'])
+            ->with([
+                'debtor',
+                'creditor',
+                'transaction.category',
+                'transaction.debt.creditor',
+                'transaction.debt.debtor',
+                'transaction.debt.fund',
+            ])
             ->whereHas('transaction', fn ($q) => $q->whereYear('transaction_date', $year)->whereMonth('transaction_date', $month))
             ->get();
 

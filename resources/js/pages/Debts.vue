@@ -38,10 +38,10 @@
 
     <!-- Content -->
     <div v-else class="space-y-6 px-4 py-4">
-      <!-- Personal Debts Section -->
-      <div v-if="personalDebts.length > 0">
-        <h2 class="text-base font-bold text-white mb-3">Personal Debts</h2>
+      <!-- All Debts (Personal + Family merged) -->
+      <div v-if="personalDebts.length > 0 || (debts.family_debts && debts.family_debts.length > 0)">
         <div class="space-y-3">
+          <!-- Personal Debts -->
           <div
             v-for="debt in personalDebts"
             :key="debt.id"
@@ -66,7 +66,9 @@
                 <span v-else>{{ debt.debtor?.name }} owes you</span>
               </p>
               <p class="text-sm font-medium" :class="debt.creditor_id ? 'text-white' : 'text-gray-300 italic'">
-                {{ debt.creditor?.name || debt.debtor?.name || debt.creditor_name }}
+                {{ debt.debtor_id === authUser.id
+                  ? (debt.creditor?.name || debt.creditor_name)
+                  : debt.debtor?.name }}
               </p>
             </div>
 
@@ -107,26 +109,35 @@
               {{ debt.description }}
             </p>
 
-            <!-- Pay or Settled Button -->
-            <button
-              v-if="debt.balance > 0 && debt.debtor_id === authUser.id"
-              @click="openPayModal(debt)"
-              class="w-full py-2 px-3 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              Pay
-            </button>
-            <div v-else-if="debt.balance === 0" class="w-full py-2 px-3 bg-gray-700 text-gray-400 text-sm font-medium rounded-lg text-center">
-              ✓ Settled
+            <!-- Pay / Settled + History + Edit -->
+            <div class="flex gap-2">
+              <button
+                v-if="debt.balance > 0 && debt.debtor_id === authUser.id"
+                @click="openPayModal(debt)"
+                class="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                Pay
+              </button>
+              <div v-else-if="debt.balance === 0" class="flex-1 py-2 px-3 bg-gray-700 text-gray-400 text-sm font-medium rounded-lg text-center">
+                ✓ Settled
+              </div>
+              <button
+                v-if="debt.debtor_id === authUser.id"
+                @click="openEditDebtModal(debt)"
+                class="py-2 px-3 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+              >
+                Edit
+              </button>
+              <button
+                @click="openHistoryModal(debt)"
+                class="py-2 px-3 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+              >
+                History
+              </button>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- Family Debts Section -->
-      <div v-if="debts.family_debts && debts.family_debts.length > 0" :class="personalDebts.length > 0 ? 'border-t border-gray-700 pt-6' : ''">
-        <h2 class="text-base font-bold text-white mb-1">Family Debts</h2>
-        <p class="text-xs text-gray-500 mb-3">(shared with your family)</p>
-        <div class="space-y-3">
+          <!-- Family Debts -->
           <div
             v-for="debt in debts.family_debts"
             :key="debt.id"
@@ -135,7 +146,7 @@
           >
             <!-- Family Badge -->
             <div class="absolute top-3 right-3 flex items-center gap-2">
-              <div class="flex items-center justify-center w-6 h-6 rounded bg-purple-900/30 border border-purple-700/50">
+              <div class="flex items-center justify-center w-6 h-6 rounded bg-purple-900/30 border border-purple-700/50" title="Family Debt">
                 <svg class="w-4 h-4 text-purple-300" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
                 </svg>
@@ -199,23 +210,38 @@
               {{ debt.description }}
             </p>
 
-            <!-- Pay or Settled Button -->
-            <button
-              v-if="debt.balance > 0"
-              @click="openPayModal(debt)"
-              class="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              Pay
-            </button>
-            <div v-else class="w-full py-2 px-3 bg-gray-700 text-gray-400 text-sm font-medium rounded-lg text-center">
-              ✓ Settled
+            <!-- Pay / Settled + History + Edit -->
+            <div class="flex gap-2">
+              <button
+                v-if="debt.balance > 0"
+                @click="openPayModal(debt)"
+                class="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                Pay
+              </button>
+              <div v-else class="flex-1 py-2 px-3 bg-gray-700 text-gray-400 text-sm font-medium rounded-lg text-center">
+                ✓ Settled
+              </div>
+              <button
+                v-if="authUser.id === debt.debtor_id || authUser.can_manage_family"
+                @click="openEditDebtModal(debt)"
+                class="py-2 px-3 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+              >
+                Edit
+              </button>
+              <button
+                @click="openHistoryModal(debt)"
+                class="py-2 px-3 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+              >
+                History
+              </button>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Empty State -->
-      <div v-if="personalDebts.length === 0 && (!debts.family_debts || debts.family_debts.length === 0)" class="text-center py-12">
+      <div v-else class="text-center py-12">
         <p class="text-gray-500 text-sm">No debts yet</p>
       </div>
     </div>
@@ -438,6 +464,56 @@
               rows="3"
             />
 
+            <!-- Split toggle -->
+            <div class="flex items-center justify-between py-2">
+              <label class="text-sm font-medium text-gray-300">Split this payment?</label>
+              <button
+                type="button"
+                @click="payForm.is_split = !payForm.is_split"
+                :class="[
+                  'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200',
+                  payForm.is_split ? 'bg-blue-600' : 'bg-gray-600'
+                ]"
+              >
+                <span
+                  :class="[
+                    'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200',
+                    payForm.is_split ? 'translate-x-5' : 'translate-x-0'
+                  ]"
+                />
+              </button>
+            </div>
+            <div v-if="payForm.is_split" class="space-y-3">
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-2">Split with</label>
+                <select
+                  v-model="payForm.split_with_user_id"
+                  class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="" disabled>Select a family member</option>
+                  <option v-for="member in filteredFamilyUsers" :key="member.id" :value="member.id">
+                    {{ member.name }}
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-2">
+                  Their share: {{ payForm.split_percentage }}%
+                </label>
+                <input
+                  v-model.number="payForm.split_percentage"
+                  type="range"
+                  min="1"
+                  max="99"
+                  class="w-full accent-blue-500"
+                />
+                <div class="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>You: {{ 100 - payForm.split_percentage }}%</span>
+                  <span>Them: {{ payForm.split_percentage }}%</span>
+                </div>
+              </div>
+            </div>
+
             <div v-if="payError" class="p-3 bg-red-900/20 border border-red-700/50 rounded-lg">
               <p class="text-red-400 text-sm">{{ payError }}</p>
             </div>
@@ -461,18 +537,196 @@
         </div>
       </div>
     </Transition>
+
+    <!-- Payment History Modal -->
+    <Transition
+      enter-active-class="transition duration-300"
+      enter-from-class="translate-y-full opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition duration-300"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-full opacity-0"
+    >
+      <div v-if="showHistoryModal && historyDebt" class="fixed inset-0 z-50">
+        <div class="absolute inset-0 bg-black/50" @click="showHistoryModal = false" />
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
+          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
+            <h2 class="text-xl font-bold text-white">
+              Payment History
+            </h2>
+            <button @click="showHistoryModal = false" class="text-gray-400 hover:text-white">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="p-4 space-y-3">
+            <!-- Debt summary line -->
+            <p class="text-sm text-gray-400">
+              <span class="text-white font-medium">{{ formatCurrency(historyDebt.amount) }}</span> original,
+              <span :class="historyDebt.balance === 0 ? 'text-green-400' : 'text-red-400'" class="font-medium">
+                {{ formatCurrency(historyDebt.balance) }}
+              </span> remaining
+            </p>
+            <!-- Loading -->
+            <div v-if="historyLoading" class="flex items-center justify-center py-8">
+              <svg class="w-6 h-6 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            </div>
+            <!-- Empty -->
+            <div v-else-if="debtPayments.length === 0 && (!historyDebt.contributions || historyDebt.contributions.length === 0)" class="py-8 text-center">
+              <p class="text-gray-500 text-sm">No history recorded yet</p>
+            </div>
+            <!-- Payment list -->
+            <div v-else class="space-y-2">
+              <!-- Closeout contributions -->
+              <div v-if="historyDebt.contributions && historyDebt.contributions.length > 0" class="space-y-2">
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Closeout Additions</p>
+                <div
+                  v-for="(contribution, index) in [...(historyDebt.contributions)].reverse()"
+                  :key="'contrib-' + index"
+                  @click="navigateToMonthSummary(contribution.year, contribution.month)"
+                  class="bg-gray-800 border border-amber-700/30 rounded-lg p-3 cursor-pointer hover:bg-gray-750 hover:border-amber-700/50 transition-colors"
+                >
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <p class="text-sm font-medium text-white">
+                        {{ monthNames[contribution.month - 1] }} {{ contribution.year }} Closeout
+                      </p>
+                      <p class="text-xs text-gray-500 mt-0.5">Split settlements added to debt</p>
+                    </div>
+                    <p class="text-sm font-bold text-amber-400 flex-shrink-0">+{{ formatCurrency(contribution.amount) }}</p>
+                  </div>
+                </div>
+              </div>
+              <!-- Manual payments -->
+              <div v-if="debtPayments.length > 0" class="space-y-2" :class="{ 'mt-4': historyDebt.contributions && historyDebt.contributions.length > 0 }">
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Payments</p>
+                <div
+                  v-for="payment in debtPayments"
+                  :key="payment.id"
+                  class="bg-gray-800 border border-gray-700 rounded-lg p-3"
+                >
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2 mb-1">
+                        <p class="text-sm font-medium text-white">{{ payment.description || 'Debt payment' }}</p>
+                        <span
+                          v-if="payment.is_closeout_initiated"
+                          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-900/30 text-purple-300 border border-purple-700/50"
+                          title="Payment was initiated from month closeout"
+                        >
+                          Closeout
+                        </span>
+                      </div>
+                      <p class="text-xs text-gray-500">
+                        {{ new Date(payment.transaction_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) }}
+                      </p>
+                      <p v-if="payment.paid_by_user" class="text-xs text-gray-600 mt-1">
+                        {{ payment.type === 'income' ? 'From:' : 'Paid by:' }}
+                        <span class="text-gray-300 font-medium">{{ payment.paid_by_user.name }}</span>
+                      </p>
+                    </div>
+                    <p
+                      class="text-sm font-bold ml-3 flex-shrink-0"
+                      :class="payment.type === 'income' ? 'text-green-400' : 'text-red-400'"
+                    >
+                      {{ payment.type === 'income' ? '+' : '-' }}{{ formatCurrency(payment.amount) }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Edit Debt Modal -->
+    <Transition
+      enter-active-class="transition duration-300"
+      enter-from-class="translate-y-full opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition duration-300"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-full opacity-0"
+    >
+      <div v-if="showEditDebtModal && editingDebt" class="fixed inset-0 z-50">
+        <div class="absolute inset-0 bg-black/50" @click="showEditDebtModal = false" />
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
+          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
+            <h2 class="text-xl font-bold text-white">Edit Debt</h2>
+            <button @click="showEditDebtModal = false" class="text-gray-400 hover:text-white">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="p-4 space-y-4">
+            <div v-if="!editingDebt.creditor_id">
+              <label class="block text-sm font-medium text-gray-300 mb-2">Owed to (name)</label>
+              <input
+                v-model="editDebtForm.creditor_name"
+                type="text"
+                placeholder="e.g., Bank of America, Dad"
+                class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div v-else class="p-3 bg-gray-800 rounded-lg">
+              <p class="text-xs text-gray-500">Creditor</p>
+              <p class="text-sm text-white font-medium">{{ editingDebt.creditor?.name }}</p>
+              <p class="text-xs text-gray-600 mt-1">Family member creditors cannot be changed</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-2">Description</label>
+              <textarea
+                v-model="editDebtForm.description"
+                placeholder="Description (optional)"
+                class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 resize-none"
+                rows="3"
+              />
+            </div>
+            <div v-if="editDebtError" class="p-3 bg-red-900/20 border border-red-700/50 rounded-lg">
+              <p class="text-red-400 text-sm">{{ editDebtError }}</p>
+            </div>
+            <div class="flex gap-2">
+              <button
+                @click="showEditDebtModal = false"
+                class="flex-1 py-2 bg-gray-800 text-gray-300 font-medium rounded-lg hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                @click="submitEditDebt"
+                :disabled="editDebtLoading"
+                class="flex-1 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-700"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue';
+import { useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
+import { useAuth } from '../composables/useAuth';
 
-const { get, post, del, loading, error } = useApi();
+const { get, post, put, del, loading, error } = useApi();
+
+const { user: authUser } = useAuth();
+
+const router = useRouter();
 
 const debts = ref({ owed: [], owing: [], family_debts: [] });
 const familyUsers = ref([]);
-const authUser = ref({});
 const showAddDebtModal = ref(false);
 const showPayModal = ref(false);
 const selectedDebt = ref(null);
@@ -481,6 +735,20 @@ const addDebtLoading = ref(false);
 const payError = ref(null);
 const addDebtError = ref(null);
 const deleteConfirmDebt = ref(null);
+const showHistoryModal = ref(false);
+const historyDebt = ref(null);
+const debtPayments = ref([]);
+const historyLoading = ref(false);
+const showEditDebtModal = ref(false);
+const editingDebt = ref(null);
+const editDebtForm = ref({ description: '', creditor_name: '' });
+const editDebtLoading = ref(false);
+const editDebtError = ref(null);
+
+const monthNames = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
 
 const addDebtForm = ref({
   is_family_debt: false,
@@ -494,6 +762,9 @@ const addDebtForm = ref({
 const payForm = ref({
   amount: null,
   description: '',
+  is_split: false,
+  split_with_user_id: '',
+  split_percentage: 50,
 });
 
 const filteredFamilyUsers = computed(() => {
@@ -508,7 +779,6 @@ const personalDebts = computed(() => {
 onMounted(() => {
   fetchDebts();
   fetchFamilyUsers();
-  fetchAuthUser();
 });
 
 async function fetchDebts() {
@@ -526,15 +796,6 @@ async function fetchFamilyUsers() {
     familyUsers.value = data;
   } catch (err) {
     console.error('Failed to fetch family users:', err);
-  }
-}
-
-async function fetchAuthUser() {
-  try {
-    const data = await get('/user');
-    authUser.value = data;
-  } catch (err) {
-    console.error('Failed to fetch auth user:', err);
   }
 }
 
@@ -559,9 +820,29 @@ function isAddDebtFormValid() {
 
 function openPayModal(debt) {
   selectedDebt.value = debt;
-  payForm.value = { amount: debt.balance, description: '' };
+  payForm.value = { amount: debt.balance, description: '', is_split: false, split_with_user_id: '', split_percentage: 50 };
   payError.value = null;
   showPayModal.value = true;
+}
+
+async function openHistoryModal(debt) {
+  historyDebt.value = debt;
+  debtPayments.value = [];
+  historyLoading.value = true;
+  showHistoryModal.value = true;
+  try {
+    const data = await get(`/debts/${debt.id}/payments`);
+    debtPayments.value = data;
+  } catch (err) {
+    console.error('Failed to fetch payment history:', err);
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+function navigateToMonthSummary(year, month) {
+  const monthParam = `${year}-${String(month).padStart(2, '0')}`;
+  router.push(`/transactions?month=${monthParam}`);
 }
 
 function toggleDeleteConfirm(debtId) {
@@ -632,17 +913,50 @@ async function submitPayment() {
   submitLoading.value = true;
 
   try {
-    await post('/debts/pay', {
+    const payload = {
       debt_id: selectedDebt.value.id,
       amount: payForm.value.amount,
       description: payForm.value.description,
-    });
+    };
+    if (payForm.value.is_split && payForm.value.split_with_user_id) {
+      payload.split_with_user_id = payForm.value.split_with_user_id;
+      payload.split_percentage = payForm.value.split_percentage;
+    }
+    await post('/debts/pay', payload);
     showPayModal.value = false;
     await fetchDebts();
   } catch (err) {
     payError.value = err.response?.data?.message || 'Failed to process payment';
   } finally {
     submitLoading.value = false;
+  }
+}
+
+function openEditDebtModal(debt) {
+  editingDebt.value = debt;
+  editDebtForm.value = {
+    description: debt.description || '',
+    creditor_name: debt.creditor_name || '',
+  };
+  editDebtError.value = null;
+  showEditDebtModal.value = true;
+}
+
+async function submitEditDebt() {
+  editDebtError.value = null;
+  editDebtLoading.value = true;
+
+  try {
+    await put(`/debts/${editingDebt.value.id}`, {
+      description: editDebtForm.value.description,
+      creditor_name: editDebtForm.value.creditor_name,
+    });
+    showEditDebtModal.value = false;
+    await fetchDebts();
+  } catch (err) {
+    editDebtError.value = err.response?.data?.message || 'Failed to update debt';
+  } finally {
+    editDebtLoading.value = false;
   }
 }
 </script>

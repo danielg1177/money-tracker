@@ -1,3 +1,5 @@
 ---
 alwaysApply: true
 ---
+
+Money Tracker is a family finance **web** app; **users are expected to use it mainly on mobile devices** (phones, touch-first). Product and UX assumptions should default to mobile, not desktop-only layouts.

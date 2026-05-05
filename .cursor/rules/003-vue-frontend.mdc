@@ -1,3 +1,5 @@
 ---
 alwaysApply: true
 ---
+
+**Mobile-first Vue / Tailwind:** Plan and implement all UI changes assuming **phones and touch** are the primary surface. Start from narrow layouts; use responsive breakpoints to enhance for larger screens. Prefer touch-friendly targets and patterns consistent with `AppNav.vue` (bottom nav, FAB). Details: `docs/ai/03-frontend-vue.md` § Mobile-first UI.

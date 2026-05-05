@@ -24,6 +24,9 @@ class Transaction extends Model
         'fund_id',
         'is_borrow',
         'is_debt_payment',
+        'debt_id',
+        'paid_by_user_id',
+        'is_closeout_initiated',
     ];
 
     protected $casts = [
@@ -33,6 +36,7 @@ class Transaction extends Model
         'split_data' => 'array',
         'is_borrow' => 'bool',
         'is_debt_payment' => 'bool',
+        'is_closeout_initiated' => 'bool',
     ];
 
     public function family(): BelongsTo
@@ -45,6 +49,11 @@ class Transaction extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function paidByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'paid_by_user_id');
+    }
+
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
@@ -53,6 +62,11 @@ class Transaction extends Model
     public function fund(): BelongsTo
     {
         return $this->belongsTo(Fund::class);
+    }
+
+    public function debt(): BelongsTo
+    {
+        return $this->belongsTo(Debt::class);
     }
 
     public function splits(): HasMany

@@ -18,17 +18,21 @@ class FundController extends Controller
     {
         $user = auth()->user();
 
-        $personalFunds = $user->funds()->with('fundRules', 'movements')->get()->map(
-            fn ($f) => array_merge($f->toArray(), ['scope' => 'personal'])
-        );
+        $personalFunds = $user->funds()
+            ->whereNull('family_id')
+            ->with(['fundRules', 'movements.user'])
+            ->get()
+            ->map(fn ($f) => array_merge($f->toArray(), ['scope' => 'personal']))
+            ->toBase();
 
         $familyFunds = collect([]);
         if ($user->family_id) {
             $familyFunds = Fund::query()
                 ->where('family_id', $user->family_id)
-                ->with('fundRules', 'movements')
+                ->with(['fundRules', 'movements.user'])
                 ->get()
-                ->map(fn ($f) => array_merge($f->toArray(), ['scope' => 'family']));
+                ->map(fn ($f) => array_merge($f->toArray(), ['scope' => 'family']))
+                ->toBase();
         }
 
         return $personalFunds->merge($familyFunds)->values();

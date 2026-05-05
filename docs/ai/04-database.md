@@ -20,6 +20,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_04_30_190832_create_families_table` | `families` |
 | `2026_04_30_190833_create_categories_table` | `categories` |
 | `2026_04_30_190834_create_funds_table` | `funds` |
+| `2026_05_03_160512_add_family_id_to_funds_table` | Nullable `family_id` on `funds` for family-shared buckets |
 | `2026_04_30_190835_create_transactions_table` | `transactions` |
 | `2026_04_30_190836_create_fund_rules_table` | `fund_rules` |
 | `2026_04_30_190837_add_family_id_and_role_to_users_table` | Adds `family_id`, `role` to `users` |
@@ -28,6 +29,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_04_30_190840_create_transaction_splits_table` | `transaction_splits` |
 || `2026_05_04_013436_add_is_admin_to_users_table` | Adds `is_admin` boolean to `users`; migrates existing `admin` role to `head_of_household` + `is_admin=true` |
 | `2026_05_04_010914_add_debt_scope_fields_to_debts_table` | Adds `is_family_debt`, `creditor_name` to `debts` |
+| `2026_05_04_204012_fix_debts_transaction_id_cascade_and_repair_orphans` | Sets `is_pending_closeout=false` on pending debts with null `transaction_id`; replaces `debts.transaction_id` FK with `cascadeOnDelete` (was `nullOnDelete`) |
 
 ## Table schemas
 
@@ -70,7 +72,8 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | Column | Type | Notes |
 |---|---|---|
 | `id` | bigint PK | |
-| `user_id` | bigint FK | → `users.id` |
+| `user_id` | bigint FK | → `users.id` (owner/creator) |
+| `family_id` | bigint FK nullable | → `families.id`; null = personal fund only |
 | `name` | varchar | |
 | `description` | text nullable | |
 | `balance` | decimal(15,2) | default 0 |
@@ -126,7 +129,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `debtor_id` | bigint FK | → `users.id` |
 | `creditor_id` | bigint FK nullable | → `users.id` (null for fund-borrow or external debts) |
 | `fund_id` | bigint FK nullable | → `funds.id` (set when debt is to a fund) |
-| `transaction_id` | bigint FK nullable | → `transactions.id` |
+| `transaction_id` | bigint FK nullable | → `transactions.id` (`cascadeOnDelete` — deleting the split transaction deletes this debt row) |
 | `amount` | decimal(15,2) | original amount |
 | `balance` | decimal(15,2) | remaining unpaid |
 | `description` | text nullable | |

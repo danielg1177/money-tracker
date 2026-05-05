@@ -161,16 +161,16 @@
           <!-- Action Buttons -->
           <div class="flex gap-2 pt-2">
             <button
-              @click="openAddRuleModal(fund)"
-              class="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              + Add Rule
-            </button>
-            <button
               @click="openBorrowModal(fund)"
               class="flex-1 py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               Borrow
+            </button>
+            <button
+              @click="openFundHistoryModal(fund)"
+              class="flex-1 py-2 px-3 bg-gray-600 hover:bg-gray-500 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              History
             </button>
           </div>
         </div>
@@ -291,91 +291,6 @@
       </div>
     </Transition>
 
-    <!-- Add Rule Modal -->
-    <Transition
-      enter-active-class="transition duration-300"
-      enter-from-class="translate-y-full opacity-0"
-      enter-to-class="translate-y-0 opacity-100"
-      leave-active-class="transition duration-300"
-      leave-from-class="translate-y-0 opacity-100"
-      leave-to-class="translate-y-full opacity-0"
-    >
-      <div v-if="showAddRuleModal && selectedFund" class="fixed inset-0 z-50">
-        <div class="absolute inset-0 bg-black/50" @click="showAddRuleModal = false" />
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
-          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
-            <h2 class="text-xl font-bold text-white">Add Rule to {{ selectedFund.name }}</h2>
-            <button @click="showAddRuleModal = false" class="text-gray-400 hover:text-white">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div class="p-4 space-y-4">
-            <input
-              v-model="newRule.name"
-              type="text"
-              placeholder="Rule name"
-              class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-            />
-            <input
-              v-model.number="newRule.order"
-              type="number"
-              min="1"
-              placeholder="Order"
-              class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-            />
-            <select
-              v-model="newRule.allocation_type"
-              class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="percentage">Percentage</option>
-              <option value="fixed">Fixed Amount</option>
-            </select>
-            <input
-              v-model.number="newRule.amount"
-              type="number"
-              min="0"
-              step="0.01"
-              :placeholder="newRule.allocation_type === 'percentage' ? 'Percentage (0-100)' : 'Amount ($)'"
-              class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-            />
-            <select
-              v-model="newRule.allocation_base"
-              class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="gross_income">Gross Income</option>
-              <option value="net_income">Net Income</option>
-              <option value="remaining">Remaining</option>
-            </select>
-            <label class="flex items-center gap-3">
-              <input
-                v-model="newRule.is_active"
-                type="checkbox"
-                class="w-4 h-4 bg-gray-800 border border-gray-700 rounded focus:ring-blue-500"
-              />
-              <span class="text-sm text-gray-300">Active</span>
-            </label>
-            <div class="flex gap-2">
-              <button
-                @click="showAddRuleModal = false"
-                class="flex-1 py-2 bg-gray-800 text-gray-300 font-medium rounded-lg hover:bg-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                @click="addRule"
-                :disabled="submitLoading || !newRule.name || !newRule.order || !newRule.amount"
-                class="flex-1 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:bg-gray-700"
-              >
-                Add Rule
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
     <!-- Edit Rule Modal -->
     <Transition
       enter-active-class="transition duration-300"
@@ -426,6 +341,7 @@
               class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
             />
             <select
+              v-if="editingRule.allocation_type === 'percentage'"
               v-model="editingRule.allocation_base"
               class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
             >
@@ -524,6 +440,81 @@
         </div>
       </div>
     </Transition>
+
+    <!-- Fund History Modal -->
+    <Transition
+      enter-active-class="transition duration-300"
+      enter-from-class="translate-y-full opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition duration-300"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-full opacity-0"
+    >
+      <div v-if="showFundHistoryModal && selectedFundForHistory" class="fixed inset-0 z-50">
+        <div class="absolute inset-0 bg-black/50" @click="showFundHistoryModal = false" />
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
+          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-bold text-white">{{ selectedFundForHistory.name }}</h2>
+              <p class="text-gray-400 text-sm">Movement History</p>
+            </div>
+            <button @click="showFundHistoryModal = false" class="text-gray-400 hover:text-white">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="p-4 space-y-3">
+            <!-- Current balance -->
+            <div class="bg-gray-800 rounded-lg p-3 flex items-center justify-between">
+              <span class="text-sm text-gray-400">Current Balance</span>
+              <span class="text-lg font-bold text-blue-400">{{ formatCurrency(selectedFundForHistory.balance ?? 0) }}</span>
+            </div>
+            <!-- Empty state -->
+            <div v-if="!selectedFundForHistory.movements || selectedFundForHistory.movements.length === 0" class="py-8 text-center">
+              <p class="text-gray-500 text-sm">No movements recorded yet</p>
+            </div>
+            <!-- Movement list (newest first) -->
+            <div v-else class="space-y-2">
+              <div
+                v-for="movement in [...selectedFundForHistory.movements].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))"
+                :key="movement.id"
+                class="bg-gray-800 border border-gray-700 rounded-lg p-3"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="text-xs px-2 py-0.5 rounded-full"
+                        :class="{
+                          'bg-green-900/30 text-green-400 border border-green-700/50': movement.type === 'allocation' || movement.type === 'closeout_allocation' || movement.type === 'repayment',
+                          'bg-amber-900/30 text-amber-400 border border-amber-700/50': movement.type === 'borrow',
+                        }"
+                      >
+                        {{ movementTypeLabel(movement.type) }}
+                      </span>
+                    </div>
+                    <p v-if="movement.description" class="text-xs text-gray-500 mt-1">{{ movement.description }}</p>
+                    <p class="text-xs text-gray-500 mt-1">
+                      By {{ movementActorName(movement) }}
+                    </p>
+                    <p class="text-xs text-gray-600 mt-0.5">
+                      {{ new Date(movement.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) }}
+                    </p>
+                  </div>
+                  <p
+                    class="text-sm font-bold ml-3"
+                    :class="movement.type === 'borrow' ? 'text-amber-400' : 'text-green-400'"
+                  >
+                    {{ movement.type === 'borrow' ? '-' : '+' }}{{ formatCurrency(movement.amount) }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -539,10 +530,11 @@ const funds = ref([]);
 const expandedFunds = ref({});
 const showNewFundForm = ref(false);
 const showEditFundModal = ref(false);
-const showAddRuleModal = ref(false);
 const showEditRuleModal = ref(false);
 const showBorrowModal = ref(false);
+const showFundHistoryModal = ref(false);
 const selectedFund = ref(null);
+const selectedFundForHistory = ref(null);
 const editingFund = ref(null);
 const editingRule = ref(null);
 const submitLoading = ref(false);
@@ -553,15 +545,6 @@ const newFund = ref({
   name: '',
   description: '',
   is_family_fund: false,
-});
-
-const newRule = ref({
-  name: '',
-  order: 1,
-  allocation_type: 'percentage',
-  amount: null,
-  allocation_base: 'gross_income',
-  is_active: true,
 });
 
 const borrowForm = ref({
@@ -598,11 +581,6 @@ function formatCurrency(amount) {
   }).format(amount);
 }
 
-function openAddRuleModal(fund) {
-  selectedFund.value = fund;
-  showAddRuleModal.value = true;
-}
-
 function openEditFundModal(fund) {
   editingFund.value = { ...fund };
   showEditFundModal.value = true;
@@ -618,6 +596,33 @@ function openBorrowModal(fund) {
   borrowForm.value = { amount: null, description: '' };
   borrowError.value = null;
   showBorrowModal.value = true;
+}
+
+function openFundHistoryModal(fund) {
+  selectedFundForHistory.value = fund;
+  showFundHistoryModal.value = true;
+}
+
+function movementTypeLabel(type) {
+  const labels = {
+    allocation: 'Allocation',
+    closeout_allocation: 'Closeout Allocation',
+    borrow: 'Borrow',
+    repayment: 'Repayment',
+  };
+  return labels[type] || type;
+}
+
+function movementActorName(movement) {
+  const authId = user.value?.id;
+  if (authId != null && Number(movement.user_id) === Number(authId)) {
+    return 'You';
+  }
+  const u = movement.user;
+  if (u && typeof u.name === 'string' && u.name.trim() !== '') {
+    return u.name;
+  }
+  return 'Unknown user';
 }
 
 function confirmDeleteFund(fund) {
@@ -677,35 +682,6 @@ async function deleteFund(fund) {
     funds.value = funds.value.filter((f) => f.id !== fund.id);
   } catch (err) {
     console.error('Failed to delete fund:', err);
-  } finally {
-    submitLoading.value = false;
-  }
-}
-
-async function addRule() {
-  submitLoading.value = true;
-  try {
-    const rule = await post('/fund-rules', {
-      fund_id: selectedFund.value.id,
-      name: newRule.value.name,
-      order: newRule.value.order,
-      allocation_type: newRule.value.allocation_type,
-      amount: newRule.value.amount,
-      allocation_base: newRule.value.allocation_base,
-      is_active: newRule.value.is_active,
-    });
-    selectedFund.value.fund_rules.push(rule);
-    showAddRuleModal.value = false;
-    newRule.value = {
-      name: '',
-      order: 1,
-      allocation_type: 'percentage',
-      amount: null,
-      allocation_base: 'gross_income',
-      is_active: true,
-    };
-  } catch (err) {
-    console.error('Failed to add rule:', err);
   } finally {
     submitLoading.value = false;
   }

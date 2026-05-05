@@ -2,9 +2,11 @@
 
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DebtController;
 use App\Http\Controllers\FundController;
 use App\Http\Controllers\MonthCloseoutController;
+use App\Http\Controllers\MonthSummaryController;
 use App\Http\Controllers\TransactionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -22,6 +24,8 @@ Route::view('/admin/categories', 'app');
 Route::view('/my-family', 'app');
 
 Route::view('/debts', 'app');
+
+Route::view('/month-summary/{yearMonth}', 'app');
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/user', function (Request $request) {
@@ -86,10 +90,18 @@ Route::middleware(['auth'])->group(function () {
             : view('app');
     });
     Route::post('/debts', [DebtController::class, 'store']);
+    Route::put('/debts/{debt}', [DebtController::class, 'update']);
     Route::delete('/debts/{debt}', [DebtController::class, 'destroy']);
     Route::post('/debts/pay', [DebtController::class, 'payDebt']);
+    Route::get('/debts/{debt}/payments', [DebtController::class, 'paymentHistory']);
     Route::get('/split-debt-summary', fn (Request $r) => $r->expectsJson() ? app(DebtController::class)->splitDebtSummary($r) : view('app'));
     Route::post('/debts/{debt}/repay-fund', [FundController::class, 'repayFund']);
+
+    Route::get('/month-summary', function (Request $request) {
+        return $request->expectsJson()
+            ? app(MonthSummaryController::class)->show($request)
+            : view('app');
+    });
 
     Route::get('/categories', function (Request $request) {
         return $request->expectsJson()
@@ -100,7 +112,8 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/categories/{category}', [CategoryController::class, 'update']);
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
 
-    // Month closeout
+    Route::get('/dashboard/monthly-totals', [DashboardController::class, 'monthlyTotals']);
+
     Route::post('/closeout/status', [MonthCloseoutController::class, 'status']);
     Route::post('/closeout/soft-close', [MonthCloseoutController::class, 'softClose']);
     Route::post('/closeout/undo-soft-close', [MonthCloseoutController::class, 'undoSoftClose']);

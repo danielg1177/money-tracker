@@ -1,16 +1,20 @@
-import { ref, onMounted } from 'vue';
+import { ref } from 'vue';
 import { normalizeAuthUser } from '../support/authUser';
 
-export function useAuth() {
-  const user = ref(null);
+const user = ref(null);
 
-  onMounted(() => {
+function syncUserFromLocalStorage() {
+  try {
     const userJson = localStorage.getItem('user');
-    if (userJson) {
-      user.value = normalizeAuthUser(JSON.parse(userJson));
-    }
-  });
+    user.value = userJson ? normalizeAuthUser(JSON.parse(userJson)) : null;
+  } catch {
+    user.value = null;
+  }
+}
 
+syncUserFromLocalStorage();
+
+export function useAuth() {
   async function login(email, password) {
     await window.axios.post('/login', { email, password });
     await fetchUser();

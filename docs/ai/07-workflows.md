@@ -55,11 +55,27 @@ Detailed step-by-step flows for the most complex operations in the app.
    - Amount ≤ debt balance
 7. `DB::transaction` begins:
    a. Creates an `expense` transaction for the debtor (tagged `is_debt_payment=true`)
+      - Sets `debt_id` to the debt being paid
+      - Sets `paid_by_user_id` to the payer
+      - Sets `is_closeout_initiated=false` (manual payment)
    b. If `creditor_id` is not null: creates an `income` transaction for the creditor (also `is_debt_payment=true`)
+      - Sets `debt_id` to the same debt
+      - Sets `paid_by_user_id` to the payer
+      - Sets `is_closeout_initiated=false` (manual payment)
    c. Decrements `debt.balance` by payment amount
 8. Returns HTTP 200 `{ "message": "Debt payment recorded" }`
 
 **Note:** Debt records with `balance = 0` remain in the database — there is no auto-deletion or "paid" status flag.
+
+Newly added fields track:
+- **`paid_by_user_id`:** Which user initiated the payment (important for multi-user families)
+- **`is_closeout_initiated`:** Whether the payment came from a manual entry (`false`) or a month closeout rule (`true`)
+
+The payment history modal in `Debts.vue` displays:
+- Date of payment
+- Amount paid
+- Who made the payment (payer's name)
+- Whether it was initiated from a closeout (shown as a "Closeout" badge if applicable)
 
 ---
 
@@ -106,19 +122,40 @@ Detailed step-by-step flows for the most complex operations in the app.
 
 ## Workflow 5: Income Allocation via Fund Rules
 
-Triggered automatically by `TransactionService::createTransaction` for non-borrow income:
+Triggered during `MonthCloseoutService::hardClose()`, not on individual income transactions.
 
 1. Loads active `FundRule`s for user, ordered by `order` ASC
-2. Initializes `$gross = $net = $remaining = income amount`
-3. For each rule (in order):
-   a. Selects the base amount: `gross_income` → `$gross`, `net_income` → `$net`, `remaining` → `$remaining`
-   b. Calculates allocation:
-      - `percentage`: `round(base * rule.amount / 100, 2)`
-      - `fixed`: `min(rule.amount, remaining)`
-   c. If allocation > 0: increments `fund.balance`, creates `FundMovement` (type=`allocation`)
-   d. Subtracts allocation from `$remaining`
-   e. If `$remaining ≤ 0`: stops
-4. Note: `$net` is never independently modified in the current implementation — it always equals `$gross`. The `net_income` base effectively behaves like `gross_income`.
+2. Separates rules into two groups:
+   - **Gross-based rules**: `allocation_base` = `gross_income` or `net_income` (processed first)
+   - **Remaining-based rules**: `allocation_base` = `remaining` (processed after expenses)
+3. **Gross-based rules loop:**
+   a. Calculates allocation amount from gross income or net income:
+      - `percentage`: `round(grossIncome * rule.amount / 100, 2)`
+      - `fixed`: `min(rule.amount, $grossRemaining)`
+   b. Applies rule to destination (fund, debt, or title) — returns **actual** allocated amount (may be less if debt was underfunded)
+   c. Subtracts **actual** allocated amount from `$grossRemaining`
+   d. If `$grossRemaining ≤ 0`: stops
+4. **Calculate remaining pool:** `remainingPool = grossIncome - grossAllocations - totalExpenses`
+5. **Remaining-based rules loop:**
+   a. Calculates allocation amount from remaining pool:
+      - `percentage`: `round(remainingPool * rule.amount / 100, 2)`
+      - `fixed`: `min(rule.amount, $remainingPool)`
+   b. Applies rule to destination — returns **actual** allocated amount
+   c. Subtracts **actual** allocated amount from `$remainingPool`
+   d. If `$remainingPool ≤ 0`: stops
+
+**Important:** If a debt rule allocates $500 but the debt balance is only $200, only $200 is allocated, and the remaining $300 stays available for subsequent rules (as of 2026-05-04 fix).
+
+**Debt allocation details:** When a rule's destination is a debt (`destination_type = 'debt'`):
+- An `expense` transaction is created for the allocating user with `is_debt_payment=true` and `is_closeout_initiated=true`
+- The closeout payment transaction date is context-aware:
+  - If closing the current calendar month, the transaction date is "today"
+  - If closing a past month, the transaction date is the last day of that closed month
+- The `paid_by_user_id` field is set to the user executing the rule, allowing multi-user families to track who contributed to debt paydown
+- The debt's balance is decremented by the payment amount
+- This allows fund rules to automatically pay down debts during month closeout, and the payment history properly attributes the payment to the user whose rule triggered it
+
+**After rule processing:** `hardClose` runs `consolidatePendingSplitDebts`, which nets pending split debts for the closed month—including pending rows with a null `transaction_id` so they are not skipped—and writes confirmed debts before deleting the pending rows.
 
 ---
 

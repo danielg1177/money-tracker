@@ -128,7 +128,23 @@
         </div>
         <p class="text-gray-500 text-xs mt-2 px-1">
           These splits will be applied to your debt balance when your family closes the month.
+          In View Details, debt payment rows show the same “Debt Payment: …” line as Transactions (paid debt name from the linked debt).
         </p>
+      </div>
+
+      <!-- This Month's Income & Expenses -->
+      <div v-if="user?.family_id">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase px-1 mb-3">This Month</h2>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <p class="text-gray-400 text-xs font-semibold uppercase tracking-wide">Income</p>
+            <p class="text-xl font-bold text-green-400 mt-1">{{ formatCurrency(monthlyTotals.total_income) }}</p>
+          </div>
+          <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <p class="text-gray-400 text-xs font-semibold uppercase tracking-wide">Expenses</p>
+            <p class="text-xl font-bold text-red-400 mt-1">{{ formatCurrency(monthlyTotals.total_expenses) }}</p>
+          </div>
+        </div>
       </div>
 
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -197,7 +213,7 @@
                       {{ splitTransactionCategoryLabel(txn) }}
                     </span>
                     <span
-                      v-if="splitTransactionDescription(txn)"
+                      v-if="splitTransactionDescription(txn) && !txn.transaction?.is_debt_payment"
                       class="text-xs text-gray-400"
                       :title="splitTransactionDescription(txn)"
                     >
@@ -226,6 +242,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useAuth } from '../composables/useAuth';
 import { useApi } from '../composables/useApi';
+import { debtPaymentCategoryLine } from '../support/debtPaymentLabel.js';
 
 const { user } = useAuth();
 const { get, post, loading, error } = useApi();
@@ -237,6 +254,7 @@ const splitDebtSummary = ref([]);
 const selectedSplitItem = ref(null);
 const familyUsers = ref([]);
 const closeoutStatus = ref(null);
+const monthlyTotals = ref({ total_income: 0, total_expenses: 0 });
 /** Earliest year/month that has transactions and is not hard-closed; drives closeout UI. */
 const closeoutYearMonth = ref(null);
 const closedMonths = ref([]);
@@ -261,7 +279,7 @@ const transactionCount = computed(() => transactions.value.length);
 const fundCount = computed(() => funds.value.length);
 const debtCount = computed(() => {
   const d = debtsPayload.value;
-  return (d.owed?.length || 0) + (d.owing?.length || 0);
+  return (d.owed?.length || 0) + (d.owing?.length || 0) + (d.family_debts?.length || 0);
 });
 
 const isTargetMonthHardClosed = computed(() => closeoutStatus.value?.hard_close != null);
@@ -341,18 +359,20 @@ async function load() {
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
 
-    const [tx, fd, db, splits, closed] = await Promise.all([
+    const [tx, fd, db, splits, closed, totals] = await Promise.all([
       get('/transactions'),
       get('/funds'),
       get('/debts'),
       get(`/split-debt-summary?year=${year}&month=${month}`),
       get('/closeout/closed-months'),
+      get('/dashboard/monthly-totals'),
     ]);
     transactions.value = Array.isArray(tx) ? tx : [];
     funds.value = Array.isArray(fd) ? fd : [];
     debtsPayload.value = db && typeof db === 'object' ? db : { owed: [], owing: [] };
     splitDebtSummary.value = Array.isArray(splits) ? splits : [];
     closedMonths.value = Array.isArray(closed) ? closed : [];
+    monthlyTotals.value = totals && typeof totals === 'object' ? totals : { total_income: 0, total_expenses: 0 };
 
     const closeoutTarget = pickFirstOpenTransactionMonth(transactions.value, closedMonths.value);
 
@@ -450,7 +470,11 @@ function openDetailsModal(item) {
 }
 
 function splitTransactionCategoryLabel(txn) {
-  return txn.transaction?.category?.name ?? 'Uncategorized';
+  const t = txn.transaction;
+  if (t?.is_debt_payment) {
+    return debtPaymentCategoryLine(t);
+  }
+  return t?.category?.name ?? 'Uncategorized';
 }
 
 function splitTransactionDescription(txn) {

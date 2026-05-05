@@ -71,10 +71,11 @@ money-tracker/
 
 ## Key constraints for AI agents
 
+- **Mobile-first UI:** Users are expected to use the app mainly on **phones and other mobile devices**. Treat narrow viewports and touch interaction as the default when planning or changing any UI (Vue pages, components, Blade shell). See `docs/ai/03-frontend-vue.md` § Mobile-first UI.
 - All PHP files must pass `vendor/bin/pint --dirty --format agent` after edits.
 - Tests use PHPUnit (not Pest). Run `php artisan test --compact`.
 - No Enums exist yet. Roles and allocation types are plain strings.
 - No API versioning — routes are in `web.php`, not `api.php`.
 - No Eloquent API Resources — controllers return models/collections directly.
-- Funds are **per-user**, not per-family. Categories and transactions are **per-family**.
+- Funds: **personal** funds are per-user (`user_id`, `family_id` null). **Family** funds share `family_id` with the household but still store `user_id` as the creator; **`GET /funds`** lists personal funds and family funds separately so each fund row appears once (family rows are not duplicated under the creator’s personal list). Categories and transactions are **per-family** (stored); **`GET /transactions` lists only rows relevant to the signed-in user** (their own plus split co-participations). See `docs/ai/01-architecture.md` (data scoping).
 - A user without a `family_id` is essentially unusable (most endpoints 403 or return empty).

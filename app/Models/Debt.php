@@ -22,6 +22,7 @@ class Debt extends Model
         'is_pending_closeout',
         'is_family_debt',
         'creditor_name',
+        'contributions',
     ];
 
     protected $casts = [
@@ -29,6 +30,7 @@ class Debt extends Model
         'balance' => 'decimal:2',
         'is_pending_closeout' => 'bool',
         'is_family_debt' => 'bool',
+        'contributions' => 'array',
     ];
 
     public function family(): BelongsTo

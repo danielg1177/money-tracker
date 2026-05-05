@@ -47,7 +47,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
-| GET | `/transactions` | `TransactionController::index` | Accepts `?start_date=&end_date=` filters |
+| GET | `/transactions` | `TransactionController::index` | Accepts `?start_date=&end_date=` filters; JSON includes `debt` (with `creditor`, `debtor`, `fund` when present) for debt-payment rows; omits split debt-payment **expense** for the creditor when that row duplicates their repayment **income** for the same debt |
 | POST | `/transactions` | `TransactionController::store` | Body: see `StoreTransactionRequest` |
 | PUT | `/transactions/{transaction}` | `TransactionController::update` | Same body as store |
 | DELETE | `/transactions/{transaction}` | `TransactionController::destroy` | — |
@@ -56,7 +56,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
-| GET | `/funds` | `FundController::index` | Returns user's funds (personal + family-scoped) with rules + movements; each fund has `scope` ('personal' or 'family') |
+| GET | `/funds` | `FundController::index` | Personal funds: auth user’s funds with `family_id` null. Family funds: all funds with `family_id` = user’s family. Merged with `scope` each (`personal` \| `family`); family rows are omitted from the personal query so the creator does not see duplicates. Each `movements[]` row includes nested `user` (`name`, etc.) for who recorded the movement |
 | POST | `/funds` | `FundController::store` | `{name, description?, is_family_fund?}`; if `is_family_fund=true` and user has `family_id`, fund is family-scoped |
 | PUT | `/funds/{fund}` | `FundController::update` | `{name, description?}`; requires fund ownership or family membership with `can_manage_family` for editing |
 | DELETE | `/funds/{fund}` | `FundController::destroy` | Requires fund ownership (personal) or family membership with `can_manage_family` (family-scoped) |
@@ -77,9 +77,10 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | Method | Path | Controller | Notes |
 |---|---|---|---|
 | GET | `/debts` | `DebtController::index` | Returns `{owed: [...], owing: [...], family_debts: [...]}` |
-| GET | `/split-debt-summary` | `DebtController::splitDebtSummary` | Query: `year`, `month` (1–12). JSON: pending closeout split debts grouped by counterpart |
+| GET | `/split-debt-summary` | `DebtController::splitDebtSummary` | Query: `year`, `month` (1–12). JSON: pending closeout split debts grouped by counterpart; each nested `transaction` includes `category` and, when applicable, `debt` with `creditor`, `debtor`, `fund` for debt-payment rows |
 | POST | `/debts` | `DebtController::store` | `{is_family_debt?, is_interfamily?, creditor_id?, creditor_name?, amount, description?}` |
 | POST | `/debts/pay` | `DebtController::payDebt` | `{debt_id, amount, description?}` |
+| GET | `/debts/{debt}/payments` | `DebtController::paymentHistory` | Debtor, creditor, or `can_manage_family`; JSON array of payment rows. For debts with a member `creditor_id`, omits mirror **income** rows when a matching **expense** exists (same `debt_id`, date, amount, `paid_by_user_id`, `created_at`) so one UI line per pay action |
 | DELETE | `/debts/{debt}` | `DebtController::destroy` | Only debtor or `can_manage_family` user can delete |
 | POST | `/debts/{debt}/repay-fund` | `FundController::repayFund` | `{amount}`; only for fund debts |
 
@@ -108,6 +109,12 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | POST | `/categories` | `CategoryController::store` | See `StoreCategoryRequest` |
 | PUT | `/categories/{category}` | `CategoryController::update` | See `StoreCategoryRequest` |
 | DELETE | `/categories/{category}` | `CategoryController::destroy` | — |
+
+### Dashboard
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/dashboard/monthly-totals` | `DashboardController::monthlyTotals` | Returns `{total_income, total_expenses}` for current month, auth user only |
 
 ---
 

@@ -6,14 +6,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
 import AppNav from './components/AppNav.vue';
-import { normalizeAuthUser } from './support/authUser';
+import { useAuth } from './composables/useAuth';
 
-const user = ref(null);
-
-onMounted(() => {
-  const userJson = localStorage.getItem('user');
-  user.value = userJson ? normalizeAuthUser(JSON.parse(userJson)) : null;
-});
+const { user } = useAuth();
 </script>

@@ -41,18 +41,6 @@
           </router-link>
 
           <router-link 
-            to="/closeout-rules" 
-            class="flex-1 flex flex-col items-center gap-1 py-2 px-2 rounded-lg text-sm font-medium transition-colors"
-            :class="isActive('/closeout-rules') ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'"
-          >
-            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v2h16V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" />
-              <path d="M4 11a2 2 0 00-2 2v5a2 2 0 002 2h12a2 2 0 002-2v-5a2 2 0 00-2-2H4z" />
-            </svg>
-            <span class="hidden sm:block text-xs">Closeout</span>
-          </router-link>
-
-          <router-link 
             to="/debts" 
             class="flex-1 flex flex-col items-center gap-1 py-2 px-2 rounded-lg text-sm font-medium transition-colors"
             :class="isActive('/debts') ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'"
@@ -63,69 +51,16 @@
             <span class="hidden sm:block text-xs">Debts</span>
           </router-link>
 
-          <router-link 
-            to="/categories" 
-            class="flex-1 flex flex-col items-center gap-1 py-2 px-2 rounded-lg text-sm font-medium transition-colors"
-            :class="isActive('/categories') ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'"
+          <!-- User Menu Button -->
+          <button
+            @click="showUserMenu = true"
+            class="flex-1 flex flex-col items-center gap-1 py-2 px-2 rounded-lg text-sm font-medium transition-colors text-gray-400 hover:text-white"
+            aria-label="Account menu"
           >
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM13 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2h-2zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM13 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2h-2z" />
+              <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
             </svg>
-            <span class="hidden sm:block text-xs">Categories</span>
-          </router-link>
-        </div>
-
-        <div v-if="user" class="flex items-center gap-2 ml-2 pl-2 border-l border-gray-700">
-          <span class="text-sm text-gray-300 font-medium hidden sm:inline">{{ user.name }}</span>
-          
-          <!-- Admin dropdown: only for admin role -->
-          <div v-if="user.isAdmin" class="relative">
-            <button 
-              @click="showAdminMenu = !showAdminMenu"
-              class="flex items-center gap-1 py-2 px-2 rounded-lg text-xs font-medium text-amber-400 hover:bg-gray-800 transition-colors"
-            >
-              <span>Admin</span>
-              <svg class="w-4 h-4" :class="{ 'rotate-180': showAdminMenu }" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-              </svg>
-            </button>
-
-            <div 
-              v-if="showAdminMenu"
-              class="absolute bottom-full right-0 mb-2 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-10"
-            >
-              <router-link 
-                to="/admin/users"
-                @click="showAdminMenu = false"
-                class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors first:rounded-t-lg"
-              >
-                Users
-              </router-link>
-              <router-link 
-                to="/admin/families"
-                @click="showAdminMenu = false"
-                class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors last:rounded-b-lg"
-              >
-                Families
-              </router-link>
-            </div>
-          </div>
-
-          <!-- My Family link: only for head_of_household -->
-          <router-link
-            v-else-if="user.canManageFamily"
-            to="/my-family"
-            @click="showAdminMenu = false"
-            class="py-2 px-2 rounded-lg text-xs font-medium text-blue-400 hover:bg-gray-800 transition-colors"
-          >
-            My Family
-          </router-link>
-
-          <button 
-            @click="handleLogout"
-            class="py-2 px-2 rounded-lg text-xs font-medium text-red-400 hover:bg-gray-800 transition-colors"
-          >
-            Logout
+            <span class="hidden sm:block text-xs">Account</span>
           </button>
         </div>
       </div>
@@ -184,6 +119,102 @@
       </div>
     </Transition>
 
+    <!-- User Menu Bottom Sheet -->
+    <Transition
+      enter-active-class="transition duration-300"
+      enter-from-class="translate-y-full opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition duration-300"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-full opacity-0"
+    >
+      <div v-if="showUserMenu" class="fixed inset-0 z-50">
+        <div class="absolute inset-0 bg-black/50" @click="showUserMenu = false" />
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl overflow-hidden">
+          <!-- Header -->
+          <div class="border-b border-gray-800 px-4 py-4 flex items-center justify-between">
+            <div>
+              <p class="text-xs text-gray-500">Signed in as</p>
+              <p class="text-base font-semibold text-white">{{ user?.name }}</p>
+            </div>
+            <button @click="showUserMenu = false" class="text-gray-400 hover:text-white">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <!-- Menu Items -->
+          <div class="py-2">
+            <router-link
+              to="/categories"
+              @click="showUserMenu = false"
+              class="flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+            >
+              <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM13 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2h-2zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM13 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2h-2z" />
+              </svg>
+              <span class="text-sm font-medium">Categories</span>
+            </router-link>
+            <router-link
+              to="/closeout-rules"
+              @click="showUserMenu = false"
+              class="flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+            >
+              <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v2h16V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" />
+                <path d="M4 11a2 2 0 00-2 2v5a2 2 0 002 2h12a2 2 0 002-2v-5a2 2 0 00-2-2H4z" />
+              </svg>
+              <span class="text-sm font-medium">Closeout Rules</span>
+            </router-link>
+            <router-link
+              v-if="user?.canManageFamily && !user?.isAdmin"
+              to="/my-family"
+              @click="showUserMenu = false"
+              class="flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+            >
+              <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+              </svg>
+              <span class="text-sm font-medium">My Family</span>
+            </router-link>
+            <template v-if="user?.isAdmin">
+              <router-link
+                to="/admin/users"
+                @click="showUserMenu = false"
+                class="flex items-center gap-3 px-4 py-3 text-amber-400 hover:bg-gray-800 transition-colors"
+              >
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+                </svg>
+                <span class="text-sm font-medium">Admin: Users</span>
+              </router-link>
+              <router-link
+                to="/admin/families"
+                @click="showUserMenu = false"
+                class="flex items-center gap-3 px-4 py-3 text-amber-400 hover:bg-gray-800 transition-colors"
+              >
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 110 2h-3a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H4a1 1 0 110-2V4zm3 1h2v2H7V5zm2 4H7v2h2V9zm2-4h2v2h-2V5zm2 4h-2v2h2V9z" clip-rule="evenodd" />
+                </svg>
+                <span class="text-sm font-medium">Admin: Families</span>
+              </router-link>
+            </template>
+            <div class="border-t border-gray-800 mt-2 pt-2">
+              <button
+                @click="handleLogout(); showUserMenu = false;"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-gray-800 transition-colors"
+              >
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd" />
+                </svg>
+                <span class="text-sm font-medium">Logout</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <div class="h-20" />
   </div>
 </template>
@@ -199,7 +230,7 @@ const router = useRouter();
 const route = useRoute();
 const { user, logout } = useAuth();
 const { get } = useApi();
-const showAdminMenu = ref(false);
+const showUserMenu = ref(false);
 const showTransactionForm = ref(false);
 const categories = ref([]);
 const familyUsers = ref([]);

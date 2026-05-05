@@ -221,6 +221,12 @@ protected function isAccessible(User $user, ?string $path = null): bool
 
 ## AI Documentation & Context Rules
 
+### Product & UI posture (mobile-first)
+
+- **Primary use case is mobile:** Household members are expected to use the app **mainly on phones and other mobile devices** (touch, small screens).
+- **Plan and build UI accordingly:** Default to narrow viewports, touch-friendly controls, and mobile-first Tailwind patterns; treat desktop as enhancement unless the user specifies otherwise.
+- **Reference:** `docs/ai/03-frontend-vue.md` (section *Mobile-first UI*) and `docs/ai/00-repo-overview.md` (key constraints).
+
 ### Source of truth hierarchy
 1. Actual code (always authoritative)
 2. `/docs/ai/` documentation (summaries for faster understanding)

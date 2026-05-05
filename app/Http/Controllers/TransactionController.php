@@ -13,7 +13,12 @@ class TransactionController extends Controller
     public function __construct(private TransactionService $transactionService) {}
 
     /**
-     * Get all transactions for the user's family.
+     * List transactions relevant to the authenticated user: rows they created, or family
+     * split transactions where they appear in `transaction_splits` (including as payer).
+     *
+     * Split debt payments create a payer expense (with optional splits) plus creditor income;
+     * when the creditor is also a split participant on that expense, the income row is kept
+     * and the mirrored expense leg is omitted so the payment appears once in their list.
      */
     public function index(Request $request): JsonResponse
     {
@@ -23,7 +28,24 @@ class TransactionController extends Controller
         }
 
         $query = $user->family->transactions()
-            ->with(['user', 'category', 'splits.user']);
+            ->with(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
+            ->where(function ($q) use ($user): void {
+                $q->where('user_id', $user->id)
+                    ->orWhereHas('splits', function ($splitQuery) use ($user): void {
+                        $splitQuery->where('user_id', $user->id);
+                    });
+            })
+            ->whereNot(function ($q) use ($user): void {
+                $q->where('is_debt_payment', true)
+                    ->where('type', 'expense')
+                    ->where('user_id', '!=', $user->id)
+                    ->whereHas('splits', function ($splitQuery) use ($user): void {
+                        $splitQuery->where('user_id', $user->id);
+                    })
+                    ->whereHas('debt', function ($debtQuery) use ($user): void {
+                        $debtQuery->where('creditor_id', $user->id);
+                    });
+            });
 
         if ($request->filled('start_date')) {
             $query->whereDate('transaction_date', '>=', $request->input('start_date'));
@@ -54,7 +76,7 @@ class TransactionController extends Controller
             );
 
             return response()->json(
-                $transaction->load(['user', 'category', 'splits.user']),
+                $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund']),
                 201
             );
         } catch (\InvalidArgumentException $e) {
@@ -79,7 +101,7 @@ class TransactionController extends Controller
             $this->transactionService->updateTransaction($transaction, $request->validated());
 
             return response()->json(
-                $transaction->load(['user', 'category', 'splits.user'])
+                $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
             );
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

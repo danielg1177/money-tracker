@@ -249,10 +249,9 @@ class MonthCloseoutService
                 continue;
             }
 
-            $grossRemaining -= $allocate;
-            $grossAllocationsTotal += $allocate;
-
-            $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
+            $actualAllocated = $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
+            $grossRemaining -= $actualAllocated;
+            $grossAllocationsTotal += $actualAllocated;
 
             if ($grossRemaining <= 0) {
                 break;
@@ -297,9 +296,8 @@ class MonthCloseoutService
                 continue;
             }
 
-            $remainingPool -= $allocate;
-
-            $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
+            $actualAllocated = $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
+            $remainingPool -= $actualAllocated;
 
             if ($remainingPool <= 0) {
                 break;
@@ -312,9 +310,9 @@ class MonthCloseoutService
      *
      * @private
      */
-    private function applyRuleAllocation(FundRule $rule, User $user, int $year, int $month, float $amount): void
+    private function applyRuleAllocation(FundRule $rule, User $user, int $year, int $month, float $amount): float
     {
-        match ($rule->destination_type) {
+        return match ($rule->destination_type) {
             'fund' => $this->allocateToFund($rule, $user, $year, $month, $amount),
             'debt' => $this->allocateToDebt($rule, $user, $year, $month, $amount),
             'title' => $this->allocateToTitle($rule, $user, $year, $month, $amount),
@@ -326,7 +324,7 @@ class MonthCloseoutService
      *
      * @private
      */
-    private function allocateToFund(FundRule $rule, User $user, int $year, int $month, float $amount): void
+    private function allocateToFund(FundRule $rule, User $user, int $year, int $month, float $amount): float
     {
         $fund = Fund::query()->findOrFail($rule->destination_id);
         $fund->increment('balance', $amount);
@@ -338,34 +336,61 @@ class MonthCloseoutService
             'amount' => $amount,
             'description' => "Closeout rule: {$rule->name} ({$year}-{$month})",
         ]);
+
+        return $amount;
     }
 
     /**
      * Allocate funds to pay down a debt.
      *
+     * Allow any family member to contribute to family debts through closeout rules.
+     *
      * @private
      */
-    private function allocateToDebt(FundRule $rule, User $user, int $year, int $month, float $amount): void
+    private function allocateToDebt(FundRule $rule, User $user, int $year, int $month, float $amount): float
     {
         $debt = Debt::query()
             ->where('id', $rule->destination_id)
-            ->where('debtor_id', $user->id)
+            ->where('family_id', $user->family_id)
             ->first();
 
         if ($debt && $debt->balance > 0) {
             $payAmount = min($amount, (float) $debt->balance);
             $debt->decrement('balance', $payAmount);
 
+            $debtLabel = $debt->creditor_name ?? $debt->creditor?->name ?? 'Unknown';
+
             Transaction::query()->create([
                 'family_id' => $user->family_id,
                 'user_id' => $user->id,
                 'type' => 'expense',
                 'amount' => $payAmount,
-                'description' => "Closeout debt payment: {$rule->name} ({$year}-{$month})",
-                'transaction_date' => Carbon::create($year, $month)->endOfMonth()->toDateString(),
+                'description' => "Debt Payment: {$debtLabel}",
+                'transaction_date' => $this->resolveCloseoutTransactionDate($year, $month),
                 'is_debt_payment' => true,
+                'debt_id' => $debt->id,
+                'paid_by_user_id' => $user->id,
+                'is_closeout_initiated' => true,
             ]);
+
+            return $payAmount;
         }
+
+        return 0;
+    }
+
+    /**
+     * Resolve transaction date for closeout-generated entries.
+     */
+    private function resolveCloseoutTransactionDate(int $year, int $month): string
+    {
+        $now = now();
+
+        if ((int) $now->year === $year && (int) $now->month === $month) {
+            return $now->toDateString();
+        }
+
+        return Carbon::create($year, $month, 1)->endOfMonth()->toDateString();
     }
 
     /**
@@ -373,7 +398,7 @@ class MonthCloseoutService
      *
      * @private
      */
-    private function allocateToTitle(FundRule $rule, User $user, int $year, int $month, float $amount): void
+    private function allocateToTitle(FundRule $rule, User $user, int $year, int $month, float $amount): float
     {
         $titleSaving = CloseoutTitleSaving::query()->firstOrNew([
             'family_id' => $user->family_id,
@@ -386,6 +411,8 @@ class MonthCloseoutService
         $titleSaving->amount = ($titleSaving->amount ?? 0) + $amount;
         $titleSaving->rule_id = $rule->id;
         $titleSaving->save();
+
+        return $amount;
     }
 
     /**
@@ -398,10 +425,13 @@ class MonthCloseoutService
         $pendingDebts = Debt::query()
             ->where('family_id', $family->id)
             ->where('is_pending_closeout', true)
-            ->whereHas('transaction', fn ($q) => $q
-                ->whereYear('transaction_date', $year)
-                ->whereMonth('transaction_date', $month)
-            )
+            ->where(function ($q) use ($year, $month): void {
+                $q->whereNull('transaction_id')
+                    ->orWhereHas('transaction', fn ($q) => $q
+                        ->whereYear('transaction_date', $year)
+                        ->whereMonth('transaction_date', $month)
+                    );
+            })
             ->get();
 
         if ($pendingDebts->isEmpty()) {
@@ -448,9 +478,12 @@ class MonthCloseoutService
                     ->whereNull('transaction_id')
                     ->first();
 
+                $contribution = ['month' => $month, 'year' => $year, 'amount' => $netAmount];
                 if ($existingDebt) {
-                    $existingDebt->increment('amount', $netAmount);
-                    $existingDebt->increment('balance', $netAmount);
+                    $existingDebt->amount = (float) $existingDebt->amount + $netAmount;
+                    $existingDebt->balance = (float) $existingDebt->balance + $netAmount;
+                    $existingDebt->contributions = array_merge($existingDebt->contributions ?? [], [$contribution]);
+                    $existingDebt->save();
                 } else {
                     Debt::query()->create([
                         'family_id' => $family->id,
@@ -460,6 +493,7 @@ class MonthCloseoutService
                         'balance' => $netAmount,
                         'is_pending_closeout' => false,
                         'description' => 'Split settlements from '.$month.'/'.$year,
+                        'contributions' => [$contribution],
                     ]);
                 }
             }

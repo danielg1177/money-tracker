@@ -171,7 +171,7 @@
             </div>
 
             <!-- Applied To -->
-            <div>
+            <div v-if="formData.allocation_type === 'percentage'">
               <label class="block text-sm font-medium text-gray-300 mb-1">Applied To</label>
               <select
                 v-model="formData.allocation_base"
@@ -224,7 +224,7 @@
               >
                 <option :value="null">-- Select a debt --</option>
                 <option v-for="debt in userDebts" :key="debt.id" :value="debt.id">
-                  {{ debt.description || `Debt #${debt.id}` }}
+                  {{ getDebtLabel(debt) }}
                 </option>
               </select>
             </div>
@@ -291,7 +291,24 @@ const formData = ref({
 });
 
 const userDebts = computed(() => {
-  return debts.value.owed || [];
+  const allDebts = [];
+  
+  // Add personal debts where user is owed
+  if (debts.value.owed) {
+    allDebts.push(...debts.value.owed);
+  }
+  
+  // Add personal debts where user owes (can also allocate to pay)
+  if (debts.value.owing) {
+    allDebts.push(...debts.value.owing);
+  }
+  
+  // Add family debts
+  if (debts.value.family_debts) {
+    allDebts.push(...debts.value.family_debts);
+  }
+  
+  return allDebts;
 });
 
 const personalFunds = computed(() => {
@@ -308,6 +325,45 @@ function formatAllocation(rule) {
   return `${amount} of ${base}`;
 }
 
+function getDebtLabel(debt) {
+  if (!debt) return 'Unknown Debt';
+  
+  // If has description, use it
+  if (debt.description) {
+    return debt.description;
+  }
+  
+  // Build a label from available info
+  if (debt.is_family_debt) {
+    // Try creditor name first (who is owed to)
+    if (debt.creditor?.name) {
+      return `👥 ${debt.creditor.name}`;
+    }
+    // Fallback to creditor_name if creditor relationship not loaded
+    if (debt.creditor_name) {
+      return `👥 ${debt.creditor_name}`;
+    }
+    // Last resort: debtor name
+    const name = debt.debtor?.name || 'Unknown';
+    return `👥 ${name}`;
+  }
+  
+  // Personal debts - try creditor first, then creditor_name
+  if (debt.creditor?.name) {
+    return debt.creditor.name;
+  }
+  
+  if (debt.creditor_name) {
+    return debt.creditor_name;
+  }
+  
+  if (debt.debtor?.name) {
+    return debt.debtor.name;
+  }
+  
+  return `Debt #${debt.id}`;
+}
+
 function getDestinationLabel(rule) {
   if (rule.destination_type === 'fund') {
     const fund = funds.value.find(f => f.id === rule.destination_id);
@@ -315,7 +371,7 @@ function getDestinationLabel(rule) {
   }
   if (rule.destination_type === 'debt') {
     const debt = userDebts.value.find(d => d.id === rule.destination_id);
-    return `→ Debt: ${debt?.description || `#${rule.destination_id}`}`;
+    return `→ Debt: ${getDebtLabel(debt) || `#${rule.destination_id}`}`;
   }
   return `→ Save as: ${rule.destination_title}`;
 }
