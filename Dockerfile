@@ -52,6 +52,6 @@ COPY --from=node-build /app/public/build ./public/build
 # Laravel bootstrap
 RUN php artisan storage:link --no-interaction || true
 
-EXPOSE 80 443
+EXPOSE 8080
 
-CMD ["frankenphp", "run", "--config", "/etc/caddy/Caddyfile"]
+CMD ["frankenphp", "run", "--config", "/app/Caddyfile"]

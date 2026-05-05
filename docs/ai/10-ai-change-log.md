@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-05 — Railway 502 fix: explicit FrankenPHP Caddy config
+
+- Files touched: `Caddyfile`, `Dockerfile`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Added project-level Caddy config for FrankenPHP to bind to Railway port (`:{$PORT:8080}`) and serve Laravel from `/app/public`. Docker runtime now uses `/app/Caddyfile` and exposes `8080`, aligning container HTTP behavior with Railway ingress to prevent 502 responses.
+
 ## 2026-05-05 — PHPUnit DB config now environment-driven
 
 - Files touched: `phpunit.xml`, `docs/ai/01-architecture.md`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`

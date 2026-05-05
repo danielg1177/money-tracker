@@ -64,6 +64,7 @@ money-tracker/
 │   ├── Feature/               # CloseoutRulesApiTest, ExampleTest, FundAllocationTest, FundIndexTest, MonthCloseoutTransactionDateTest, SplitDebtSummaryTest, TransactionTest
 │   └── Unit/                  # ExampleTest stub
 ├── config/                    # Standard Laravel config files + fortify.php
+├── Caddyfile                  # FrankenPHP/Caddy runtime config (binds to `$PORT`, serves `/app/public`)
 ├── docs/ai/                   # This documentation folder
 ├── AGENTS.md / CLAUDE.md      # AI agent rules (identical content)
 └── vite.config.js             # Vite + laravel-vite-plugin + tailwindcss + vue

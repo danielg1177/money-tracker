@@ -96,6 +96,7 @@ routes/web.php
 - `npm run dev` / `npm run build` — Vite compiles `resources/js/app.js` + `resources/css/app.css` to `public/build/`
 - `composer run dev` — concurrently runs `php artisan serve`, `npm run dev`, and `php artisan pail`
 - Tailwind v4 has no config file; it's wired entirely via `@tailwindcss/vite` plugin and `@import 'tailwindcss'` in `app.css`
+- Container deploys use FrankenPHP with repo `Caddyfile`, binding to `:{$PORT:8080}` and serving Laravel from `/app/public`
 
 ## Testing environment
 
