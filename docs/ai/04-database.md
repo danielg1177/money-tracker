@@ -188,4 +188,4 @@ No `FundMovementFactory` or `TransactionSplitFactory` exist.
 
 ## Seeder
 
-`database/seeders/DatabaseSeeder.php` is empty (no seed data defined).
+`database/seeders/DatabaseSeeder.php` creates one default family (`Household`) and one admin user (`admin@example.com`) without factories/fake data.

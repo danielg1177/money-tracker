@@ -43,7 +43,7 @@ money-tracker/
 ├── database/
 │   ├── factories/             # 7 factories
 │   ├── migrations/            # 25 migrations (initial set 2026-04-30; ongoing additions 2026-05-03/04)
-│   └── seeders/               # DatabaseSeeder (empty)
+│   └── seeders/               # DatabaseSeeder (creates one admin user + family, no factories)
 ├── resources/
 │   ├── css/app.css            # Tailwind v4 entry
 │   ├── js/                    # Vue SPA source

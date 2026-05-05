@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-05 — Seeder now creates one admin user + family without factories
+
+- Files touched: `database/seeders/DatabaseSeeder.php`, `docs/ai/00-repo-overview.md`, `docs/ai/04-database.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Removed factory/fake-based seeding from `DatabaseSeeder` and replaced it with deterministic records (`Household` family and `admin@example.com` user). Seeder is now compatible with production deployments that install Composer dependencies with `--no-dev`.
+
 ## 2026-05-05 — Railway 502 fix: explicit FrankenPHP Caddy config
 
 - Files touched: `Caddyfile`, `Dockerfile`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/10-ai-change-log.md`
