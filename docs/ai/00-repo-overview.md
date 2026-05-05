@@ -34,15 +34,15 @@ money-tracker/
 ├── app/
 │   ├── Actions/Fortify/       # Fortify action overrides (user creation, password update)
 │   ├── Http/
-│   │   ├── Controllers/       # 5 resource controllers + base Controller
+│   │   ├── Controllers/       # 8 controllers (Admin, Category, Dashboard, Debt, Fund, MonthCloseout, MonthSummary, Transaction) + base Controller
 │   │   └── Requests/          # 8 Form Request classes (several partially unused)
-│   ├── Models/                # 9 Eloquent models
+│   ├── Models/                # 12 Eloquent models
 │   ├── Policies/              # FundPolicy, DebtPolicy
 │   ├── Providers/             # AppServiceProvider (Gates), FortifyServiceProvider
-│   └── Services/              # DebtService, FundService, SplitCalculator, TransactionService
+│   └── Services/              # DebtService, FundService, MonthCloseoutService, SplitCalculator, TransactionService
 ├── database/
 │   ├── factories/             # 7 factories
-│   ├── migrations/            # 14 migrations (all dated 2026-04-30)
+│   ├── migrations/            # 25 migrations (initial set 2026-04-30; ongoing additions 2026-05-03/04)
 │   └── seeders/               # DatabaseSeeder (empty)
 ├── resources/
 │   ├── css/app.css            # Tailwind v4 entry
@@ -51,9 +51,9 @@ money-tracker/
 │   │   ├── AppShell.vue       # Root layout (nav wrapper)
 │   │   ├── components/        # AppNav, TransactionForm, SplitEditor, IconPicker, App.vue (legacy)
 │   │   ├── composables/       # useApi.js, useAuth.js
-│   │   ├── pages/             # 7 user pages + 3 admin pages
+│   │   ├── pages/             # 9 user pages + 3 admin pages
 │   │   ├── router/index.js    # Vue Router config + beforeEach guards
-│   │   └── support/authUser.js # normalizeAuthUser helper
+│   │   └── support/           # authUser.js (normalizeAuthUser), debtPaymentLabel.js (debt label helper)
 │   └── views/
 │       ├── app.blade.php      # SPA shell (single <div id="app">)
 │       └── welcome.blade.php  # Default Laravel welcome (not used in app flow)
@@ -61,7 +61,7 @@ money-tracker/
 │   ├── web.php                # All application routes (SPA views + JSON endpoints)
 │   └── console.php            # Artisan `inspire` command only
 ├── tests/
-│   ├── Feature/               # ExampleTest, FundAllocationTest, TransactionTest
+│   ├── Feature/               # CloseoutRulesApiTest, ExampleTest, FundAllocationTest, FundIndexTest, MonthCloseoutTransactionDateTest, SplitDebtSummaryTest, TransactionTest
 │   └── Unit/                  # ExampleTest stub
 ├── config/                    # Standard Laravel config files + fortify.php
 ├── docs/ai/                   # This documentation folder

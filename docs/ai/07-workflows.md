@@ -45,12 +45,20 @@ Detailed step-by-step flows for the most complex operations in the app.
 2. User clicks "Pay" and enters an amount
 3. Vue submits `POST /debts/pay` with:
    ```json
-   { "debt_id": 5, "amount": 50.00, "description": "Partial payment" }
+   {
+     "debt_id": 5,
+     "amount": 50.00,
+     "description": "Partial payment",
+     "split_with_user_id": null,
+     "split_percentage": null
+   }
    ```
+   Optional split fields allow the payer to split the payment expense with another family member (creates a pending `Debt` for the split portion).
 4. `PayDebtRequest` validates
 5. `DebtController::payDebt` loads the debt, calls `DebtService::payDebt`
 6. `DebtService::payDebt` validates:
-   - Payer is the debtor
+   - For family debts (`is_family_debt=true`): payer must be a family member
+   - For personal debts: payer must be the debtor
    - Amount > 0
    - Amount ≤ debt balance
 7. `DB::transaction` begins:
@@ -58,6 +66,7 @@ Detailed step-by-step flows for the most complex operations in the app.
       - Sets `debt_id` to the debt being paid
       - Sets `paid_by_user_id` to the payer
       - Sets `is_closeout_initiated=false` (manual payment)
+      - If split: sets `is_split=true`, `split_data`, and creates `TransactionSplit` rows plus a pending `Debt` for the split participant
    b. If `creditor_id` is not null: creates an `income` transaction for the creditor (also `is_debt_payment=true`)
       - Sets `debt_id` to the same debt
       - Sets `paid_by_user_id` to the payer

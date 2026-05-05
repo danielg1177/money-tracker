@@ -179,6 +179,25 @@ This document maps each user-visible feature to the backend and frontend files t
 
 ---
 
+## 14. Month Summary
+
+**What it does:** Read-only financial overview for a specific past or current month. Shows close status, spending by category, family member split balances, and a projected dry-run of the user's closeout rules. Accessible from the Dashboard (and any deep link).
+
+| Layer | Files |
+|---|---|
+| Backend | `GET /month-summary?year=&month=` → `MonthSummaryController::show` |
+| Service | `app/Services/MonthCloseoutService` (read-only `isHardClosed`, `getMonthStatus`) |
+| Models | `Transaction`, `TransactionSplit`, `FundRule`, `Debt`, `Fund` (all read-only) |
+| Frontend | `resources/js/pages/MonthSummary.vue` (route: `/month-summary/:yearMonth`) |
+
+**Response shape:** `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview}`
+
+- `category_totals`: family transactions grouped by category (expenses then income, sorted by total descending), excluding debt payments
+- `member_balances`: net amount owed between the auth user and each other family member from split expenses; only shown when non-zero balances exist
+- `rule_preview`: `{basis: {gross_income, total_expenses, remaining_after_expenses}, rules: [...]}` — dry-run projection; no writes occur
+
+---
+
 ## 13. Fund rules and closeout allocation
 
 **What it does:** Users define `FundRule` rows (percentage/fixed, gross vs remaining, destination fund/debt/title) on the **Closeout Rules** page (`GET`/`POST`/`PUT`/`DELETE /closeout-rules`). Those rules are applied when a month is **hard-closed** (`MonthCloseoutService`), not when each income transaction is posted.

@@ -20,6 +20,8 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | GET | `/categories` | `view('app')` (SPA shell — JSON requires auth) |
 | GET | `/admin/categories` | `view('app')` (SPA shell — no JSON endpoint exists) |
 | GET | `/my-family` | `view('app')` (SPA shell — JSON requires auth + `manage_family`) |
+| GET | `/debts` | `view('app')` (SPA shell — JSON requires auth) |
+| GET | `/month-summary/{yearMonth}` | `view('app')` (SPA shell — JSON requires auth) |
 
 ---
 
@@ -79,21 +81,22 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | GET | `/debts` | `DebtController::index` | Returns `{owed: [...], owing: [...], family_debts: [...]}` |
 | GET | `/split-debt-summary` | `DebtController::splitDebtSummary` | Query: `year`, `month` (1–12). JSON: pending closeout split debts grouped by counterpart; each nested `transaction` includes `category` and, when applicable, `debt` with `creditor`, `debtor`, `fund` for debt-payment rows |
 | POST | `/debts` | `DebtController::store` | `{is_family_debt?, is_interfamily?, creditor_id?, creditor_name?, amount, description?}` |
-| POST | `/debts/pay` | `DebtController::payDebt` | `{debt_id, amount, description?}` |
-| GET | `/debts/{debt}/payments` | `DebtController::paymentHistory` | Debtor, creditor, or `can_manage_family`; JSON array of payment rows. For debts with a member `creditor_id`, omits mirror **income** rows when a matching **expense** exists (same `debt_id`, date, amount, `paid_by_user_id`, `created_at`) so one UI line per pay action |
+| PUT | `/debts/{debt}` | `DebtController::update` | Updates debt fields |
+| POST | `/debts/pay` | `DebtController::payDebt` | `{debt_id, amount, description?, split_with_user_id?, split_percentage?}` |
+| GET | `/debts/{debt}/payments` | `DebtController::paymentHistory` | Debtor, creditor, or `can_manage_family`; JSON array of payment rows (creditor sees income rows, others see expense rows) |
 | DELETE | `/debts/{debt}` | `DebtController::destroy` | Only debtor or `can_manage_family` user can delete |
 | POST | `/debts/{debt}/repay-fund` | `FundController::repayFund` | `{amount}`; only for fund debts |
 
 
 ### Month Closeout
 
-|| Method | Path | Controller | Notes |
-||---|---|---|---|
-|| GET | `/closeout/status` | `MonthCloseoutController::status` | Query: `year`, `month` (1–12). JSON: `{soft_closes, hard_close, all_soft_closed, family_user_count}` |
-|| POST | `/closeout/soft-close` | `MonthCloseoutController::softClose` | `{year, month}`; auto-hard-closes if family has only one member; returns `{message, data (soft_close), hard_close?, auto_hard_closed?}` |
-|| POST | `/closeout/undo-soft-close` | `MonthCloseoutController::undoSoftClose` | `{year, month}`; undoes soft close (must have no hard close) |
-|| POST | `/closeout/hard-close` | `MonthCloseoutController::hardClose` | `{year, month}`; requires `can_manage_family`; processes all members' closeout rules |
-|| GET | `/closeout/closed-months` | `MonthCloseoutController::closedMonths` | JSON: array of hard-closed months for family as `{year, month}` |
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| POST | `/closeout/status` | `MonthCloseoutController::status` | Body: `{year, month}`; JSON: `{soft_closes, hard_close, all_soft_closed, family_user_count}` |
+| POST | `/closeout/soft-close` | `MonthCloseoutController::softClose` | `{year, month}`; auto-hard-closes if family has only one member; returns `{message, data (soft_close), hard_close?, auto_hard_closed?}` |
+| POST | `/closeout/undo-soft-close` | `MonthCloseoutController::undoSoftClose` | `{year, month}`; undoes soft close (must have no hard close) |
+| POST | `/closeout/hard-close` | `MonthCloseoutController::hardClose` | `{year, month}`; requires `can_manage_family`; processes all members' closeout rules |
+| GET | `/closeout/closed-months` | `MonthCloseoutController::closedMonths` | JSON: array of hard-closed months for family as `{year, month}` |
 
 ### Family members
 
@@ -115,6 +118,12 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | Method | Path | Controller | Notes |
 |---|---|---|---|
 | GET | `/dashboard/monthly-totals` | `DashboardController::monthlyTotals` | Returns `{total_income, total_expenses}` for current month, auth user only |
+
+### Month Summary
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/month-summary` | `MonthSummaryController::show` | Query: `year`, `month`. Returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview}`; requires `family_id` (403 if unset). All read-only. |
 
 ---
 
@@ -178,9 +187,12 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 {
   "debt_id": 5,
   "amount": 50.00,
-  "description": "optional"
+  "description": "optional",
+  "split_with_user_id": null,
+  "split_percentage": null
 }
 ```
+`split_with_user_id` and `split_percentage` are optional. When provided, the payer's expense transaction is split with the specified family member (creates a pending `Debt` for their share).
 
 ---
 

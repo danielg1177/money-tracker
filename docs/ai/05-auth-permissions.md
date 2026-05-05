@@ -34,9 +34,10 @@ Roles are stored as a plain `varchar` column on `users.role`. Valid values:
 
 | Role | String value | Description |
 |---|---|---|
-| Admin | `admin` | Full system access; manages all users and families |
 | Head of Household | `head_of_household` | Can manage their own family; can add/remove members |
 | Member | `member` | Regular user; can use all financial features |
+
+**Note:** There is no longer an `admin` role string. System-admin access is granted via the separate `is_admin` boolean column on `users`. A user can be `role = 'member'` with `is_admin = true` (system admin) and still not be a head of household. Existing `admin` role rows were migrated to `head_of_household` + `is_admin = true`.
 
 ## Computed user attributes (appended to JSON)
 
@@ -44,9 +45,9 @@ These are computed in `User.php` and serialized with every user response:
 
 | JSON key | Logic |
 |---|---|
-| `is_admin` | `role === 'admin'` |
+| `is_admin` | reads the `is_admin` boolean DB column directly |
 | `is_head_of_household` | `role === 'head_of_household'` |
-| `can_manage_family` | `role === 'admin' OR role === 'head_of_household'` |
+| `can_manage_family` | `is_admin === true OR role === 'head_of_household'` |
 
 The frontend normalizes these into `isAdmin` via `normalizeAuthUser()`.
 
@@ -54,9 +55,9 @@ The frontend normalizes these into `isAdmin` via `normalizeAuthUser()`.
 
 | Gate name | Passes when |
 |---|---|
-| `admin` | `user->isAdmin` (i.e. `role === 'admin'`) |
-| `head_of_household` | `user->is_head_of_household` |
-| `manage_family` | `role` is `admin` or `head_of_household` |
+| `admin` | `user->is_admin` (boolean column) |
+| `head_of_household` | `user->is_head_of_household` (i.e. `role === 'head_of_household'`) |
+| `manage_family` | `user->is_admin === true OR role === 'head_of_household'` |
 
 ## Route middleware
 

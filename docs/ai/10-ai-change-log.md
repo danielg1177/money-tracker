@@ -11,6 +11,19 @@ Format:
 
 ---
 
+## 2026-05-04 — Documentation audit and update
+
+- Files touched: `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/05-auth-permissions.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Documentation-only. No code changes. Key corrections:
+  - **00**: Controller count updated (8 + base), model count (12), page count (9 user + 3 admin), added `MonthCloseoutService` to services list, migration count corrected (25), added `debtPaymentLabel.js` and all feature-test files to structure listing.
+  - **02**: Added `debt_id`, `paid_by_user_id`, `is_closeout_initiated` to Transaction model fields; added `paidByUser` and `debt` relationships; added `contributions` to Debt model; added `DashboardController`, `MonthCloseoutController`, and `MonthSummaryController` sections.
+  - **03**: Added `/closeout-rules` route to the router table; added `debtPaymentLabel.js` to Support utilities section.
+  - **04**: Added `is_admin` column to `users` table; corrected `role` values (no more `admin`); added `destination_type`, `destination_id`, `destination_title` to `fund_rules`; added `debt_id`, `paid_by_user_id`, `is_closeout_initiated` to `transactions`; added `contributions` to `debts`; added 5 missing migrations.
+  - **05**: Removed `admin` role from roles table; updated `is_admin` computed attribute to reflect boolean column (not `role === 'admin'`); corrected Gates table annotation.
+  - **06**: Added feature 14 (Month Summary page + `GET /month-summary` endpoint).
+  - **07**: Updated Workflow 2 to document optional split payment fields in `PayDebtRequest`.
+  - **08**: Fixed `POST /closeout/status` (was incorrectly documented as `GET`); added `/debts` and `/month-summary/{yearMonth}` to public SPA shell routes; added `PUT /debts/{debt}`; added `GET /month-summary` endpoint section; updated `PayDebtRequest` body with `split_with_user_id` and `split_percentage` fields; fixed Month Closeout table formatting.
+
 ## 2026-05-04 — Fund movement history: show who made each change
 
 - Files touched: `app/Http/Controllers/FundController.php`, `resources/js/pages/Funds.vue`, `tests/Feature/FundIndexTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

@@ -40,6 +40,7 @@ History mode (`createWebHistory`). Route definitions:
 | `/dashboard` | `Dashboard.vue` | `requiresAuth` |
 | `/transactions` | `Transactions.vue` | `requiresAuth` |
 | `/funds` | `Funds.vue` | `requiresAuth` |
+| `/closeout-rules` | `CloseoutRules.vue` | `requiresAuth` |
 | `/debts` | `Debts.vue` | `requiresAuth` |
 | `/categories` | `Categories.vue` | `requiresAuth` |
 | `/my-family` | `MyFamily.vue` | `requiresAuth` |
@@ -78,6 +79,14 @@ Normalizes the user object from either `/user` response or localStorage. Ensures
 ```js
 isAdmin: Boolean(raw.isAdmin ?? raw.is_admin ?? raw.role === 'admin')
 ```
+
+### `debtPaymentLabel` (`resources/js/support/debtPaymentLabel.js`)
+Shared helper that builds the display label for a debt-related transaction row. Used by `Transactions.vue` and `Dashboard.vue`.
+
+`debtPaymentCategoryLine(transaction)` returns a string like `"Debt Payment: Alice"` or plain `"Debt Payment"`:
+1. If `transaction.debt` is present, resolves the counterparty name (external `creditor_name`, member creditor/debtor, or fund name).
+2. Falls back to parsing a `"Debt Payment: …"` prefix from `transaction.description`.
+3. Final fallback: `"Debt Payment"` with no counterparty.
 
 ## Pages
 

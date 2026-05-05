@@ -27,9 +27,12 @@
 - Relations: `belongsTo(Family)`, `hasMany(Transaction)`
 
 ### Transaction (`app/Models/Transaction.php`)
-- Fields: `family_id`, `user_id`, `category_id` (nullable), `type` (`income`|`expense`), `amount` (decimal:2), `description`, `transaction_date` (date), `is_split` (bool), `split_data` (JSON array), `fund_id` (nullable), `is_borrow` (bool), `is_debt_payment` (bool)
+- Fields: `family_id`, `user_id`, `category_id` (nullable), `type` (`income`|`expense`), `amount` (decimal:2), `description`, `transaction_date` (date), `is_split` (bool), `split_data` (JSON array), `fund_id` (nullable), `is_borrow` (bool), `is_debt_payment` (bool), `debt_id` (nullable FK → debts), `paid_by_user_id` (nullable FK → users), `is_closeout_initiated` (bool)
 - `split_data` is a snapshot of split percentages stored on the transaction itself
-- Relations: `belongsTo(Family)`, `belongsTo(User)`, `belongsTo(Category)`, `belongsTo(Fund)`, `hasMany(TransactionSplit)`, `hasMany(Debt)`
+- `debt_id` links a payment transaction to the debt it settles
+- `paid_by_user_id` tracks which user initiated the payment (may differ from `user_id` for creditor income rows)
+- `is_closeout_initiated` distinguishes manual payments (`false`) from closeout-rule-triggered payments (`true`)
+- Relations: `belongsTo(Family)`, `belongsTo(User)`, `belongsTo(User, 'paid_by_user_id')` as `paidByUser`, `belongsTo(Category)`, `belongsTo(Fund)`, `belongsTo(Debt)` via `debt_id`, `hasMany(TransactionSplit)` as `splits`, `hasMany(Debt)` (split-linked debts)
 
 ### TransactionSplit (`app/Models/TransactionSplit.php`)
 - Fields: `transaction_id`, `user_id`, `share_percentage` (decimal:2), `amount` (decimal:2)
@@ -52,11 +55,12 @@
 - Audit ledger for every fund balance change
 
 ### Debt (`app/Models/Debt.php`)
-- Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable FK → transactions, `cascadeOnDelete` for split-linked rows), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `creditor_name` (nullable string for external creditors)
+- Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable FK → transactions, `cascadeOnDelete` for split-linked rows), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `creditor_name` (nullable string for external creditors), `contributions` (JSON array nullable)
 - `creditor_id` is null when the debt is to a fund (borrow scenario) or to an external party
 - `creditor_name` stores plain text creditor names (e.g., "Bank of America") when `creditor_id` is null and `is_family_debt=false`
 - `is_family_debt` controls visibility: false = personal debt (debtor + creditor only); true = visible to all family members
 - `balance` decrements as payments are made; a debt with `balance = 0` is fully paid
+- `contributions` records closeout contributions as `[{month, year, amount}]` tuples, used by the debt history modal to show "Closeout Additions" separate from manual payments
 - Relations: `belongsTo(Family)`, `belongsTo(User, 'debtor_id')`, `belongsTo(User, 'creditor_id')`, `belongsTo(Fund)`, `belongsTo(Transaction)`
 
 ## Controllers
@@ -111,6 +115,22 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `addFamilyMember(Request, Family)` — sets `family_id` on target user
 - `removeFamilyMember(Family, User)` — nullifies `family_id` on target user
 - `myFamily()` — returns auth user's family with `users` and `categories`
+
+### DashboardController
+- `monthlyTotals()` — returns `{total_income, total_expenses}` for the current calendar month for the auth user; excludes `is_debt_payment=true` transactions; returns zeros if user has no `family_id`
+
+### MonthCloseoutController
+- `status(Request)` — `POST /closeout/status`; accepts `{year, month}`; returns `{soft_closes, hard_close, all_soft_closed, family_user_count}` via `MonthCloseoutService::getMonthStatus`
+- `softClose(Request)` — `POST /closeout/soft-close`; creates a `MonthSoftClose` record; auto-triggers `hardClose` for single-member families; returns `{message, data, hard_close?, auto_hard_closed?}`
+- `undoSoftClose(Request)` — `POST /closeout/undo-soft-close`; removes the user's soft-close record (only if no hard close exists)
+- `hardClose(Request)` — `POST /closeout/hard-close`; requires `can:manage_family`; runs `MonthCloseoutService::hardClose` (processes all members' closeout rules, consolidates split debts, creates `MonthHardClose`)
+- `closedMonths(Request)` — `GET /closeout/closed-months`; returns array of `{year, month}` hard-closed months for the auth user's family
+
+### MonthSummaryController
+- `show(Request)` — `GET /month-summary?year=&month=`; read-only overview for a specific month; requires family membership; returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview}`
+  - `category_totals`: family transactions grouped by category (expense/income, excluding debt payments), sorted expenses first then by total descending
+  - `member_balances`: net amounts owed between the auth user and each other family member from split expenses, showing direction (`they_owe_you` / `you_owe_them`)
+  - `rule_preview`: dry-run of the auth user's active closeout rules with projected allocation amounts; includes `basis` (gross income, total expenses, remaining)
 
 ## Services
 
