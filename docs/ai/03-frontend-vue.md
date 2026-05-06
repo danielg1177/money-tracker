@@ -176,7 +176,7 @@ Bottom navigation bar with 4 primary nav links (Dashboard, Transactions, Funds, 
 `AppNav` also listens for `categories-changed` and reloads those form dependencies, keeping the FAB category dropdown in sync right after category CRUD.
 
 ### `IconPicker.vue` (`resources/js/components/IconPicker.vue`)
-Simple emoji/icon selector used within `Categories.vue`. Includes dog (`🐶`) and family (`👨‍👩‍👧‍👦`) emoji options in the picker list.
+Simple emoji/icon selector used within `Categories.vue`. Includes dog (`🐶`), family (`👨‍👩‍👧‍👦`), and heart (`❤️`) emoji options in the picker list.
 
 ### `App.vue` (`resources/js/components/App.vue`) — LEGACY
 This file exists but is **not imported or used anywhere**. It appears to be an older monolithic SPA component from before the router-based architecture was introduced. It contains references to `/admin/categories/{family_id}` GET routes that don't exist. **Do not modify or rely on this file.**

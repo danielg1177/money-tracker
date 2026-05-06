@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-06 — Add heart icon option to category icon picker
+
+- Files touched: `resources/js/components/IconPicker.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Category icon picker now includes a heart emoji (`❤️`) option under the Other icon group.
+
 ## 2026-05-06 — Add family icon option to category icon picker
 
 - Files touched: `resources/js/components/IconPicker.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
