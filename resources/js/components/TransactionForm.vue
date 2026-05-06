@@ -114,6 +114,125 @@
       />
     </div>
 
+    <!-- Income debt association -->
+    <div v-if="form.type === 'income'" class="space-y-3 rounded-lg border border-gray-700 bg-gray-800/50 p-3">
+      <div>
+        <p class="text-sm font-medium text-gray-300">Is this income from taking debt?</p>
+        <p class="mt-0.5 text-xs text-gray-500">Keep as regular income while optionally creating or adding debt</p>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          @click="form.income_debt_mode = 'none'"
+          :class="[
+            'rounded-lg px-2 py-2 text-xs font-medium transition-colors',
+            form.income_debt_mode === 'none' ? 'bg-gray-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          ]"
+        >
+          No
+        </button>
+        <button
+          type="button"
+          @click="form.income_debt_mode = 'existing'"
+          :class="[
+            'rounded-lg px-2 py-2 text-xs font-medium transition-colors',
+            form.income_debt_mode === 'existing' ? 'bg-sky-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          ]"
+        >
+          Existing
+        </button>
+        <button
+          type="button"
+          @click="form.income_debt_mode = 'new'"
+          :class="[
+            'rounded-lg px-2 py-2 text-xs font-medium transition-colors',
+            form.income_debt_mode === 'new' ? 'bg-emerald-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          ]"
+        >
+          New Debt
+        </button>
+      </div>
+
+      <div v-if="form.income_debt_mode === 'existing'" class="space-y-1">
+        <label for="income-existing-debt" class="block text-xs font-medium text-gray-400">Attach to debt</label>
+        <select
+          id="income-existing-debt"
+          v-model.number="form.income_existing_debt_id"
+          :disabled="submitLoading || isDebtPaymentEditBlocked"
+          class="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white focus:border-sky-500 focus:outline-none"
+        >
+          <option :value="null" disabled>Select a debt</option>
+          <option v-for="d in incomeAttachableDebts" :key="d.id" :value="d.id">
+            {{ incomeDebtSelectLabel(d) }} — now {{ formatCurrency(Number(d.balance) || 0) }}
+          </option>
+        </select>
+      </div>
+
+      <div v-if="form.income_debt_mode === 'new'" class="space-y-3">
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            @click="form.income_new_is_interfamily = false"
+            :class="[
+              'rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+              form.income_new_is_interfamily ? 'bg-gray-700 text-gray-300' : 'bg-blue-600 text-white'
+            ]"
+          >
+            External
+          </button>
+          <button
+            type="button"
+            @click="form.income_new_is_interfamily = true"
+            :class="[
+              'rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+              form.income_new_is_interfamily ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'
+            ]"
+          >
+            Family Member
+          </button>
+        </div>
+
+        <div v-if="form.income_new_is_interfamily">
+          <label class="mb-1 block text-xs font-medium text-gray-400">Family creditor</label>
+          <select
+            v-model.number="form.income_new_creditor_id"
+            class="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white focus:border-blue-500 focus:outline-none"
+          >
+            <option :value="null" disabled>Select a family member</option>
+            <option v-for="member in familyUsers" :key="member.id" :value="member.id">
+              {{ member.name }}
+            </option>
+          </select>
+        </div>
+
+        <div v-else>
+          <label class="mb-1 block text-xs font-medium text-gray-400">Creditor name</label>
+          <input
+            v-model="form.income_new_creditor_name"
+            type="text"
+            placeholder="e.g., Bank of America"
+            class="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+
+        <label class="flex items-center gap-2 text-xs text-gray-300">
+          <input v-model="form.income_new_is_family_debt" type="checkbox" class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600" />
+          Visible to all family members
+        </label>
+
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-400">Debt description (optional)</label>
+          <input
+            v-model="form.income_new_description"
+            type="text"
+            placeholder="Defaults to transaction description"
+            class="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+      </div>
+    </div>
+
     <!-- Pay toward debt (expense only) -->
     <div v-if="form.type === 'expense'" class="space-y-2">
       <div
@@ -300,6 +419,13 @@ const form = ref({
   split_data: [],
   advance_fund_id: null,
   debt_id: null,
+  income_debt_mode: 'none',
+  income_existing_debt_id: null,
+  income_new_is_family_debt: false,
+  income_new_is_interfamily: false,
+  income_new_creditor_id: null,
+  income_new_creditor_name: '',
+  income_new_description: '',
 });
 
 const payableDebts = computed(() => {
@@ -308,6 +434,11 @@ const payableDebts = computed(() => {
     ...(props.debtsPayload?.family_debts || []),
   ];
   return list.filter((d) => !d.is_pending_closeout && Number(d.balance) > 0);
+});
+
+const incomeAttachableDebts = computed(() => {
+  const list = props.debtsPayload?.owed || [];
+  return list.filter((d) => !d.is_pending_closeout && Number(d.balance) >= 0);
 });
 
 const filteredCategories = computed(() => {
@@ -353,6 +484,19 @@ function debtSelectLabel(d) {
   return `Debt #${d.id}`;
 }
 
+function incomeDebtSelectLabel(d) {
+  if (d.creditor?.name) {
+    return `Owed to ${d.creditor.name}`;
+  }
+  if (d.creditor_name) {
+    return `Owed to ${d.creditor_name}`;
+  }
+  if (d.description) {
+    return d.description;
+  }
+  return `Debt #${d.id}`;
+}
+
 function togglePayTowardDebt() {
   payTowardDebt.value = !payTowardDebt.value;
 }
@@ -388,6 +532,13 @@ watch(
         split_data: normalizeSplits(newTransaction.split_data || []),
         advance_fund_id: newTransaction.advance_fund_id ?? null,
         debt_id: newTransaction.debt_id ?? null,
+        income_debt_mode: newTransaction.type === 'income' && newTransaction.debt_id ? 'existing' : 'none',
+        income_existing_debt_id: newTransaction.type === 'income' ? (newTransaction.debt_id ?? null) : null,
+        income_new_is_family_debt: false,
+        income_new_is_interfamily: false,
+        income_new_creditor_id: null,
+        income_new_creditor_name: '',
+        income_new_description: '',
       };
     } else {
       resetForm();
@@ -423,6 +574,38 @@ watch(() => form.value.type, (newType) => {
     form.value.split_data = [];
     payTowardDebt.value = false;
     form.value.debt_id = null;
+    return;
+  }
+
+  form.value.income_debt_mode = 'none';
+  form.value.income_existing_debt_id = null;
+  form.value.income_new_is_family_debt = false;
+  form.value.income_new_is_interfamily = false;
+  form.value.income_new_creditor_id = null;
+  form.value.income_new_creditor_name = '';
+  form.value.income_new_description = '';
+});
+
+watch(() => form.value.income_debt_mode, (mode) => {
+  if (mode === 'existing') {
+    form.value.income_new_is_family_debt = false;
+    form.value.income_new_is_interfamily = false;
+    form.value.income_new_creditor_id = null;
+    form.value.income_new_creditor_name = '';
+    form.value.income_new_description = '';
+    if (incomeAttachableDebts.value.length === 1) {
+      form.value.income_existing_debt_id = incomeAttachableDebts.value[0].id;
+    }
+    return;
+  }
+
+  form.value.income_existing_debt_id = null;
+  if (mode !== 'new') {
+    form.value.income_new_is_family_debt = false;
+    form.value.income_new_is_interfamily = false;
+    form.value.income_new_creditor_id = null;
+    form.value.income_new_creditor_name = '';
+    form.value.income_new_description = '';
   }
 });
 
@@ -451,6 +634,13 @@ function resetForm() {
     split_data: [],
     advance_fund_id: null,
     debt_id: null,
+    income_debt_mode: 'none',
+    income_existing_debt_id: null,
+    income_new_is_family_debt: false,
+    income_new_is_interfamily: false,
+    income_new_creditor_id: null,
+    income_new_creditor_name: '',
+    income_new_description: '',
   };
   formError.value = null;
 }
@@ -493,6 +683,24 @@ async function handleSubmit() {
     }
   }
 
+  if (form.value.type === 'income') {
+    if (form.value.income_debt_mode === 'existing' && !form.value.income_existing_debt_id) {
+      formError.value = 'Select which existing debt this income belongs to';
+      return;
+    }
+
+    if (form.value.income_debt_mode === 'new') {
+      if (form.value.income_new_is_interfamily && !form.value.income_new_creditor_id) {
+        formError.value = 'Select which family member is the creditor';
+        return;
+      }
+      if (!form.value.income_new_is_interfamily && !form.value.income_new_creditor_name?.trim()) {
+        formError.value = 'Enter the creditor name for the new debt';
+        return;
+      }
+    }
+  }
+
   try {
     const payload = {
       type: form.value.type,
@@ -508,6 +716,29 @@ async function handleSubmit() {
         : {}),
       ...(form.value.type === 'expense' && payTowardDebt.value && form.value.debt_id
         ? { debt_id: form.value.debt_id }
+        : {}),
+      ...(form.value.type === 'income'
+        ? {
+            income_debt_mode: form.value.income_debt_mode,
+            income_existing_debt_id:
+              form.value.income_debt_mode === 'existing' ? form.value.income_existing_debt_id : null,
+            income_new_is_family_debt:
+              form.value.income_debt_mode === 'new' ? Boolean(form.value.income_new_is_family_debt) : false,
+            income_new_is_interfamily:
+              form.value.income_debt_mode === 'new' ? Boolean(form.value.income_new_is_interfamily) : false,
+            income_new_creditor_id:
+              form.value.income_debt_mode === 'new' && form.value.income_new_is_interfamily
+                ? form.value.income_new_creditor_id
+                : null,
+            income_new_creditor_name:
+              form.value.income_debt_mode === 'new' && !form.value.income_new_is_interfamily
+                ? form.value.income_new_creditor_name
+                : null,
+            income_new_description:
+              form.value.income_debt_mode === 'new' && form.value.income_new_description?.trim()
+                ? form.value.income_new_description
+                : null,
+          }
         : {}),
     };
 

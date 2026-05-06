@@ -152,8 +152,12 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 ## Services
 
 ### TransactionService (`app/Services/TransactionService.php`)
-- `createTransaction(array, User): Transaction` — wraps everything in `DB::transaction`; for `type=income`, forces `is_split=false`, clears `split_data` and `advance_fund_id`; for **expense + `debt_id`**, runs `createDebtRepaymentExpense()` (categorized payer expense, mirrored creditor income when applicable, decrement balance, `mirror_transaction_id` linkage) instead of ordinary split plumbing; validates split percentages when splits are present; creates splits + debts only for ordinary expense splits; does **not** call `FundService::processIncome`
-- `updateTransaction(Transaction, array): Transaction` — **rejects rows with `is_debt_payment` set** (`InvalidArgumentException` → 422); otherwise deletes existing splits and debts, recreates them
+- `createTransaction(array, User): Transaction` — wraps everything in `DB::transaction`; for `type=income`, forces `is_split=false`, clears `split_data` and `advance_fund_id`, and optionally links debt via `income_debt_mode`:
+  - `none`: regular income
+  - `existing`: increments selected debt `amount` + `balance` by the income amount and links `transactions.debt_id`
+  - `new`: creates a new debt from the same amount (external or interfamily) and links `transactions.debt_id`
+  For **expense + `debt_id`**, runs `createDebtRepaymentExpense()` (categorized payer expense, mirrored creditor income when applicable, decrement balance, `mirror_transaction_id` linkage) instead of ordinary split plumbing; validates split percentages when splits are present; creates splits + debts only for ordinary expense splits; does **not** call `FundService::processIncome`
+- `updateTransaction(Transaction, array): Transaction` — **rejects rows with `is_debt_payment` set** (`InvalidArgumentException` → 422); otherwise rolls back any existing income-debt linkage, reapplies linkage from the updated payload, and then recreates splits/debts for ordinary split expenses
 - `deleteTransaction(Transaction): void` — used by `TransactionController::destroy`; reverses mirrored debt-payment pairs (+ debt balance increment) or deletes splits/linked debts for normal rows
 
 ### FundService (`app/Services/FundService.php`)

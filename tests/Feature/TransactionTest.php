@@ -38,6 +38,84 @@ class TransactionTest extends TestCase
         ]);
     }
 
+    public function test_income_transaction_can_create_new_debt(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_income' => true,
+            'is_expense' => false,
+        ]);
+
+        $response = $this->actingAs($user)->postJson('/transactions', [
+            'category_id' => $category->id,
+            'amount' => 300.00,
+            'description' => 'Loan disbursement',
+            'type' => 'income',
+            'transaction_date' => now()->toDateString(),
+            'income_debt_mode' => 'new',
+            'income_new_is_interfamily' => false,
+            'income_new_creditor_name' => 'Bank of Example',
+            'income_new_description' => 'Starter loan',
+        ])->assertStatus(201);
+
+        $transactionId = (int) $response->json('id');
+        $debtId = (int) $response->json('debt_id');
+
+        $this->assertDatabaseHas('transactions', [
+            'id' => $transactionId,
+            'type' => 'income',
+            'amount' => 300.00,
+            'debt_id' => $debtId,
+        ]);
+
+        $this->assertDatabaseHas('debts', [
+            'id' => $debtId,
+            'family_id' => $family->id,
+            'debtor_id' => $user->id,
+            'creditor_name' => 'Bank of Example',
+            'amount' => 300.00,
+            'balance' => 300.00,
+            'description' => 'Starter loan',
+        ]);
+    }
+
+    public function test_income_transaction_can_add_to_existing_debt(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_income' => true,
+            'is_expense' => false,
+        ]);
+
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $user->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 200.00,
+            'balance' => 125.00,
+            'is_pending_closeout' => false,
+        ]);
+
+        $this->actingAs($user)->postJson('/transactions', [
+            'category_id' => $category->id,
+            'amount' => 75.00,
+            'description' => 'Extra debt draw',
+            'type' => 'income',
+            'transaction_date' => now()->toDateString(),
+            'income_debt_mode' => 'existing',
+            'income_existing_debt_id' => $debt->id,
+        ])->assertStatus(201);
+
+        $debt->refresh();
+        $this->assertEqualsWithDelta(275.00, (float) $debt->amount, 0.01);
+        $this->assertEqualsWithDelta(200.00, (float) $debt->balance, 0.01);
+    }
+
     public function test_transaction_requires_type_and_date(): void
     {
         $family = Family::factory()->create();

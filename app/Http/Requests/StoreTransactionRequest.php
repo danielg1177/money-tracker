@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Debt;
+use App\Models\User;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -22,6 +23,19 @@ class StoreTransactionRequest extends FormRequest
                 'is_split' => false,
                 'split_data' => null,
                 'debt_id' => null,
+                'income_debt_mode' => $this->input('income_debt_mode', 'none'),
+            ]);
+        }
+
+        if ($this->input('type') !== 'income') {
+            $this->merge([
+                'income_debt_mode' => 'none',
+                'income_existing_debt_id' => null,
+                'income_new_is_family_debt' => false,
+                'income_new_is_interfamily' => false,
+                'income_new_creditor_id' => null,
+                'income_new_creditor_name' => null,
+                'income_new_description' => null,
             ]);
         }
 
@@ -30,6 +44,25 @@ class StoreTransactionRequest extends FormRequest
                 'is_split' => false,
                 'split_data' => null,
                 'advance_fund_id' => null,
+            ]);
+        }
+
+        if ($this->input('income_debt_mode') === 'existing') {
+            $this->merge([
+                'income_new_is_family_debt' => false,
+                'income_new_is_interfamily' => false,
+                'income_new_creditor_id' => null,
+                'income_new_creditor_name' => null,
+            ]);
+        }
+
+        if ($this->input('income_debt_mode') !== 'new') {
+            $this->merge([
+                'income_new_is_family_debt' => false,
+                'income_new_is_interfamily' => false,
+                'income_new_creditor_id' => null,
+                'income_new_creditor_name' => null,
+                'income_new_description' => null,
             ]);
         }
     }
@@ -45,7 +78,7 @@ class StoreTransactionRequest extends FormRequest
                 return;
             }
 
-            $user = auth()->user();
+            $user = $this->user();
             if (! $user?->family_id) {
                 return;
             }
@@ -85,6 +118,77 @@ class StoreTransactionRequest extends FormRequest
             } elseif ($user->id !== $debt->debtor_id) {
                 $v->errors()->add('debt_id', 'Only the debtor can record this repayment.');
             }
+
+        });
+
+        $validator->after(function (Validator $v): void {
+            if ($this->input('type') !== 'income') {
+                return;
+            }
+
+            $user = $this->user();
+            if (! $user?->family_id) {
+                return;
+            }
+
+            $mode = (string) $this->input('income_debt_mode', 'none');
+            if ($mode === 'none') {
+                return;
+            }
+
+            if ($mode === 'existing') {
+                if (! $this->filled('income_existing_debt_id')) {
+                    $v->errors()->add('income_existing_debt_id', 'Select an existing debt to attach this income to.');
+
+                    return;
+                }
+
+                $debt = Debt::query()
+                    ->where('family_id', $user->family_id)
+                    ->whereKey($this->input('income_existing_debt_id'))
+                    ->first();
+
+                if (! $debt) {
+                    $v->errors()->add('income_existing_debt_id', 'The selected debt does not belong to your family.');
+
+                    return;
+                }
+
+                if ($debt->is_pending_closeout) {
+                    $v->errors()->add('income_existing_debt_id', 'Pending split closeout debts cannot be increased this way.');
+                }
+
+                if ((int) $debt->debtor_id !== (int) $user->id) {
+                    $v->errors()->add('income_existing_debt_id', 'You can only attach this income to debts where you are the debtor.');
+                }
+
+                return;
+            }
+
+            if ($mode !== 'new') {
+                $v->errors()->add('income_debt_mode', 'Invalid income debt option.');
+
+                return;
+            }
+
+            if ($this->boolean('income_new_is_interfamily')) {
+                if (! $this->filled('income_new_creditor_id')) {
+                    $v->errors()->add('income_new_creditor_id', 'Select a family member creditor.');
+
+                    return;
+                }
+
+                $creditor = User::query()->find($this->input('income_new_creditor_id'));
+                if (! $creditor || (int) $creditor->family_id !== (int) $user->family_id || (int) $creditor->id === (int) $user->id) {
+                    $v->errors()->add('income_new_creditor_id', 'Creditor must be a different family member.');
+                }
+
+                return;
+            }
+
+            if (! $this->filled('income_new_creditor_name')) {
+                $v->errors()->add('income_new_creditor_name', 'Creditor name is required when not selecting a family member.');
+            }
         });
     }
 
@@ -105,9 +209,16 @@ class StoreTransactionRequest extends FormRequest
                 'nullable',
                 'integer',
                 Rule::exists('debts', 'id')->where(
-                    fn ($query) => $query->where('family_id', auth()->user()?->family_id ?? 0)
+                    fn ($query) => $query->where('family_id', $this->user()?->family_id ?? 0)
                 ),
             ],
+            'income_debt_mode' => ['nullable', 'in:none,existing,new'],
+            'income_existing_debt_id' => ['nullable', 'integer', 'exists:debts,id'],
+            'income_new_is_family_debt' => ['nullable', 'boolean'],
+            'income_new_is_interfamily' => ['nullable', 'boolean'],
+            'income_new_creditor_id' => ['nullable', 'integer', 'exists:users,id'],
+            'income_new_creditor_name' => ['nullable', 'string', 'max:255'],
+            'income_new_description' => ['nullable', 'string'],
         ];
     }
 

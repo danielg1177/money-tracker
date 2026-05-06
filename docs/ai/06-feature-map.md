@@ -45,6 +45,12 @@ This document maps each user-visible feature to the backend and frontend files t
 
 **Debt repayment sub-feature (expense):** Optional `debt_id` on `POST/PUT`-validated payloads (actually **POST only** wired; repayment rows cannot be edited). When set, creates a normal categorized **expense** for the payer, mirrors an **`is_debt_payment` income** for an in-family **creditor** (with `mirror_transaction_id` linkage), decreases `debts.balance` immediately, and disallows split / advance fund on the same expense. Creditor repayment income remains excluded from `MonthCloseoutService` gross income (same rule as existing `get debts`/`payDebt` flows). **`GET /month-summary`** exposes `debt_repayments.{paid,received}` for viewer-scoped repayment lines (excluded from category totals above).
 
+**Debt association sub-feature (income):** Optional `income_debt_mode` on income payloads:
+- `none`: regular income
+- `existing`: links income to a debt the user owes and increments that debt's `amount` + `balance`
+- `new`: creates a debt inline (external creditor name or family-member creditor) and links the income row
+These rows remain regular income (`is_debt_payment=false`) and continue to count toward closeout gross-income calculations.
+
 ---
 
 ## 4. Categories

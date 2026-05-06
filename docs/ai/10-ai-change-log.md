@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-06 — Income transactions can create or expand debt
+
+- Files touched: `app/Http/Requests/StoreTransactionRequest.php`, `app/Services/TransactionService.php`, `resources/js/components/TransactionForm.vue`, `tests/Feature/TransactionTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Income entries now support optional debt association in the transaction form. Users can mark income as debt-backed by either linking an existing debt they owe or creating a new debt inline (external creditor or family member). The income still behaves as normal month income for closeout/allocation math. When selected, debt amount and balance are increased/created at transaction save time and linked via `transactions.debt_id`. Transaction updates/deletes roll back this linked debt amount so debt totals stay consistent.
+
 ## 2026-05-06 — Align fund allocation tests with closeout behavior
 
 - Files touched: `tests/Feature/FundAllocationTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`

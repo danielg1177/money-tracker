@@ -42,6 +42,8 @@ class TransactionService
         }
 
         return DB::transaction(function () use ($data, $user) {
+            $incomeDebt = $this->resolveIncomeDebtForIncomeTransaction($data, $user);
+
             $transactionData = [
                 'family_id' => $user->family_id,
                 'user_id' => $user->id,
@@ -53,6 +55,7 @@ class TransactionService
                 'is_split' => $data['is_split'],
                 'split_data' => $data['split_data'] ?? null,
                 'advance_fund_id' => $data['advance_fund_id'] ?? null,
+                'debt_id' => $incomeDebt?->id,
             ];
 
             $transaction = Transaction::query()->create($transactionData);
@@ -187,6 +190,9 @@ class TransactionService
         }
 
         return DB::transaction(function () use ($transaction, $data) {
+            $this->rollbackIncomeDebtAssociation($transaction);
+            $incomeDebt = $this->resolveIncomeDebtForIncomeTransaction($data, $transaction->user);
+
             $transactionData = [
                 'category_id' => $data['category_id'] ?? null,
                 'type' => $data['type'],
@@ -196,6 +202,7 @@ class TransactionService
                 'is_split' => $data['is_split'],
                 'split_data' => $data['split_data'] ?? null,
                 'advance_fund_id' => $data['advance_fund_id'] ?? null,
+                'debt_id' => $incomeDebt?->id,
             ];
 
             $transaction->update($transactionData);
@@ -239,6 +246,7 @@ class TransactionService
     public function deleteTransaction(Transaction $transaction): void
     {
         DB::transaction(function () use ($transaction): void {
+            $this->rollbackIncomeDebtAssociation($transaction);
             $partner = $this->resolveMirrorPartner($transaction);
 
             if ($partner) {
@@ -261,6 +269,74 @@ class TransactionService
             Debt::query()->where('transaction_id', $transaction->id)->delete();
             $transaction->delete();
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function resolveIncomeDebtForIncomeTransaction(array $data, User $user): ?Debt
+    {
+        if (($data['type'] ?? null) !== 'income') {
+            return null;
+        }
+
+        $mode = (string) ($data['income_debt_mode'] ?? 'none');
+        if ($mode === 'none') {
+            return null;
+        }
+
+        $amount = round((float) ($data['amount'] ?? 0), 2);
+        if ($amount <= 0) {
+            throw new InvalidArgumentException('Income amount must be greater than zero.');
+        }
+
+        if ($mode === 'existing') {
+            $debt = Debt::query()
+                ->where('family_id', $user->family_id)
+                ->lockForUpdate()
+                ->findOrFail($data['income_existing_debt_id']);
+
+            $debt->increment('amount', $amount);
+            $debt->increment('balance', $amount);
+
+            return $debt->fresh();
+        }
+
+        if ($mode !== 'new') {
+            throw new InvalidArgumentException('Invalid income debt mode.');
+        }
+
+        return Debt::query()->create([
+            'family_id' => $user->family_id,
+            'debtor_id' => $user->id,
+            'creditor_id' => ! empty($data['income_new_is_interfamily']) ? $data['income_new_creditor_id'] : null,
+            'creditor_name' => ! empty($data['income_new_is_interfamily']) ? null : ($data['income_new_creditor_name'] ?? null),
+            'amount' => $amount,
+            'balance' => $amount,
+            'description' => $data['income_new_description'] ?? ($data['description'] ?? null),
+            'is_family_debt' => (bool) ($data['income_new_is_family_debt'] ?? false),
+            'is_pending_closeout' => false,
+        ]);
+    }
+
+    private function rollbackIncomeDebtAssociation(Transaction $transaction): void
+    {
+        if ($transaction->type !== 'income' || $transaction->is_debt_payment || ! $transaction->debt_id) {
+            return;
+        }
+
+        $debt = Debt::query()->lockForUpdate()->find($transaction->debt_id);
+        if (! $debt) {
+            return;
+        }
+
+        $amount = round((float) $transaction->amount, 2);
+        $nextAmount = max(0, round((float) $debt->amount - $amount, 2));
+        $nextBalance = max(0, round((float) $debt->balance - $amount, 2));
+        $debt->update([
+            'amount' => $nextAmount,
+            'balance' => $nextBalance,
+        ]);
     }
 
     private function resolveMirrorPartner(Transaction $transaction): ?Transaction

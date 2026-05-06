@@ -220,3 +220,43 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
    - `hard_close`: the `MonthHardClose` record (if auto-hard-closed)
    - `auto_hard_closed`: true (if auto-hard-closed)
 9. Vue updates UI to show month as fully closed (amber lock icon)
+
+---
+
+## Workflow 9: Income From Debt (New or Existing)
+
+1. User opens `TransactionForm`, sets `type=income`, amount/date/category
+2. In "Is this income from taking debt?" user chooses:
+   - `No` (plain income), or
+   - `Existing` (attach to debt already owed), or
+   - `New Debt` (create debt inline)
+3. Vue submits `POST /transactions` with normal income payload plus income debt fields when selected:
+   ```json
+   {
+     "type": "income",
+     "amount": 500,
+     "transaction_date": "2026-05-06",
+     "category_id": 1,
+     "income_debt_mode": "existing",
+     "income_existing_debt_id": 12
+   }
+   ```
+   or:
+   ```json
+   {
+     "type": "income",
+     "amount": 500,
+     "transaction_date": "2026-05-06",
+     "category_id": 1,
+     "income_debt_mode": "new",
+     "income_new_is_interfamily": false,
+     "income_new_creditor_name": "Bank of Example"
+   }
+   ```
+4. `StoreTransactionRequest` still strips expense-only fields (`is_split`, `split_data`, `advance_fund_id`, `debt_id`) for income, then validates income debt mode
+5. `TransactionService::createTransaction` runs in `DB::transaction`:
+   - `existing`: locks debt and increments both `amount` and `balance`
+   - `new`: creates debt with `amount=income amount`, `balance=income amount`
+   - stores resulting debt id on `transactions.debt_id`
+6. Transaction remains a regular `income` row (`is_debt_payment=false`)
+7. At month hard-close, this row is still treated as normal gross income for closeout rules

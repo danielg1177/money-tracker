@@ -164,7 +164,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 ## Request bodies (key Form Requests)
 
 ### `StoreTransactionRequest`
-For `type=income`, `advance_fund_id`, `is_split`, `split_data`, and `debt_id` are cleared server-side before validation (income does not support splits, advance fund, or debt linkage).
+For `type=income`, `advance_fund_id`, `is_split`, `split_data`, and expense-side `debt_id` are cleared server-side before validation (income does not support expense split/advance/repayment flow). Income can still optionally link debt through `income_debt_mode`.
 
 For `type=expense`, optional **`debt_id`** (existing `debts.id` for the payer’s family) records a categorized debt repayment: creates/expands the same flow as `DebtService::payDebt` for simple (non-split) payments — reduces `debts.balance`, emits mirrored **`is_debt_payment` creditor income** when `creditor_id` is set; **mutually exclusive** with split/advance (`prepareForValidation` clears those when `debt_id` is present).
 
@@ -180,9 +180,21 @@ For `type=expense`, optional **`debt_id`** (existing `debts.id` for the payer’
     {"user_id": 1, "share_percentage": 60},
     {"user_id": 2, "share_percentage": 40}
   ],
-  "debt_id": null
+  "debt_id": null,
+  "income_debt_mode": "none|existing|new",
+  "income_existing_debt_id": null,
+  "income_new_is_family_debt": false,
+  "income_new_is_interfamily": false,
+  "income_new_creditor_id": null,
+  "income_new_creditor_name": null,
+  "income_new_description": null
 }
 ```
+
+`income_debt_mode` behavior (`type=income`):
+- `none`: regular income (default)
+- `existing`: increase selected debt amount/balance and link transaction to that debt (`transactions.debt_id`)
+- `new`: create a new debt from this income amount (external name or interfamily creditor) and link it
 
 ### `StoreCategoryRequest`
 When `is_expense` is false, `is_split_default`, `split_default`, and `advance_fund_id` are cleared server-side before validation.

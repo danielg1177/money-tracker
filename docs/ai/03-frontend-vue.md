@@ -148,7 +148,14 @@ Admin-only route in the router. **Has no corresponding POST route on the backend
 ## Components
 
 ### `TransactionForm.vue` (`resources/js/components/TransactionForm.vue`)
-Modal form for creating or editing a transaction. Props: `categories` (Array), `familyUsers` (Array), `funds` (Array), **`debtsPayload`** (shape of `GET /debts`; optional), `transaction` (Object, optional for edit mode). Fields: type (income/expense), amount, description, date, category. **Pay toward a tracked debt** (expense only): mutually exclusive with split & advance fund; submits `debt_id`. **Split** controls are shown only for **expense** when debt repayment is off; switching type to income clears split and debt linkage. **Advance against fund** toggle remains expense-only when debt repayment is off. Debt repayment transactions cannot be edited (banner + disabled controls). Submit omits split fields for income. Emits `created`, `updated`, or `close` events.
+Modal form for creating or editing a transaction. Props: `categories` (Array), `familyUsers` (Array), `funds` (Array), **`debtsPayload`** (shape of `GET /debts`; optional), `transaction` (Object, optional for edit mode). Fields: type (income/expense), amount, description, date, category. **Pay toward a tracked debt** (expense only): mutually exclusive with split & advance fund; submits `debt_id`. **Split** controls are shown only for **expense** when debt repayment is off; switching type to income clears split and expense-debt-payment linkage. **Advance against fund** toggle remains expense-only when debt repayment is off.
+
+For **income**, a dedicated debt association block supports:
+- `No` (plain income)
+- `Existing` (attach income to an existing debt you owe; increases debt)
+- `New Debt` (create debt on submit, external creditor or family member, optional family-shared flag)
+
+Debt repayment transactions still cannot be edited (banner + disabled controls). Submit omits split fields for income and includes income debt fields only when selected. Emits `created`, `updated`, or `close` events.
 
 ### `SplitEditor.vue` (`resources/js/components/SplitEditor.vue`)
 Sub-component of `TransactionForm`. Renders a list of family members with percentage inputs. Validates that percentages sum to 100 before allowing submission.
