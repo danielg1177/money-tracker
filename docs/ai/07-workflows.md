@@ -4,16 +4,16 @@ Detailed step-by-step flows for the most complex operations in the app.
 
 ---
 
-## Workflow 1: Creating a Split Income Transaction
+## Workflow 1: Creating a Split Expense Transaction
 
-1. User opens `TransactionForm` (via FAB in `AppNav`) and fills in type=`income`, amount, date, category
-2. User enables "split" toggle → `SplitEditor` appears
+1. User opens `TransactionForm` (via FAB in `AppNav`) and sets type=`expense`, amount, date, category
+2. User enables "Split between family members" → `SplitEditor` appears (income transactions do **not** show this toggle)
 3. User assigns percentages to family members (must sum to 100)
 4. Vue submits `POST /transactions` with body:
    ```json
    {
-     "type": "income",
-     "amount": 1000,
+     "type": "expense",
+     "amount": 100,
      "transaction_date": "2026-05-03",
      "category_id": 1,
      "is_split": true,
@@ -23,19 +23,16 @@ Detailed step-by-step flows for the most complex operations in the app.
      ]
    }
    ```
-5. `StoreTransactionRequest` validates the payload
+5. `StoreTransactionRequest` validates the payload (`type=income` would strip `split_data`, `is_split`, and `advance_fund_id` before validation)
 6. `TransactionController::store` calls `TransactionService::createTransaction`
 7. `SplitCalculator::validate` checks percentages sum to 100 (epsilon 0.01)
 8. `DB::transaction` begins:
    a. Creates `Transaction` record with `is_split=true`, stores `split_data` snapshot
    b. `SplitCalculator::allocate` computes per-user dollar amounts (last user absorbs rounding)
    c. For each split user: creates `TransactionSplit` record
-   d. For each split user who is NOT the transaction owner: creates `Debt` record:
-      - `debtor_id` = split user
-      - `creditor_id` = transaction owner
-      - `amount` = `balance` = split dollar amount
-   e. No automatic fund allocation runs here — `FundRule` / fund balances are updated on **month hard-close**, not on each income save
-9. Returns transaction with `splits.user` and `user`, `category` eager-loaded (HTTP 201)
+   d. For each split user who is NOT the transaction owner: creates `Debt` record (`debtor_id` split user, `creditor_id` owner, etc.)
+   e. Fund rules still apply on **month hard-close**, not at transaction save time
+9. Returns transaction with `splits.user` eager-loaded (HTTP 201)
 
 ---
 
@@ -191,13 +188,14 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
 
 ---
 
-## Workflow 7: Creating a Category with Default Split
+## Workflow 7: Creating a Category with Default Split / Advance (expense-only)
 
-1. Admin/family member opens `Categories.vue`
-2. Fills in name, icon, type flags, enables "split default", assigns member percentages
-3. Submits `POST /categories`
-4. `StoreCategoryRequest` validates; `CategoryController::store` saves with `split_default` JSON
-5. When `TransactionForm` later loads categories: the frontend can pre-populate the split editor from `category.split_default` (Needs verification: whether the frontend currently reads `split_default` to auto-populate)
+1. Family member opens `Categories.vue`
+2. Fills in name, icon, and selects **Income** or **Expense** (mutually exclusive)
+3. If type is **Expense**: optionally enables "Use as split default" and/or "Default Advance Fund"
+4. Submits `POST /categories`
+5. `StoreCategoryRequest` rejects if both `is_income` and `is_expense` are true or both false; clears `split_default`, `is_split_default`, and `advance_fund_id` when `is_expense` is false; otherwise validates and saves
+6. When `TransactionForm` uses an expense category with defaults, the Vue watcher pre-populates split and/or advance fund **only when transaction type is expense**
 
 ---
 

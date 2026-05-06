@@ -22,17 +22,18 @@
 - Relations: `hasMany(User)`, `hasMany(Category)`, `hasMany(Transaction)`, `hasMany(Debt)`
 
 ### Category (`app/Models/Category.php`)
-- Fields: `family_id`, `name`, `icon`, `is_income` (bool), `is_expense` (bool), `is_split_default` (bool), `split_default` (JSON array)
-- `split_default` stores a default split configuration for auto-populating `TransactionForm`
+- Fields: `family_id`, `name`, `icon`, `is_income` (bool), `is_expense` (bool), `is_split_default` (bool), `split_default` (JSON array), `advance_fund_id` (nullable)
+- **Type constraint:** exactly one of `is_income` / `is_expense` must be true (not both, not neither); validated in `StoreCategoryRequest::withValidator`
+- `split_default` and `advance_fund_id` are meaningful only when `is_expense` is true; `StoreCategoryRequest` clears them when saving an income-only category
 - Relations: `belongsTo(Family)`, `hasMany(Transaction)`
 
 ### Transaction (`app/Models/Transaction.php`)
-- Fields: `family_id`, `user_id`, `category_id` (nullable), `type` (`income`|`expense`), `amount` (decimal:2), `description`, `transaction_date` (date), `is_split` (bool), `split_data` (JSON array), `fund_id` (nullable), `is_borrow` (bool), `is_debt_payment` (bool), `debt_id` (nullable FK → debts), `paid_by_user_id` (nullable FK → users), `is_closeout_initiated` (bool)
+- Fields: `family_id`, `user_id`, `category_id` (nullable), `type` (`income`|`expense`), `amount` (decimal:2), `description`, `transaction_date` (date), `is_split` (bool), `split_data` (JSON array), `fund_id` (nullable), `advance_fund_id` (nullable), `is_borrow` (bool), `is_debt_payment` (bool), `debt_id` (nullable FK → debts), `mirror_transaction_id` (nullable FK → transactions), `paid_by_user_id` (nullable FK → users), `is_closeout_initiated` (bool)
 - `split_data` is a snapshot of split percentages stored on the transaction itself
 - `debt_id` links a payment transaction to the debt it settles
 - `paid_by_user_id` tracks which user initiated the payment (may differ from `user_id` for creditor income rows)
 - `is_closeout_initiated` distinguishes manual payments (`false`) from closeout-rule-triggered payments (`true`)
-- Relations: `belongsTo(Family)`, `belongsTo(User)`, `belongsTo(User, 'paid_by_user_id')` as `paidByUser`, `belongsTo(Category)`, `belongsTo(Fund)`, `belongsTo(Debt)` via `debt_id`, `hasMany(TransactionSplit)` as `splits`, `hasMany(Debt)` (split-linked debts)
+- Relations: `belongsTo(Family)`, `belongsTo(User)`, `belongsTo(User, 'paid_by_user_id')` as `paidByUser`, `belongsTo(Category)`, `belongsTo(Fund)`, `belongsTo(Debt)` via `debt_id`, `belongsTo(Transaction, 'mirror_transaction_id')`, `hasMany(TransactionSplit)` as `splits`, `hasMany(Debt)` (split-linked debts)
 
 ### TransactionSplit (`app/Models/TransactionSplit.php`)
 - Fields: `transaction_id`, `user_id`, `share_percentage` (decimal:2), `amount` (decimal:2)
@@ -71,7 +72,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `index(Request)` — returns viewer-scoped family transactions (`user_id` or `transaction_splits` participation), filtered by `start_date`/`end_date`, eager-loads `user`, `category`, `splits.user`, `debt` (+ nested relations); excludes split debt-payment expenses for the creditor when they duplicate that creditor’s repayment income row
 - `store(StoreTransactionRequest)` — delegates to `TransactionService::createTransaction`
 - `update(StoreTransactionRequest, Transaction)` — checks ownership or same family, delegates to `TransactionService::updateTransaction`
-- `destroy(Transaction)` — checks ownership or same family, deletes
+- `destroy(Transaction)` — checks ownership or same family; delegates `TransactionService::deleteTransaction()` (paired debt-payment cleanup + mirror rows)
 
 ### FundController
 - `index()` — personal funds: `auth()->user()->funds()->whereNull('family_id')`; family funds: `Fund::where('family_id', $user->family_id)` when set; merged JSON with `scope` per row; `fundRules` and `movements.user` eager-loaded
@@ -127,16 +128,18 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `closedMonths(Request)` — `GET /closeout/closed-months`; returns array of `{year, month}` hard-closed months for the auth user's family
 
 ### MonthSummaryController
-- `show(Request)` — `GET /month-summary?year=&month=`; read-only overview for a specific month; requires family membership; returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview}`
+- `show(Request)` — `GET /month-summary?year=&month=`; read-only overview for a specific month; requires family membership; returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements, debt_repayments}`
   - `category_totals`: family transactions grouped by category (expense/income, excluding debt payments), sorted expenses first then by total descending
   - `member_balances`: net amounts owed between the auth user and each other family member from split expenses, showing direction (`they_owe_you` / `you_owe_them`)
-  - `rule_preview`: dry-run of the auth user's active closeout rules with projected allocation amounts; includes `basis` (gross income, total expenses, remaining)
+  - `rule_preview`: dry-run of the auth user's active closeout rules with projected allocation amounts; includes `basis` (gross income, total expenses, remaining); **gross omits `is_debt_payment` income** (creditor repayment lines)
+  - `debt_repayments`: `{ paid: [...], received: [...] }` viewer-scoped `is_debt_payment` rows that month (`counterparty_label`, amounts, descriptions)
 
 ## Services
 
 ### TransactionService (`app/Services/TransactionService.php`)
-- `createTransaction(array, User): Transaction` — wraps everything in `DB::transaction`; validates split percentages via `SplitCalculator::validate`; creates `TransactionSplit` records + `Debt` records for each non-owner split party; does **not** call `FundService::processIncome` (income fund rules are applied at month hard-close, not on each income transaction)
-- `updateTransaction(Transaction, array): Transaction` — deletes existing splits and debts, recreates them; does NOT re-trigger fund allocation
+- `createTransaction(array, User): Transaction` — wraps everything in `DB::transaction`; for `type=income`, forces `is_split=false`, clears `split_data` and `advance_fund_id`; for **expense + `debt_id`**, runs `createDebtRepaymentExpense()` (categorized payer expense, mirrored creditor income when applicable, decrement balance, `mirror_transaction_id` linkage) instead of ordinary split plumbing; validates split percentages when splits are present; creates splits + debts only for ordinary expense splits; does **not** call `FundService::processIncome`
+- `updateTransaction(Transaction, array): Transaction` — **rejects rows with `is_debt_payment` set** (`InvalidArgumentException` → 422); otherwise deletes existing splits and debts, recreates them
+- `deleteTransaction(Transaction): void` — used by `TransactionController::destroy`; reverses mirrored debt-payment pairs (+ debt balance increment) or deletes splits/linked debts for normal rows
 
 ### FundService (`app/Services/FundService.php`)
 - `processIncome(Transaction, User): void` — loads active `FundRule`s ordered by `order`; iterates rules; calculates allocation amount from `gross`, `net`, or `remaining` base; increments fund balance + creates `FundMovement` — **not called** from `TransactionService` in the current app (reserved / legacy path)
@@ -147,7 +150,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `payDebt(Debt, float, string, User): void` — validates and records a debt payment:
   - For **family debts** (`is_family_debt=true`): payer must be a family member
   - For **personal debts**: payer must be the debtor
-  - Creates expense transaction for payer; creates income transaction for creditor if `creditor_id` is not null
+  - Creates expense transaction for payer; creates income transaction for creditor if `creditor_id` is not null (unsplit flows set `mirror_transaction_id` linking the pair when both legs exist)
   - Decrements `debt.balance`
 
 ### SplitCalculator (`app/Services/SplitCalculator.php`)

@@ -108,8 +108,9 @@ class DebtService
                 ]);
             }
 
+            $creditorIncome = null;
             if ($debt->creditor_id !== null) {
-                Transaction::create([
+                $creditorIncome = Transaction::create([
                     'family_id' => $payer->family_id,
                     'user_id' => $debt->creditor_id,
                     'type' => 'income',
@@ -125,6 +126,11 @@ class DebtService
 
             $debt->balance -= $paymentAmount;
             $debt->save();
+
+            if (! $hasSplit && $creditorIncome) {
+                $payerTransaction->forceFill(['mirror_transaction_id' => $creditorIncome->id])->save();
+                $creditorIncome->forceFill(['mirror_transaction_id' => $payerTransaction->id])->save();
+            }
         });
     }
 }

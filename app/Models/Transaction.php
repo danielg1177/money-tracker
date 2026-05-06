@@ -28,6 +28,7 @@ class Transaction extends Model
         'debt_id',
         'paid_by_user_id',
         'is_closeout_initiated',
+        'mirror_transaction_id',
     ];
 
     protected $casts = [
@@ -74,6 +75,11 @@ class Transaction extends Model
     public function debt(): BelongsTo
     {
         return $this->belongsTo(Debt::class);
+    }
+
+    public function mirrorTransaction(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'mirror_transaction_id');
     }
 
     public function splits(): HasMany

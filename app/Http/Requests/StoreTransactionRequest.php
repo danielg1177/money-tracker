@@ -2,13 +2,90 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Debt;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreTransactionRequest extends FormRequest
 {
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->input('type') === 'income') {
+            $this->merge([
+                'advance_fund_id' => null,
+                'is_split' => false,
+                'split_data' => null,
+                'debt_id' => null,
+            ]);
+        }
+
+        if ($this->filled('debt_id')) {
+            $this->merge([
+                'is_split' => false,
+                'split_data' => null,
+                'advance_fund_id' => null,
+            ]);
+        }
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $v): void {
+            if ($this->input('type') !== 'expense') {
+                return;
+            }
+
+            if (! $this->filled('debt_id')) {
+                return;
+            }
+
+            $user = auth()->user();
+            if (! $user?->family_id) {
+                return;
+            }
+
+            $amount = round((float) $this->input('amount'), 2);
+            if ($amount <= 0) {
+                return;
+            }
+
+            if ($this->boolean('is_split')) {
+                $v->errors()->add('debt_id', 'A debt repayment cannot be combined with splitting the expense.');
+            }
+
+            $debt = Debt::query()
+                ->where('family_id', $user->family_id)
+                ->whereKey($this->input('debt_id'))
+                ->first();
+
+            if (! $debt) {
+                $v->errors()->add('debt_id', 'The selected debt does not belong to your family.');
+
+                return;
+            }
+
+            if ($debt->is_pending_closeout) {
+                $v->errors()->add('debt_id', 'This debt is pending split closeout and cannot be paid this way.');
+            }
+
+            if ($amount > round((float) $debt->balance, 2)) {
+                $v->errors()->add('amount', 'Payment amount cannot exceed the remaining debt balance.');
+            }
+
+            if ($debt->is_family_debt) {
+                if ($user->family_id !== $debt->family_id) {
+                    $v->errors()->add('debt_id', 'You cannot pay this debt.');
+                }
+            } elseif ($user->id !== $debt->debtor_id) {
+                $v->errors()->add('debt_id', 'Only the debtor can record this repayment.');
+            }
+        });
     }
 
     public function rules(): array
@@ -24,6 +101,13 @@ class StoreTransactionRequest extends FormRequest
             'split_data.*.user_id' => ['required_with:split_data', 'exists:users,id'],
             'split_data.*.share_percentage' => ['required_with:split_data', 'numeric', 'min:0', 'max:100'],
             'advance_fund_id' => ['nullable', 'exists:funds,id'],
+            'debt_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('debts', 'id')->where(
+                    fn ($query) => $query->where('family_id', auth()->user()?->family_id ?? 0)
+                ),
+            ],
         ];
     }
 
@@ -47,6 +131,7 @@ class StoreTransactionRequest extends FormRequest
             'split_data.*.share_percentage.min' => 'Share percentage must be at least 0.',
             'split_data.*.share_percentage.max' => 'Share percentage cannot exceed 100.',
             'advance_fund_id.exists' => 'The selected advance fund does not exist.',
+            'debt_id.exists' => 'The selected debt is invalid.',
         ];
     }
 }

@@ -41,13 +41,15 @@ This document maps each user-visible feature to the backend and frontend files t
 | Request | `app/Http/Requests/StoreTransactionRequest.php` |
 | Frontend | `resources/js/pages/Transactions.vue`, `resources/js/components/TransactionForm.vue`, `resources/js/components/SplitEditor.vue` |
 
-**Split sub-feature:** When `is_split = true`, the transaction form shows `SplitEditor`. On save, `TransactionService` creates `TransactionSplit` records and `Debt` records (one per non-owner split participant). The transaction owner is the creditor; each other participant is a debtor.
+**Split sub-feature:** Only for **expense** transactions. When `is_split = true` and `type = expense`, the transaction form shows `SplitEditor`. On save, `TransactionService` creates `TransactionSplit` records and `Debt` records (one per non-owner split participant). Income transactions never carry splits; payloads are normalized server-side.
+
+**Debt repayment sub-feature (expense):** Optional `debt_id` on `POST/PUT`-validated payloads (actually **POST only** wired; repayment rows cannot be edited). When set, creates a normal categorized **expense** for the payer, mirrors an **`is_debt_payment` income** for an in-family **creditor** (with `mirror_transaction_id` linkage), decreases `debts.balance` immediately, and disallows split / advance fund on the same expense. Creditor repayment income remains excluded from `MonthCloseoutService` gross income (same rule as existing `get debts`/`payDebt` flows). **`GET /month-summary`** exposes `debt_repayments.{paid,received}` for viewer-scoped repayment lines (excluded from category totals above).
 
 ---
 
 ## 4. Categories
 
-**What it does:** Manage income/expense categories per family. Categories can have a default split template.
+**What it does:** Manage income and expense categories per family; each category is **either** income **or** expense (not both). **Expense** categories can optionally define a default split template and default advance fund.
 
 | Layer | Files |
 |---|---|
@@ -56,7 +58,7 @@ This document maps each user-visible feature to the backend and frontend files t
 | Request | `app/Http/Requests/StoreCategoryRequest.php` |
 | Frontend | `resources/js/pages/Categories.vue`, `resources/js/components/IconPicker.vue` |
 
-**`split_default`:** A JSON field storing a default split configuration `[{user_id, share_percentage}]`. When a transaction is created with this category, the frontend can pre-populate the split editor. Server-side, this field is stored and returned but not automatically applied.
+**`split_default` / `advance_fund_id`:** Only honored when `is_expense` is true. Stored as JSON FK respectively; excluded when saving an income-only category. The transaction form applies these defaults only when the active transaction **type is expense**.
 
 ---
 

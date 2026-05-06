@@ -109,8 +109,8 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | Method | Path | Controller | Notes |
 |---|---|---|---|
 | GET | `/categories` | `CategoryController::index` | Returns family categories (JSON) |
-| POST | `/categories` | `CategoryController::store` | See `StoreCategoryRequest` |
-| PUT | `/categories/{category}` | `CategoryController::update` | See `StoreCategoryRequest` |
+| POST | `/categories` | `CategoryController::store` | See `StoreCategoryRequest` (exactly one of `is_income` / `is_expense` must be true) |
+| PUT | `/categories/{category}` | `CategoryController::update` | See `StoreCategoryRequest` (same XOR rule) |
 | DELETE | `/categories/{category}` | `CategoryController::destroy` | — |
 
 ### Dashboard
@@ -123,7 +123,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
-| GET | `/month-summary` | `MonthSummaryController::show` | Query: `year`, `month`. Returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements}`; requires `family_id` (403 if unset). All read-only. |
+| GET | `/month-summary` | `MonthSummaryController::show` | Query: `year`, `month`. Returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements, debt_repayments}`; requires `family_id` (403 if unset). All read-only. |
 
 ---
 
@@ -155,6 +155,10 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 ## Request bodies (key Form Requests)
 
 ### `StoreTransactionRequest`
+For `type=income`, `advance_fund_id`, `is_split`, `split_data`, and `debt_id` are cleared server-side before validation (income does not support splits, advance fund, or debt linkage).
+
+For `type=expense`, optional **`debt_id`** (existing `debts.id` for the payer’s family) records a categorized debt repayment: creates/expands the same flow as `DebtService::payDebt` for simple (non-split) payments — reduces `debts.balance`, emits mirrored **`is_debt_payment` creditor income** when `creditor_id` is set; **mutually exclusive** with split/advance (`prepareForValidation` clears those when `debt_id` is present).
+
 ```json
 {
   "type": "income|expense",
@@ -166,11 +170,14 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
   "split_data": [
     {"user_id": 1, "share_percentage": 60},
     {"user_id": 2, "share_percentage": 40}
-  ]
+  ],
+  "debt_id": null
 }
 ```
 
 ### `StoreCategoryRequest`
+When `is_expense` is false, `is_split_default`, `split_default`, and `advance_fund_id` are cleared server-side before validation.
+
 ```json
 {
   "name": "Groceries",

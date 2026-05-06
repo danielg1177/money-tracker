@@ -159,6 +159,10 @@ const fundMovementGroups = computed(() => {
   return summary.value?.fund_movements?.by_fund || [];
 });
 
+const debtRepaymentsReceived = computed(() => summary.value?.debt_repayments?.received ?? []);
+
+const debtRepaymentsPaid = computed(() => summary.value?.debt_repayments?.paid ?? []);
+
 function movementTypeLabel(type) {
   const labels = {
     allocation: 'Allocation',
@@ -300,7 +304,11 @@ function movementTypeLabel(type) {
 
       <!-- Section 1b: Income -->
       <div class="px-4 mt-6">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Income</h2>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Income</h2>
+        <p class="text-xs text-gray-500 mb-3">
+          Category totals exclude <span class="text-sky-300/95">repayment someone paid toward a tracked debt owed to you</span>.
+          Those appear under Debt repayments below and are excluded from gross income when closeout rules run.
+        </p>
 
         <div v-if="incomeCategories.length === 0" class="text-sm text-gray-500">
           No income this month
@@ -321,6 +329,63 @@ function movementTypeLabel(type) {
             <span class="text-sm font-medium shrink-0 text-green-400">
               +{{ formatCurrency(cat.total) }}
             </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 1c: Debt repayments -->
+      <div class="px-4 mt-6">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Debt repayments</h2>
+        <p class="text-xs text-gray-500 mb-3">
+          Tracked repayments linked to debts. Creditor inbound rows do not trigger fund allocations or gross-income-based rules at hard close.
+        </p>
+
+        <div
+          v-if="debtRepaymentsReceived.length === 0 && debtRepaymentsPaid.length === 0"
+          class="text-sm text-gray-500"
+        >
+          No debt repayments this month
+        </div>
+
+        <div v-else class="space-y-4">
+          <div v-if="debtRepaymentsReceived.length">
+            <h3 class="text-xs font-medium text-sky-400 mb-2">Received (toward debts owed to you)</h3>
+            <div class="space-y-2">
+              <div
+                v-for="row in debtRepaymentsReceived"
+                :key="'dr-r-' + row.id"
+                class="flex items-center justify-between gap-2 rounded-lg border border-sky-800/55 bg-gray-800 px-3 py-2"
+              >
+                <div class="min-w-0 flex-1">
+                  <p class="text-[11px] text-gray-500">{{ row.transaction_date }}</p>
+                  <p class="text-sm text-gray-200 truncate">
+                    From {{ row.counterparty_label || 'debtor' }}
+                  </p>
+                  <p v-if="row.description" class="text-xs text-gray-400 truncate mt-0.5">{{ row.description }}</p>
+                </div>
+                <span class="text-sm font-semibold text-sky-400 shrink-0 tabular-nums">+{{ formatCurrency(row.amount) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="debtRepaymentsPaid.length">
+            <h3 class="text-xs font-medium text-amber-300/90 mb-2">Paid (toward your debts)</h3>
+            <div class="space-y-2">
+              <div
+                v-for="row in debtRepaymentsPaid"
+                :key="'dr-p-' + row.id"
+                class="flex items-center justify-between gap-2 rounded-lg border border-amber-900/45 bg-gray-800 px-3 py-2"
+              >
+                <div class="min-w-0 flex-1">
+                  <p class="text-[11px] text-gray-500">{{ row.transaction_date }}</p>
+                  <p class="text-sm text-gray-200 truncate">
+                    Toward {{ row.counterparty_label || 'creditor' }}
+                  </p>
+                  <p v-if="row.description" class="text-xs text-gray-400 truncate mt-0.5">{{ row.description }}</p>
+                </div>
+                <span class="text-sm font-semibold text-amber-300 shrink-0 tabular-nums">-{{ formatCurrency(row.amount) }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

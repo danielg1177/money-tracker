@@ -99,13 +99,13 @@
             <span class="text-gray-200 font-medium truncate">{{ category.name }}</span>
           </div>
           <div class="flex items-center gap-2 flex-wrap">
-            <span v-if="category.is_income" class="px-2 py-1 bg-green-900/30 text-green-300 text-xs font-medium rounded">
-              Income
+            <span
+              class="px-2 py-1 text-xs font-medium rounded"
+              :class="category.is_income ? 'bg-green-900/30 text-green-300' : 'bg-red-900/30 text-red-300'"
+            >
+              {{ category.is_income ? 'Income' : 'Expense' }}
             </span>
-            <span v-if="category.is_expense" class="px-2 py-1 bg-red-900/30 text-red-300 text-xs font-medium rounded">
-              Expense
-            </span>
-            <span v-if="category.is_split_default" class="px-2 py-1 bg-purple-900/30 text-purple-300 text-xs font-medium rounded">
+            <span v-if="category.is_split_default && category.is_expense" class="px-2 py-1 bg-purple-900/30 text-purple-300 text-xs font-medium rounded">
               Split Default
             </span>
           </div>
@@ -191,72 +191,79 @@
               />
             </div>
 
-            <!-- Type Checkboxes -->
-            <div class="flex items-center gap-4">
-              <label class="flex items-center gap-2 text-sm font-medium text-gray-300 cursor-pointer">
+            <!-- Type: income or expense (mutually exclusive) -->
+            <fieldset>
+              <legend class="block text-sm font-medium text-gray-300 mb-2">
+                Type
+              </legend>
+              <div class="flex flex-wrap gap-4">
+                <label class="flex items-center gap-2 text-sm font-medium text-gray-300 cursor-pointer">
+                  <input
+                    v-model="categoryType"
+                    type="radio"
+                    value="income"
+                    :disabled="submitting"
+                    class="w-4 h-4 bg-gray-800 border border-gray-700 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                  />
+                  Income
+                </label>
+                <label class="flex items-center gap-2 text-sm font-medium text-gray-300 cursor-pointer">
+                  <input
+                    v-model="categoryType"
+                    type="radio"
+                    value="expense"
+                    :disabled="submitting"
+                    class="w-4 h-4 bg-gray-800 border border-gray-700 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                  />
+                  Expense
+                </label>
+              </div>
+            </fieldset>
+
+            <!-- Split default & advance fund: expense-only category settings -->
+            <template v-if="categoryType === 'expense'">
+              <div class="flex items-center gap-3">
                 <input
-                  v-model="form.is_income"
+                  id="is-split-default"
+                  v-model="form.is_split_default"
                   type="checkbox"
                   :disabled="submitting"
                   class="w-4 h-4 bg-gray-800 border border-gray-700 rounded focus:ring-blue-500 cursor-pointer disabled:opacity-50"
                 />
-                Income
-              </label>
-              <label class="flex items-center gap-2 text-sm font-medium text-gray-300 cursor-pointer">
-                <input
-                  v-model="form.is_expense"
-                  type="checkbox"
-                  :disabled="submitting"
-                  class="w-4 h-4 bg-gray-800 border border-gray-700 rounded focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                <label for="is-split-default" class="text-sm font-medium text-gray-300 cursor-pointer">
+                  Use as split default
+                </label>
+              </div>
+
+              <div v-if="form.is_split_default">
+                <label class="block text-sm font-medium text-gray-300 mb-3">
+                  Default Split Distribution
+                </label>
+                <SplitEditor
+                  :family-users="familyUsers"
+                  :total-amount="100"
+                  :initial-splits="form.split_default"
+                  :mode="'percentage'"
+                  @update:splits="form.split_default = $event"
                 />
-                Expense
-              </label>
-            </div>
+              </div>
 
-            <!-- Split Default Toggle -->
-            <div class="flex items-center gap-3">
-              <input
-                id="is-split-default"
-                v-model="form.is_split_default"
-                type="checkbox"
-                :disabled="submitting"
-                class="w-4 h-4 bg-gray-800 border border-gray-700 rounded focus:ring-blue-500 cursor-pointer disabled:opacity-50"
-              />
-              <label for="is-split-default" class="text-sm font-medium text-gray-300 cursor-pointer">
-                Use as split default
-              </label>
-            </div>
-
-            <!-- Split Editor (conditional) -->
-            <div v-if="form.is_split_default">
-              <label class="block text-sm font-medium text-gray-300 mb-3">
-                Default Split Distribution
-              </label>
-              <SplitEditor
-                :family-users="familyUsers"
-                :total-amount="100"
-                :initial-splits="form.split_default"
-                :mode="'percentage'"
-                @update:splits="form.split_default = $event"
-              />
-            </div>
-
-            <!-- Default Advance Fund -->
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-2">
-                Default Advance Fund <span class="text-gray-500">(optional)</span>
-              </label>
-              <select
-                v-model.number="form.advance_fund_id"
-                class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-              >
-                <option :value="null">None</option>
-                <option v-for="fund in funds" :key="fund.id" :value="fund.id">
-                  {{ fund.name }} ({{ fund.scope === 'family' || fund.family_id ? 'Family' : 'Personal' }})
-                </option>
-              </select>
-              <p class="text-xs text-gray-500 mt-1">Transactions in this category will default to advancing against this fund</p>
-            </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-2">
+                  Default Advance Fund <span class="text-gray-500">(optional)</span>
+                </label>
+                <select
+                  v-model.number="form.advance_fund_id"
+                  class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option :value="null">None</option>
+                  <option v-for="fund in funds" :key="fund.id" :value="fund.id">
+                    {{ fund.name }} ({{ fund.scope === 'family' || fund.family_id ? 'Family' : 'Personal' }})
+                  </option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Expense transactions in this category will default to advancing against this fund</p>
+              </div>
+            </template>
 
             <!-- Error -->
             <div v-if="formError" class="p-3 bg-red-900/20 border border-red-700/50 rounded-lg">
@@ -357,12 +364,11 @@ const submitting = ref(false);
 const deleting = ref(false);
 const deleteConfirm = ref(null);
 const activeTypeFilter = ref('expense');
+const categoryType = ref('expense');
 
 const form = ref({
   name: '',
   icon: '',
-  is_income: false,
-  is_expense: false,
   is_split_default: false,
   split_default: [],
   advance_fund_id: null,
@@ -410,11 +416,10 @@ async function fetchFunds() {
 }
 
 function resetForm() {
+  categoryType.value = 'expense';
   form.value = {
     name: '',
     icon: '',
-    is_income: false,
-    is_expense: false,
     is_split_default: false,
     split_default: [],
     advance_fund_id: null,
@@ -425,21 +430,20 @@ function openAddModal() {
   editingCategory.value = null;
   formError.value = null;
   resetForm();
-  form.value.is_income = activeTypeFilter.value === 'income';
-  form.value.is_expense = activeTypeFilter.value === 'expense';
+  categoryType.value = activeTypeFilter.value === 'income' ? 'income' : 'expense';
   showAddModal.value = true;
 }
 
 function editCategory(category) {
   editingCategory.value = category;
+  categoryType.value = category.is_income ? 'income' : 'expense';
+  const isExpense = categoryType.value === 'expense';
   form.value = {
     name: category.name,
     icon: category.icon,
-    is_income: category.is_income,
-    is_expense: category.is_expense,
-    is_split_default: category.is_split_default,
-    split_default: category.split_default || [],
-    advance_fund_id: category.advance_fund_id || null,
+    is_split_default: isExpense && category.is_split_default,
+    split_default: isExpense ? (category.split_default || []) : [],
+    advance_fund_id: isExpense ? (category.advance_fund_id || null) : null,
   };
   showAddModal.value = true;
 }
@@ -459,22 +463,19 @@ async function handleSubmit() {
     return;
   }
 
-  if (!form.value.is_income && !form.value.is_expense) {
-    formError.value = 'Category must be either income or expense (or both)';
-    return;
-  }
-
   submitting.value = true;
 
   try {
+    const isIncome = categoryType.value === 'income';
+    const isExpense = ! isIncome;
     const payload = {
       name: form.value.name.trim(),
       icon: form.value.icon || null,
-      is_income: form.value.is_income,
-      is_expense: form.value.is_expense,
-      is_split_default: form.value.is_split_default,
-      split_default: form.value.is_split_default ? form.value.split_default : null,
-      advance_fund_id: form.value.advance_fund_id || null,
+      is_income: isIncome,
+      is_expense: isExpense,
+      is_split_default: isExpense && form.value.is_split_default,
+      split_default: isExpense && form.value.is_split_default ? form.value.split_default : null,
+      advance_fund_id: isExpense ? (form.value.advance_fund_id || null) : null,
     };
 
     if (editingCategory.value) {

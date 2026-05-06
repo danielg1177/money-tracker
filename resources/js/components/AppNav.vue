@@ -112,6 +112,7 @@
               :categories="categories"
               :family-users="familyUsers"
               :funds="funds"
+              :debts-payload="debtsPayload"
               @created="handleTransactionCreated"
               @close="handleTransactionFormClose"
             />
@@ -236,6 +237,7 @@ const showTransactionForm = ref(false);
 const categories = ref([]);
 const familyUsers = ref([]);
 const funds = ref([]);
+const debtsPayload = ref({ owed: [], owing: [], family_debts: [] });
 
 const isAdminPage = computed(() => {
   return route.path.startsWith('/admin');
@@ -265,14 +267,16 @@ async function handleTransactionCreated(transaction) {
 
 onMounted(async () => {
   try {
-    const [catData, usersData, fundsData] = await Promise.all([
+    const [catData, usersData, fundsData, debtsData] = await Promise.all([
       get('/categories'),
       get('/family/users'),
       get('/funds'),
+      get('/debts'),
     ]);
     categories.value = catData;
     familyUsers.value = usersData;
     funds.value = fundsData;
+    debtsPayload.value = debtsData && typeof debtsData === 'object' ? debtsData : debtsPayload.value;
   } catch (err) {
     console.error('Failed to fetch data:', err);
   }

@@ -81,7 +81,7 @@ routes/web.php
 |---|---|
 | Family | Global (admin creates) |
 | User | Global; assigned to one `family_id` |
-| Category | Per `family_id`; optional `advance_fund_id` sets default advance fund for transactions in that category |
+| Category | Per `family_id`; each row is **either** income **or** expense (`is_income` XOR `is_expense`, enforced in `StoreCategoryRequest`); optional `advance_fund_id` / `split_default` apply only when `is_expense` is true (defaults for **expense** transactions) |
 | Transaction | Per `family_id`, owned by one `user_id`; optionally linked to `debt_id` if a debt payment; optional `advance_fund_id` marks an expense as advancing against a fund |
 | TransactionSplit | Per transaction |
 

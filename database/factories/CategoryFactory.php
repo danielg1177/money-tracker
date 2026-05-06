@@ -19,13 +19,14 @@ class CategoryFactory extends Factory
     public function definition(): array
     {
         $icons = ['📈', '📉', '🏠', '🍕', '🚗', '💳', '💰'];
+        $isExpense = fake()->boolean();
 
         return [
             'family_id' => Family::factory(),
             'name' => fake()->word(),
             'icon' => fake()->randomElement($icons),
-            'is_income' => fake()->boolean(),
-            'is_expense' => fake()->boolean(),
+            'is_income' => ! $isExpense,
+            'is_expense' => $isExpense,
             'is_split_default' => false,
             'split_default' => null,
         ];

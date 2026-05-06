@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Category;
 use App\Models\Debt;
 use App\Models\Family;
+use App\Models\Fund;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -299,13 +300,15 @@ class TransactionTest extends TestCase
         $debtorHistory = $this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->json();
         $creditorHistory = $this->actingAs($creditor)->getJson("/debts/{$debt->id}/payments")->json();
 
-        $this->assertCount(1, $debtorHistory);
-        $this->assertSame('expense', $debtorHistory[0]['type']);
-        $this->assertEqualsWithDelta(25.0, (float) $debtorHistory[0]['amount'], 0.001);
+        $debtorExpenseRows = array_values(array_filter($debtorHistory, fn ($row) => ($row['type'] ?? '') === 'expense'));
+        $this->assertCount(1, $debtorExpenseRows);
+        $this->assertEqualsWithDelta(25.0, (float) $debtorExpenseRows[0]['amount'], 0.001);
+        $this->assertCount(1, array_values(array_filter($debtorHistory, fn ($row) => ($row['type'] ?? '') === 'initial_value')));
 
-        $this->assertCount(1, $creditorHistory);
-        $this->assertSame('income', $creditorHistory[0]['type']);
-        $this->assertEqualsWithDelta(25.0, (float) $creditorHistory[0]['amount'], 0.001);
+        $creditorIncomeRows = array_values(array_filter($creditorHistory, fn ($row) => ($row['type'] ?? '') === 'income'));
+        $this->assertCount(1, $creditorIncomeRows);
+        $this->assertEqualsWithDelta(25.0, (float) $creditorIncomeRows[0]['amount'], 0.001);
+        $this->assertCount(1, array_values(array_filter($creditorHistory, fn ($row) => ($row['type'] ?? '') === 'initial_value')));
 
         $this->actingAs($debtor)->postJson('/debts/pay', [
             'debt_id' => $debt->fresh()->id,
@@ -314,6 +317,78 @@ class TransactionTest extends TestCase
         ])->assertOk();
 
         $twoPays = $this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->json();
-        $this->assertCount(2, $twoPays);
+        $twoPayExpenses = collect($twoPays)->where('type', 'expense')->pluck('amount')->map(fn ($a) => round((float) $a, 2))->sort()->values()->all();
+        $this->assertSame([10.0, 25.0], $twoPayExpenses);
+        $this->assertCount(1, collect($twoPays)->where('type', 'initial_value'));
+        $this->assertCount(3, $twoPays);
+    }
+
+    public function test_income_transaction_strips_split_and_advance_even_when_sent(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $peer = User::factory()->create(['family_id' => $family->id]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_income' => true,
+            'is_expense' => false,
+        ]);
+        $fund = Fund::factory()->create([
+            'user_id' => $user->id,
+            'family_id' => null,
+        ]);
+
+        $response = $this->actingAs($user)->postJson('/transactions', [
+            'category_id' => $category->id,
+            'amount' => 200,
+            'type' => 'income',
+            'transaction_date' => now()->toDateString(),
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $user->id, 'share_percentage' => 50],
+                ['user_id' => $peer->id, 'share_percentage' => 50],
+            ],
+            'advance_fund_id' => $fund->id,
+        ]);
+
+        $response->assertStatus(201);
+
+        $transaction = Transaction::query()->latest('id')->first();
+        $this->assertSame('income', $transaction->type);
+        $this->assertFalse((bool) $transaction->is_split);
+        $this->assertNull($transaction->advance_fund_id);
+        $this->assertSame(0, $transaction->splits()->count());
+        $this->assertSame(0, Debt::query()->where('transaction_id', $transaction->id)->count());
+    }
+
+    public function test_category_without_expense_stores_no_split_default_or_advance_fund(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $peer = User::factory()->create(['family_id' => $family->id]);
+        $fund = Fund::factory()->create([
+            'user_id' => $user->id,
+            'family_id' => null,
+        ]);
+
+        $response = $this->actingAs($user)->postJson('/categories', [
+            'name' => 'Salary',
+            'icon' => '💰',
+            'is_income' => true,
+            'is_expense' => false,
+            'is_split_default' => true,
+            'split_default' => [
+                ['user_id' => $user->id, 'share_percentage' => 50],
+                ['user_id' => $peer->id, 'share_percentage' => 50],
+            ],
+            'advance_fund_id' => $fund->id,
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJsonFragment([
+                'is_split_default' => false,
+                'advance_fund_id' => null,
+                'split_default' => null,
+            ]);
     }
 }

@@ -42,10 +42,8 @@
               <span v-if="cat.icon" class="text-lg shrink-0">{{ cat.icon }}</span>
               <span class="text-gray-200 truncate">{{ cat.name }}</span>
             </div>
-            <div class="text-xs text-gray-500 shrink-0">
-              <span v-if="cat.is_income">income</span>
-              <span v-if="cat.is_income && cat.is_expense"> · </span>
-              <span v-if="cat.is_expense">expense</span>
+            <div class="text-xs text-gray-500 shrink-0 capitalize">
+              {{ cat.is_income ? 'income' : 'expense' }}
             </div>
           </div>
           <p v-if="!(fam.categories || []).length" class="text-gray-500 text-sm">No categories yet.</p>
@@ -73,15 +71,18 @@
                 placeholder="emoji"
               >
             </label>
-            <div class="flex items-end gap-4 pb-1">
-              <label class="flex items-center gap-2 text-sm text-gray-300">
-                <input v-model="newCategory[fam.id].is_income" type="checkbox" class="rounded border-gray-600">
-                Income
-              </label>
-              <label class="flex items-center gap-2 text-sm text-gray-300">
-                <input v-model="newCategory[fam.id].is_expense" type="checkbox" class="rounded border-gray-600">
-                Expense
-              </label>
+            <div class="sm:col-span-2">
+              <span class="text-gray-400 text-xs">Type</span>
+              <div class="mt-1 flex flex-wrap gap-4">
+                <label class="flex items-center gap-2 text-sm text-gray-300">
+                  <input v-model="newCategory[fam.id].categoryType" type="radio" value="income" class="border-gray-600 text-blue-600 focus:ring-blue-500">
+                  Income
+                </label>
+                <label class="flex items-center gap-2 text-sm text-gray-300">
+                  <input v-model="newCategory[fam.id].categoryType" type="radio" value="expense" class="border-gray-600 text-blue-600 focus:ring-blue-500">
+                  Expense
+                </label>
+              </div>
             </div>
           </div>
           <button
@@ -117,8 +118,7 @@ function ensureForm(familyId) {
     newCategory[familyId] = {
       name: '',
       icon: '',
-      is_income: true,
-      is_expense: true,
+      categoryType: 'expense',
     };
   }
 }
@@ -150,12 +150,13 @@ async function submitCategory(familyId) {
   }
   savingId.value = familyId;
   try {
+    const isIncome = f.categoryType === 'income';
     const created = await post('/admin/categories', {
       family_id: familyId,
       name: f.name.trim(),
       icon: f.icon?.trim() || null,
-      is_income: !!f.is_income,
-      is_expense: !!f.is_expense,
+      is_income: isIncome,
+      is_expense: ! isIncome,
     });
     const fam = families.value.find((x) => x.id === familyId);
     if (fam) {
@@ -166,8 +167,7 @@ async function submitCategory(familyId) {
     }
     f.name = '';
     f.icon = '';
-    f.is_income = true;
-    f.is_expense = true;
+    f.categoryType = 'expense';
   } catch (err) {
     const errors = err.response?.data?.errors;
     formErrors[familyId] = errors

@@ -1,14 +1,22 @@
 <template>
   <form @submit.prevent="handleSubmit" class="space-y-6 pb-4">
+    <div
+      v-if="isDebtPaymentEditBlocked"
+      class="rounded-lg border border-amber-700/50 bg-amber-900/20 p-3 text-sm text-amber-200"
+    >
+      This debt repayment cannot be edited here. Delete it from your transaction list to reverse the payment (the debt balance will be restored).
+    </div>
+
     <!-- Type Toggle (Income / Expense) -->
     <div>
       <label class="block text-sm font-medium text-gray-300 mb-3">Type</label>
       <div class="grid grid-cols-2 gap-2">
         <button
           type="button"
+          :disabled="submitLoading || isDebtPaymentEditBlocked"
           @click="form.type = 'expense'"
           :class="[
-            'py-2 px-4 rounded-lg font-medium transition-colors',
+            'py-2 px-4 rounded-lg font-medium transition-colors disabled:opacity-50',
             form.type === 'expense'
               ? 'bg-red-600 text-white'
               : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
@@ -18,9 +26,10 @@
         </button>
         <button
           type="button"
+          :disabled="submitLoading || isDebtPaymentEditBlocked"
           @click="form.type = 'income'"
           :class="[
-            'py-2 px-4 rounded-lg font-medium transition-colors',
+            'py-2 px-4 rounded-lg font-medium transition-colors disabled:opacity-50',
             form.type === 'income'
               ? 'bg-green-600 text-white'
               : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
@@ -45,7 +54,7 @@
           step="0.01"
           min="0"
           required
-          :disabled="submitLoading"
+          :disabled="submitLoading || isDebtPaymentEditBlocked"
           class="w-full pl-8 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
           placeholder="0.00"
         />
@@ -61,7 +70,7 @@
         id="category"
         v-model.number="form.category_id"
         required
-        :disabled="submitLoading"
+        :disabled="submitLoading || isDebtPaymentEditBlocked"
         class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
       >
         <option value="" disabled selected>Select a category</option>
@@ -84,7 +93,7 @@
         id="description"
         v-model="form.description"
         type="text"
-        :disabled="submitLoading"
+        :disabled="submitLoading || isDebtPaymentEditBlocked"
         class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
         placeholder="Add a note..."
       />
@@ -100,19 +109,61 @@
         v-model="form.transaction_date"
         type="date"
         required
-        :disabled="submitLoading"
+        :disabled="submitLoading || isDebtPaymentEditBlocked"
         class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
       />
     </div>
 
-    <!-- Split Toggle -->
+    <!-- Pay toward debt (expense only) -->
+    <div v-if="form.type === 'expense'" class="space-y-2">
+      <div
+        @click="!isDebtPaymentEditBlocked && togglePayTowardDebt()"
+        class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
+        :class="isDebtPaymentEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+      >
+        <div>
+          <p class="text-sm font-medium text-gray-300">Pay toward a tracked debt</p>
+          <p class="text-xs text-gray-500 mt-0.5">Links this expense to a debt and credits the other person</p>
+        </div>
+        <div
+          class="w-10 h-6 rounded-full transition-colors relative flex-shrink-0"
+          :class="payTowardDebt ? 'bg-sky-600' : 'bg-gray-700'"
+        >
+          <div
+            class="absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform"
+            :class="payTowardDebt ? 'translate-x-5' : 'translate-x-1'"
+          />
+        </div>
+      </div>
+      <div v-if="payTowardDebt" class="space-y-1">
+        <label for="debt-select" class="block text-xs font-medium text-gray-400">Which debt?</label>
+        <select
+          id="debt-select"
+          v-model.number="form.debt_id"
+          :disabled="submitLoading || isDebtPaymentEditBlocked"
+          class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-sky-500"
+        >
+          <option :value="null" disabled>Select a debt</option>
+          <option v-for="d in payableDebts" :key="d.id" :value="d.id">
+            {{ debtSelectLabel(d) }} — {{ formatCurrency(Number(d.balance) || 0) }} left
+          </option>
+        </select>
+        <p v-if="payableDebts.length === 0" class="text-xs text-amber-400">
+          No payable debts found. Open Debts to add one, or refresh the app.
+        </p>
+      </div>
+    </div>
+
+    <!-- Split Toggle (expense only) -->
     <div
-      @click="form.is_split = !form.is_split"
-      class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg cursor-pointer hover:border-gray-600 transition-colors"
+      v-if="form.type === 'expense' && !payTowardDebt"
+      @click="!isDebtPaymentEditBlocked && (form.is_split = !form.is_split)"
+      class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
+      :class="isDebtPaymentEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
     >
       <div>
         <p class="text-sm font-medium text-gray-300">Split between family members</p>
-        <p class="text-xs text-gray-500 mt-0.5">Divide this transaction among family members</p>
+        <p class="text-xs text-gray-500 mt-0.5">Divide this expense among family members</p>
       </div>
       <div
         class="w-10 h-6 rounded-full transition-colors relative flex-shrink-0"
@@ -126,10 +177,11 @@
     </div>
 
     <!-- Advance Against Fund -->
-    <div v-if="form.type === 'expense'" class="space-y-2">
+    <div v-if="form.type === 'expense' && !payTowardDebt" class="space-y-2">
       <div
-        @click="toggleAdvanceFund"
-        class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg cursor-pointer hover:border-gray-600 transition-colors"
+        @click="!isDebtPaymentEditBlocked && toggleAdvanceFund()"
+        class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
+        :class="isDebtPaymentEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
       >
         <div>
           <p class="text-sm font-medium text-gray-300">Advance against fund</p>
@@ -158,7 +210,7 @@
     </div>
 
     <!-- Split Editor -->
-    <div v-if="form.is_split">
+    <div v-if="form.type === 'expense' && form.is_split && !payTowardDebt">
       <SplitEditor
         :family-users="familyUsers"
         :total-amount="form.amount"
@@ -184,7 +236,7 @@
       </button>
       <button
         type="submit"
-        :disabled="submitLoading"
+        :disabled="submitLoading || isDebtPaymentEditBlocked"
         class="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:bg-gray-700 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         <span v-if="submitLoading">
@@ -218,6 +270,14 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  debtsPayload: {
+    type: Object,
+    default: () => ({
+      owed: [],
+      owing: [],
+      family_debts: [],
+    }),
+  },
   transaction: {
     type: Object,
     default: null,
@@ -228,6 +288,7 @@ const emit = defineEmits(['created', 'updated', 'close']);
 
 const { post, put, loading: submitLoading } = useApi();
 const formError = ref(null);
+const payTowardDebt = ref(false);
 
 const form = ref({
   type: 'expense',
@@ -238,6 +299,15 @@ const form = ref({
   is_split: false,
   split_data: [],
   advance_fund_id: null,
+  debt_id: null,
+});
+
+const payableDebts = computed(() => {
+  const list = [
+    ...(props.debtsPayload?.owed || []),
+    ...(props.debtsPayload?.family_debts || []),
+  ];
+  return list.filter((d) => !d.is_pending_closeout && Number(d.balance) > 0);
 });
 
 const filteredCategories = computed(() => {
@@ -254,6 +324,38 @@ const selectedCategory = computed(() => {
 });
 
 const isEditMode = computed(() => !!props.transaction);
+
+const isDebtPaymentEditBlocked = computed(
+  () => isEditMode.value && Boolean(props.transaction?.is_debt_payment)
+);
+
+function formatCurrency(amount) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+  }).format(amount);
+}
+
+function debtSelectLabel(d) {
+  if (d.creditor?.name) {
+    return `To ${d.creditor.name}`;
+  }
+  if (d.creditor_name) {
+    return `To ${d.creditor_name}`;
+  }
+  if (d.fund?.name) {
+    return `Borrowed: ${d.fund.name}`;
+  }
+  if (d.description) {
+    return d.description;
+  }
+  return `Debt #${d.id}`;
+}
+
+function togglePayTowardDebt() {
+  payTowardDebt.value = !payTowardDebt.value;
+}
 
 function normalizeDateForInput(value) {
   if (!value) {
@@ -275,6 +377,7 @@ watch(
   () => props.transaction,
   (newTransaction) => {
     if (newTransaction) {
+      payTowardDebt.value = !!newTransaction.is_debt_payment;
       form.value = {
         type: newTransaction.type,
         amount: parseFloat(newTransaction.amount),
@@ -284,6 +387,7 @@ watch(
         is_split: newTransaction.is_split,
         split_data: normalizeSplits(newTransaction.split_data || []),
         advance_fund_id: newTransaction.advance_fund_id ?? null,
+        debt_id: newTransaction.debt_id ?? null,
       };
     } else {
       resetForm();
@@ -291,6 +395,20 @@ watch(
   },
   { immediate: true }
 );
+
+watch(payTowardDebt, (on) => {
+  if (!on) {
+    form.value.debt_id = null;
+
+    return;
+  }
+  form.value.is_split = false;
+  form.value.split_data = [];
+  form.value.advance_fund_id = null;
+  if (payableDebts.value.length === 1) {
+    form.value.debt_id = payableDebts.value[0].id;
+  }
+});
 
 watch(() => form.value.is_split, (newVal) => {
   if (!newVal) {
@@ -301,10 +419,17 @@ watch(() => form.value.is_split, (newVal) => {
 watch(() => form.value.type, (newType) => {
   if (newType === 'income') {
     form.value.advance_fund_id = null;
+    form.value.is_split = false;
+    form.value.split_data = [];
+    payTowardDebt.value = false;
+    form.value.debt_id = null;
   }
 });
 
 watch(() => form.value.category_id, () => {
+  if (form.value.type !== 'expense' || payTowardDebt.value) {
+    return;
+  }
   if (selectedCategory.value?.is_split_default && selectedCategory.value?.split_default?.length) {
     form.value.is_split = true;
     form.value.split_data = normalizeSplits(selectedCategory.value.split_default);
@@ -315,6 +440,7 @@ watch(() => form.value.category_id, () => {
 });
 
 function resetForm() {
+  payTowardDebt.value = false;
   form.value = {
     type: 'expense',
     amount: null,
@@ -324,6 +450,7 @@ function resetForm() {
     is_split: false,
     split_data: [],
     advance_fund_id: null,
+    debt_id: null,
   };
   formError.value = null;
 }
@@ -344,6 +471,11 @@ function handleClose() {
 async function handleSubmit() {
   formError.value = null;
 
+  if (isDebtPaymentEditBlocked.value) {
+    formError.value = 'This transaction cannot be edited.';
+    return;
+  }
+
   if (!form.value.amount || form.value.amount <= 0) {
     formError.value = 'Please enter a valid amount';
     return;
@@ -354,6 +486,13 @@ async function handleSubmit() {
     return;
   }
 
+  if (form.value.type === 'expense' && payTowardDebt.value) {
+    if (!form.value.debt_id) {
+      formError.value = 'Select which debt you are paying toward';
+      return;
+    }
+  }
+
   try {
     const payload = {
       type: form.value.type,
@@ -361,9 +500,15 @@ async function handleSubmit() {
       category_id: form.value.category_id,
       description: form.value.description,
       transaction_date: form.value.transaction_date,
-      is_split: form.value.is_split,
-      advance_fund_id: form.value.type === 'expense' ? (form.value.advance_fund_id || null) : null,
-      ...(form.value.is_split ? { split_data: form.value.split_data } : {}),
+      is_split: form.value.type === 'expense' && form.value.is_split && !payTowardDebt.value,
+      advance_fund_id:
+        form.value.type === 'expense' && !payTowardDebt.value ? (form.value.advance_fund_id || null) : null,
+      ...(form.value.type === 'expense' && form.value.is_split && !payTowardDebt.value
+        ? { split_data: form.value.split_data }
+        : {}),
+      ...(form.value.type === 'expense' && payTowardDebt.value && form.value.debt_id
+        ? { debt_id: form.value.debt_id }
+        : {}),
     };
 
     if (isEditMode.value) {

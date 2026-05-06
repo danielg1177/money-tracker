@@ -43,6 +43,7 @@ class MonthSummaryController extends Controller
 
         $rulePreview = $this->getRulePreview($user, $year, $month);
         $fundMovements = $this->getFundMovements($user, $year, $month);
+        $debtRepayments = $this->getDebtRepaymentsSummary($user, $year, $month);
 
         return response()->json([
             'year' => $year,
@@ -53,7 +54,94 @@ class MonthSummaryController extends Controller
             'member_balances' => $memberBalances,
             'rule_preview' => $rulePreview,
             'fund_movements' => $fundMovements,
+            'debt_repayments' => $debtRepayments,
         ]);
+    }
+
+    /**
+     * Debt repayment activity for the viewer in this month (excluded from category totals and closeout gross income).
+     *
+     * @return array{
+     *     paid: array<int, array{
+     *         id: int,
+     *         amount: float,
+     *         transaction_date: string,
+     *         description: string|null,
+     *         counterparty_label: string|null,
+     *         debt_id: int,
+     *     }>,
+     *     received: array<int, array<string, mixed>>
+     * }
+     */
+    private function getDebtRepaymentsSummary(User $user, int $year, int $month): array
+    {
+        $paid = Transaction::query()
+            ->where('family_id', $user->family_id)
+            ->where('user_id', $user->id)
+            ->where('type', 'expense')
+            ->where('is_debt_payment', true)
+            ->whereNotNull('debt_id')
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with(['debt.creditor', 'debt.debtor', 'debt.fund'])
+            ->orderBy('transaction_date')
+            ->get()
+            ->map(fn (Transaction $tx) => $this->serializeDebtRepaymentTransaction($tx))->all();
+
+        $received = Transaction::query()
+            ->where('family_id', $user->family_id)
+            ->where('user_id', $user->id)
+            ->where('type', 'income')
+            ->where('is_debt_payment', true)
+            ->whereNotNull('debt_id')
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with(['debt.creditor', 'debt.debtor', 'debt.fund', 'paidByUser'])
+            ->orderBy('transaction_date')
+            ->get()
+            ->map(fn (Transaction $tx) => $this->serializeDebtRepaymentTransaction($tx))->all();
+
+        return [
+            'paid' => $paid,
+            'received' => $received,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     id: int,
+     *     amount: float,
+     *     transaction_date: string,
+     *     description: string|null,
+     *     counterparty_label: string|null,
+     *     debt_id: int,
+     *     role: string,
+     * }
+     */
+    private function serializeDebtRepaymentTransaction(Transaction $tx): array
+    {
+        $debt = $tx->debt;
+        $counterpartyLabel = null;
+
+        if ($debt) {
+            if ($tx->type === 'expense') {
+                $counterpartyLabel = $debt->creditor_name ?? $debt->creditor?->name ?? $debt->fund?->name ?? $debt->description;
+            } else {
+                $counterpartyLabel = $debt->debtor?->name ?? $tx->paidByUser?->name;
+            }
+        }
+
+        return [
+            'id' => $tx->id,
+            'amount' => round((float) $tx->amount, 2),
+            'transaction_date' => $tx->transaction_date instanceof \DateTimeInterface
+                ? $tx->transaction_date->format('Y-m-d')
+                : (string) $tx->transaction_date,
+            'description' => $tx->description,
+            'counterparty_label' => $counterpartyLabel ? (string) $counterpartyLabel : null,
+            'debt_id' => (int) $tx->debt_id,
+            'role' => $tx->type === 'expense' ? 'paid' : 'received',
+        ];
     }
 
     /**

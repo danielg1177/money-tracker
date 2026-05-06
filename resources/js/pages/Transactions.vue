@@ -148,6 +148,7 @@
       </div>
       <p class="mt-2 border-t border-gray-700/60 pt-2 text-center text-[10px] text-gray-500 leading-snug">
         Split <span class="text-gray-400">expenses</span> use <span class="text-gray-400">your share</span> in the expense total and in each day’s expense sum.
+        <span class="block mt-1 text-gray-500">Income totals exclude <span class="text-sky-300/90">debt repayments</span> received (they do not count as earned income for closeout).</span>
       </p>
     </div>
 
@@ -206,17 +207,20 @@
             :key="transaction.id"
             :class="[
               'bg-gray-800 border border-gray-700 rounded-lg sm:rounded-xl p-2 sm:p-3 transition-colors',
-              confirmDelete[transaction.id] ? 'border-red-600 bg-red-900/20' : isCurrentMonthHardClosed ? 'cursor-not-allowed opacity-75' : 'cursor-pointer hover:border-gray-600'
+              confirmDelete[transaction.id] ? 'border-red-600 bg-red-900/20' : '',
+              isCurrentMonthHardClosed ? 'opacity-75' : '',
+              !confirmDelete[transaction.id] && !isCurrentMonthHardClosed && transaction.is_debt_payment ? 'cursor-default' : '',
+              !confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !transaction.is_debt_payment ? 'cursor-pointer hover:border-gray-600' : '',
             ]"
-            @click="!confirmDelete[transaction.id] && !isCurrentMonthHardClosed && openEditForm(transaction.id)"
+            @click="!confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !transaction.is_debt_payment && openEditForm(transaction.id)"
           >
             <!-- Main transaction row: one horizontal row on all breakpoints so amount + split stay beside title on mobile -->
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
               <div
                 class="min-w-0 flex-1"
-                :class="!confirmDelete[transaction.id] && !isCurrentMonthHardClosed && 'cursor-pointer'"
+                :class="!confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !transaction.is_debt_payment && 'cursor-pointer'"
               >
-                <div class="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1 min-w-0">
+                <div class="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1 min-w-0 flex-wrap">
                   <span
                     v-if="transaction.category?.icon && !transaction.is_debt_payment"
                     class="text-sm sm:text-base shrink-0"
@@ -225,6 +229,12 @@
                   </span>
                   <span class="text-[11px] sm:text-base text-gray-300 font-medium truncate min-w-0 flex-1 leading-tight">
                     {{ getTransactionCategoryLabel(transaction) }}
+                  </span>
+                  <span
+                    v-if="transaction.type === 'income' && transaction.is_debt_payment"
+                    class="inline-flex shrink-0 items-center rounded-md bg-sky-900/55 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-sky-200"
+                  >
+                    Repayment
                   </span>
                 </div>
                 <p v-if="transaction.description" class="hidden sm:block text-gray-400 text-xs truncate">
@@ -238,7 +248,13 @@
               <div class="flex shrink-0 items-start gap-1.5 sm:gap-2">
                 <div
                   class="flex min-w-0 max-w-[12.5rem] flex-col items-end gap-1 text-right leading-tight sm:max-w-[22rem]"
-                  :class="transaction.type === 'income' ? 'text-green-400' : 'text-red-400'"
+                  :class="
+                    transaction.type === 'income'
+                      ? transaction.is_debt_payment
+                        ? 'text-sky-400'
+                        : 'text-green-400'
+                      : 'text-red-400'
+                  "
                 >
                   <template v-if="isSplitListRow(transaction)">
                     <span class="text-[11px] sm:text-base font-bold tabular-nums">
@@ -347,6 +363,7 @@
               :categories="categories"
               :family-users="familyUsers"
               :funds="funds"
+              :debts-payload="debtsPayload"
               :transaction="editingTransactionId ? getTransactionById(editingTransactionId) : null"
               @created="handleTransactionCreated"
               @updated="handleTransactionUpdated"
@@ -441,6 +458,7 @@ const transactions = ref([]);
 const categories = ref([]);
 const familyUsers = ref([]);
 const funds = ref([]);
+const debtsPayload = ref({ owed: [], owing: [], family_debts: [] });
 const showForm = ref(false);
 const editingTransactionId = ref(null);
 const confirmDelete = ref({});
@@ -598,16 +616,19 @@ async function fetchData(startDate = null, endDate = null) {
     if (endDate) params.append('end_date', endDate);
     const query = params.toString() ? `?${params.toString()}` : '';
 
-    const [txData, catData, usersData, fundsData] = await Promise.all([
+    const [txData, catData, usersData, fundsData, debtsData] = await Promise.all([
       get(`/transactions${query}`),
       get('/categories'),
       get('/family/users'),
       get('/funds'),
+      get('/debts'),
     ]);
     transactions.value = txData;
     categories.value = catData;
     familyUsers.value = usersData;
     funds.value = fundsData;
+    debtsPayload.value =
+      debtsData && typeof debtsData === 'object' ? debtsData : debtsPayload.value;
 
     // Fetch closeout status for current month
     if (selectedMonthFilter.value && selectedMonthFilter.value !== 'custom') {
@@ -696,7 +717,9 @@ const transactionsByDay = computed(() => {
     }
     grouped[date].transactions.push(tx);
     if (tx.type === 'income') {
-      grouped[date].totalIncome += Number(tx.amount) || 0;
+      if (!tx.is_debt_payment) {
+        grouped[date].totalIncome += Number(tx.amount) || 0;
+      }
     } else {
       grouped[date].totalExpenses += expenseAmountForViewerTotals(tx);
     }
@@ -707,7 +730,7 @@ const transactionsByDay = computed(() => {
 
 const totalIncome = computed(() => {
   return transactions.value
-    .filter(tx => tx.type === 'income')
+    .filter(tx => tx.type === 'income' && !tx.is_debt_payment)
     .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
 });
 
@@ -885,8 +908,15 @@ async function handleTransactionUpdated(transaction) {
 async function handleDeleteConfirm(transactionId) {
   try {
     await del(`/transactions/${transactionId}`);
-    transactions.value = transactions.value.filter(t => t.id !== transactionId);
     confirmDelete.value[transactionId] = false;
+    if (selectedMonthFilter.value && selectedMonthFilter.value !== 'custom') {
+      const [sd, ed] = getMonthDateRange(selectedMonthFilter.value);
+      await fetchData(sd, ed);
+    } else if (customStartDate.value && customEndDate.value) {
+      await fetchData(customStartDate.value, customEndDate.value);
+    } else {
+      await fetchData();
+    }
   } catch (err) {
     console.error('Failed to delete transaction:', err);
   }
@@ -898,6 +928,10 @@ function handleFormClose() {
 }
 
 function openEditForm(transactionId) {
+  const tx = getTransactionById(transactionId);
+  if (tx?.is_debt_payment) {
+    return;
+  }
   editingTransactionId.value = transactionId;
   showForm.value = true;
 }

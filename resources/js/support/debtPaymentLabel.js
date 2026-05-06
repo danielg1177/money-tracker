@@ -14,8 +14,11 @@ export function debtPaymentCategoryLine(transaction) {
 
   if (debt && typeof debt === 'object') {
     const counterparty = resolveDebtPaymentCounterpartyLabel(transaction, debt);
-    if (counterparty) {
-      return `Debt Payment: ${counterparty}`;
+    if (transaction.type === 'income' && counterparty) {
+      return `Repayment received · ${counterparty}`;
+    }
+    if (transaction.type === 'expense' && counterparty) {
+      return `Pay toward · ${counterparty}`;
     }
   }
 
@@ -26,7 +29,11 @@ export function debtPaymentCategoryLine(transaction) {
     }
   }
 
-  return 'Debt Payment';
+  if (transaction.type === 'income') {
+    return 'Debt repayment';
+  }
+
+  return 'Debt payment';
 }
 
 /**
@@ -40,6 +47,18 @@ function resolveDebtPaymentCounterpartyLabel(transaction, debt) {
   if (transaction.type === 'income' && debt.creditor_id != null && Number(uid) === Number(debt.creditor_id)) {
     const fromDebtor = debt.debtor?.name?.trim();
     return fromDebtor || null;
+  }
+
+  if (transaction.type === 'expense' && debt.debtor_id != null && Number(uid) === Number(debt.debtor_id)) {
+    if (debt.creditor?.name?.trim()) {
+      return debt.creditor.name.trim();
+    }
+    if (debt.creditor_name && String(debt.creditor_name).trim()) {
+      return String(debt.creditor_name).trim();
+    }
+    if (debt.fund?.name) {
+      return debt.fund.name;
+    }
   }
 
   if (debt.creditor_name && String(debt.creditor_name).trim()) {

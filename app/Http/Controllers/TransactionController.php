@@ -121,7 +121,7 @@ class TransactionController extends Controller
             abort(403);
         }
 
-        $transaction->delete();
+        $this->transactionService->deleteTransaction($transaction);
 
         return response()->noContent();
     }
