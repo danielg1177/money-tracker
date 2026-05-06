@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CloseoutTitleSaving;
 use App\Models\Debt;
 use App\Models\Fund;
 use App\Models\FundMovement;
@@ -44,6 +45,7 @@ class MonthSummaryController extends Controller
         $rulePreview = $this->getRulePreview($user, $year, $month);
         $fundMovements = $this->getFundMovements($user, $year, $month);
         $debtRepayments = $this->getDebtRepaymentsSummary($user, $year, $month);
+        $titleSavings = $this->getTitleSavings($user, $year, $month, $isHardClosed);
 
         return response()->json([
             'year' => $year,
@@ -55,6 +57,7 @@ class MonthSummaryController extends Controller
             'rule_preview' => $rulePreview,
             'fund_movements' => $fundMovements,
             'debt_repayments' => $debtRepayments,
+            'title_savings' => $titleSavings,
         ]);
     }
 
@@ -105,6 +108,35 @@ class MonthSummaryController extends Controller
             'paid' => $paid,
             'received' => $received,
         ];
+    }
+
+    /**
+     * Return CloseoutTitleSaving records for the authenticated user in this month.
+     *
+     * Only returns data for hard-closed months, since title savings are created during hard close.
+     *
+     * @return array<int, array{id: int, title: string, amount: float, is_completed: bool, completed_at: string|null}>
+     */
+    private function getTitleSavings(User $user, int $year, int $month, bool $isHardClosed): array
+    {
+        if (! $isHardClosed) {
+            return [];
+        }
+
+        return CloseoutTitleSaving::query()
+            ->where('user_id', $user->id)
+            ->where('year', $year)
+            ->where('month', $month)
+            ->orderBy('title')
+            ->get()
+            ->map(fn (CloseoutTitleSaving $saving) => [
+                'id' => $saving->id,
+                'title' => $saving->title,
+                'amount' => round((float) $saving->amount, 2),
+                'is_completed' => (bool) $saving->is_completed,
+                'completed_at' => $saving->completed_at?->toDateTimeString(),
+            ])
+            ->all();
     }
 
     /**

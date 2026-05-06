@@ -15,12 +15,16 @@ class CloseoutTitleSaving extends Model
         'title',
         'amount',
         'rule_id',
+        'is_completed',
+        'completed_at',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'year' => 'integer',
         'month' => 'integer',
+        'is_completed' => 'bool',
+        'completed_at' => 'datetime',
     ];
 
     public function family(): BelongsTo

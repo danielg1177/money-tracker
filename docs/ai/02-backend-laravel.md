@@ -10,12 +10,12 @@
 ## Models
 
 ### User (`app/Models/User.php`)
-- Fields: `name`, `email`, `password`, `family_id` (nullable FK), `role`, `is_admin` (boolean)
+- Fields: `name`, `email`, `password`, `family_id` (nullable FK), `role`, `is_admin` (boolean), `bank_balance_enabled` (boolean), `bank_balance` (decimal nullable), `bank_balance_set_at` (date nullable)
 - Role values (strings): `head_of_household`, `member` (admin is now a separate boolean)
 - System admin: Boolean `is_admin` column; when true, grants admin permissions independent of family role
 - Appended computed attributes (serialized in JSON): `is_admin`, `is_head_of_household`, `can_manage_family`
 - Uses PHP 8 attribute annotations `#[Fillable]`, `#[Hidden]`
-- Relations: `belongsTo(Family)`, `hasMany(Transaction)`, `hasMany(Fund)`, `hasMany(FundMovement)`, `hasMany(Debt, 'debtor_id')`, `hasMany(Debt, 'creditor_id')`
+- Relations: `belongsTo(Family)`, `hasMany(Transaction)`, `hasMany(Fund)`, `hasMany(FundMovement)` as `fundMovements`, `hasMany(Debt, 'debtor_id')` as `debtsOwed`, `hasMany(Debt, 'creditor_id')` as `debtsOwedTo`, `hasMany(MonthSoftClose)` as `monthSoftCloses`
 
 ### Family (`app/Models/Family.php`)
 - Fields: `name`, `description`
@@ -33,7 +33,7 @@
 - `debt_id` links a payment transaction to the debt it settles
 - `paid_by_user_id` tracks which user initiated the payment (may differ from `user_id` for creditor income rows)
 - `is_closeout_initiated` distinguishes manual payments (`false`) from closeout-rule-triggered payments (`true`)
-- Relations: `belongsTo(Family)`, `belongsTo(User)`, `belongsTo(User, 'paid_by_user_id')` as `paidByUser`, `belongsTo(Category)`, `belongsTo(Fund)`, `belongsTo(Debt)` via `debt_id`, `belongsTo(Transaction, 'mirror_transaction_id')`, `hasMany(TransactionSplit)` as `splits`, `hasMany(Debt)` (split-linked debts)
+- Relations: `belongsTo(Family)`, `belongsTo(User)`, `belongsTo(User, 'paid_by_user_id')` as `paidByUser`, `belongsTo(Category)`, `belongsTo(Fund)`, `belongsTo(Fund, 'advance_fund_id')` as `advanceFund`, `belongsTo(Debt)` via `debt_id`, `belongsTo(Transaction, 'mirror_transaction_id')` as `mirrorTransaction`, `hasMany(TransactionSplit)` as `splits`, `hasMany(Debt)` as `debts` (split-linked debts)
 
 ### TransactionSplit (`app/Models/TransactionSplit.php`)
 - Fields: `transaction_id`, `user_id`, `share_percentage` (decimal:2), `amount` (decimal:2)
@@ -52,17 +52,23 @@
 - Relations: `belongsTo(User)`, `belongsTo(Fund)`
 
 ### FundMovement (`app/Models/FundMovement.php`)
-- Fields: `fund_id`, `user_id`, `type` (`allocation`|`borrow`|`repayment`), `amount`, `transaction_id` (nullable)
+- Fields: `fund_id`, `user_id`, `type` (`allocation`|`borrow`|`repayment`|`initial_value`|`closeout_allocation`|`advance_settlement`), `amount`, `transaction_id` (nullable), `description` (nullable)
 - Audit ledger for every fund balance change
+- Relations: `belongsTo(Fund)`, `belongsTo(User)`, `belongsTo(Transaction)`
 
 ### Debt (`app/Models/Debt.php`)
-- Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable FK → transactions, `cascadeOnDelete` for split-linked rows), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `creditor_name` (nullable string for external creditors), `contributions` (JSON array nullable)
+- Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable FK → transactions, `cascadeOnDelete` for split-linked rows), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `is_pending_closeout` (bool — true during month hard-close split processing; pending debts are excluded from `GET /debts` and cannot be manually paid), `creditor_name` (nullable string for external creditors), `contributions` (JSON array nullable)
 - `creditor_id` is null when the debt is to a fund (borrow scenario) or to an external party
 - `creditor_name` stores plain text creditor names (e.g., "Bank of America") when `creditor_id` is null and `is_family_debt=false`
 - `is_family_debt` controls visibility: false = personal debt (debtor + creditor only); true = visible to all family members
 - `balance` decrements as payments are made; a debt with `balance = 0` is fully paid
 - `contributions` records closeout contributions as `[{month, year, amount}]` tuples, used by the debt history modal to show "Closeout Additions" separate from manual payments
 - Relations: `belongsTo(Family)`, `belongsTo(User, 'debtor_id')`, `belongsTo(User, 'creditor_id')`, `belongsTo(Fund)`, `belongsTo(Transaction)`
+
+### CloseoutTitleSaving (`app/Models/CloseoutTitleSaving.php`)
+- Fields: `family_id`, `user_id`, `year`, `month`, `title`, `amount`, `rule_id`, `is_completed`, `completed_at`
+- Casts: `amount` decimal:2, `year` integer, `month` integer, `is_completed` bool, `completed_at` datetime
+- Relations: `belongsTo(Family)`, `belongsTo(User)`
 
 ## Controllers
 
@@ -78,7 +84,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `index()` — personal funds: `auth()->user()->funds()->whereNull('family_id')`; family funds: `Fund::where('family_id', $user->family_id)` when set; merged JSON with `scope` per row; `fundRules` and `movements.user` eager-loaded
 - `store(Request)` — inline validation, creates fund for auth user
 - `update(Request, Fund)` — authorizes via `FundPolicy`, inline validation
-- `showRules(Fund)` — authorizes via `FundPolicy`, returns rules ordered by `order`
+- `showRules()` — returns all `FundRule` rows for the auth user ordered by `order`; takes no parameters and performs no policy check; also mounted at `GET /funds/{fund}/rules` for backward compatibility (the `{fund}` parameter is ignored)
 - `storeRule(Request)` — inline validation, creates `FundRule`; authorizes fund ownership
 - `updateRule(FundRule, Request)` — authorizes parent fund, inline validation
 - `destroy(Fund)` — authorizes via `FundPolicy`
@@ -94,9 +100,11 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
   - **Personal to external parties:** `creditor_name` provided, `creditor_id` null, `is_interfamily=false`
   - **In-family:** `creditor_id` provided, user is a different family member, `is_interfamily=true`
   - **Family-shared:** `is_family_debt=true`, visible to all family members
-- `destroy(Debt)` — soft delete; only debtor or `can_manage_family` user can delete; cannot delete pending closeout debts
+- `update(Request, Debt)` — updates `description` and `creditor_name`; only debtor or `can_manage_family` user may update; rejects pending closeout debts
+- `destroy(Debt)` — hard delete (`$debt->delete()`); only debtor or `can_manage_family` user can delete; cannot delete pending closeout debts
 - `payDebt(PayDebtRequest)` — delegates to `DebtService::payDebt`
-- `paymentHistory(Debt)` — JSON array of `transactions` for `debt_id`; for debts with member `creditor_id`, omits mirror **income** rows when a paired **expense** exists so the History modal shows one line per payment
+- `paymentHistory(Debt)` — role-based filtering: creditors see **income** rows with their `user_id`; all others (debtor, family manager) see **expense** rows; appends a synthetic `initial_value` entry showing the debt's original amount and creation date; debtor/creditor/`can_manage_family` required to access
+- `splitDebtSummary(Request)` — `GET /split-debt-summary?year=&month=`; returns pending split debts for the current user's family grouped by counterpart user with `you_owe`, `they_owe`, and nested `transactions`
 
 ### CategoryController
 - `index()` — returns family categories
@@ -120,6 +128,12 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 ### DashboardController
 - `monthlyTotals()` — returns `{total_income, total_expenses}` for the current calendar month for the auth user; excludes `is_debt_payment=true` transactions; returns zeros if user has no `family_id`
 
+### BankBalanceController
+- `show()` — returns bank balance tracking state for auth user: disabled/null state when feature is off, baseline-not-set state when no baseline date exists, or computed balance state (`bank_balance + income - expense - completed title savings` since `bank_balance_set_at`)
+- `update(UpdateBankBalanceRequest)` — updates `bank_balance_enabled` and/or baseline `bank_balance`; when a balance is provided it also sets `bank_balance_set_at` to today and forces enabled state
+- `completeTitleSaving(int $id)` — marks one user-owned `CloseoutTitleSaving` row as completed and stamps `completed_at`
+- `incompleteTitleSaving(int $id)` — clears completion state and timestamp for one user-owned title saving row
+
 ### MonthCloseoutController
 - `status(Request)` — `POST /closeout/status`; accepts `{year, month}`; returns `{soft_closes, hard_close, all_soft_closed, family_user_count}` via `MonthCloseoutService::getMonthStatus`
 - `softClose(Request)` — `POST /closeout/soft-close`; creates a `MonthSoftClose` record; auto-triggers `hardClose` for single-member families; returns `{message, data, hard_close?, auto_hard_closed?}`
@@ -128,11 +142,12 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `closedMonths(Request)` — `GET /closeout/closed-months`; returns array of `{year, month}` hard-closed months for the auth user's family
 
 ### MonthSummaryController
-- `show(Request)` — `GET /month-summary?year=&month=`; read-only overview for a specific month; requires family membership; returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements, debt_repayments}`
+- `show(Request)` — `GET /month-summary?year=&month=`; read-only overview for a specific month; requires family membership; returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements, debt_repayments, title_savings}`
   - `category_totals`: family transactions grouped by category (expense/income, excluding debt payments), sorted expenses first then by total descending
   - `member_balances`: net amounts owed between the auth user and each other family member from split expenses, showing direction (`they_owe_you` / `you_owe_them`)
   - `rule_preview`: dry-run of the auth user's active closeout rules with projected allocation amounts; includes `basis` (gross income, total expenses, remaining); **gross omits `is_debt_payment` income** (creditor repayment lines)
   - `debt_repayments`: `{ paid: [...], received: [...] }` viewer-scoped `is_debt_payment` rows that month (`counterparty_label`, amounts, descriptions)
+  - `title_savings`: auth-user `CloseoutTitleSaving` rows for the selected month, returned only when `is_hard_closed=true`; each row includes completion state (`is_completed`, `completed_at`)
 
 ## Services
 
@@ -147,11 +162,13 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `repayFund(Debt, float, User): void` — validates fund association, debtor match, amount; increments fund balance, creates `FundMovement` (type=`repayment`), creates expense transaction with `is_debt_payment=true`, decrements debt balance
 
 ### DebtService (`app/Services/DebtService.php`)
-- `payDebt(Debt, float, string, User): void` — validates and records a debt payment:
+- `payDebt(Debt, float, string, User, bool $isCloseoutInitiated = false, ?int $splitWithUserId = null, ?float $splitPercentage = null): void` — validates and records a debt payment:
   - For **family debts** (`is_family_debt=true`): payer must be a family member
   - For **personal debts**: payer must be the debtor
-  - Creates expense transaction for payer; creates income transaction for creditor if `creditor_id` is not null (unsplit flows set `mirror_transaction_id` linking the pair when both legs exist)
+  - Creates expense transaction for payer; when `splitWithUserId` / `splitPercentage` are provided, splits that expense and creates a pending `Debt` for the co-payer's share
+  - Creates income transaction for creditor if `creditor_id` is not null; unsplit flows set `mirror_transaction_id` linking the expense ↔ income pair
   - Decrements `debt.balance`
+  - Rejects `is_pending_closeout=true` debts with `InvalidArgumentException`
 
 ### SplitCalculator (`app/Services/SplitCalculator.php`)
 - `validate(array): bool` — checks `share_percentage` sum ≈ 100 (epsilon 0.01)
@@ -171,6 +188,7 @@ Located in `app/Http/Requests/`. Several exist but not all are used uniformly:
 | `StoreFundRuleRequest` | NOT used — `FundController` validates inline |
 | `UpdateFundRuleRequest` | NOT used — `FundController` validates inline |
 | `PayDebtRequest` | `DebtController::payDebt` |
+| `UpdateBankBalanceRequest` | `BankBalanceController::update` |
 | `CreateFamilyRequest` | NOT used — `AdminController` validates inline |
 | `CreateUserRequest` | NOT used — `AdminController` validates inline |
 

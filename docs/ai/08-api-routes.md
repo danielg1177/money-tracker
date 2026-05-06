@@ -119,11 +119,20 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 |---|---|---|---|
 | GET | `/dashboard/monthly-totals` | `DashboardController::monthlyTotals` | Returns `{total_income, total_expenses}` for current month, auth user only |
 
+### Bank balance & title savings completion
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/bank-balance` | `BankBalanceController::show` | Returns `{enabled, bank_balance, bank_balance_set_at, computed_balance, delta}` for auth user |
+| PUT | `/bank-balance` | `BankBalanceController::update` | Body: `{bank_balance_enabled?, bank_balance?}`; when `bank_balance` is provided, sets baseline date to today |
+| POST | `/title-savings/{id}/complete` | `BankBalanceController::completeTitleSaving` | Marks one auth-user title saving row as completed |
+| DELETE | `/title-savings/{id}/complete` | `BankBalanceController::incompleteTitleSaving` | Reverses completion for one auth-user title saving row |
+
 ### Month Summary
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
-| GET | `/month-summary` | `MonthSummaryController::show` | Query: `year`, `month`. Returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements, debt_repayments}`; requires `family_id` (403 if unset). All read-only. |
+| GET | `/month-summary` | `MonthSummaryController::show` | Query: `year`, `month`. Returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements, debt_repayments, title_savings}`; `title_savings` is populated only for hard-closed months and includes `{id, title, amount, is_completed, completed_at}` rows for the authenticated user. Requires `family_id` (403 if unset). All read-only. |
 
 ---
 
@@ -133,7 +142,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 |---|---|---|---|
 | GET | `/admin/users` | `AdminController::users` | All users with family |
 | POST | `/admin/users` | `AdminController::createUser` | `{name, email, password, family_id?, role}` |
-| PUT | `/admin/users/{user}` | `AdminController::updateUser` | `{name, email, family_id?, role}` (no password change) |
+| PUT | `/admin/users/{user}` | `AdminController::updateUser` | `{name, email, family_id?, role, is_admin?, password?}` — `password` is optional; when provided (`min:8`), the user's password is updated; blank/absent password keeps the existing hash |
 | DELETE | `/admin/users/{user}` | `AdminController::deleteUser` | Cannot delete self |
 | GET | `/admin/families` | `AdminController::families` | All families with users + categories |
 | POST | `/admin/families` | `AdminController::createFamily` | `{name, description?}` |

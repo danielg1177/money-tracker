@@ -21,6 +21,11 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_04_30_190833_create_categories_table` | `categories` |
 | `2026_04_30_190834_create_funds_table` | `funds` |
 | `2026_05_03_160512_add_family_id_to_funds_table` | Nullable `family_id` on `funds` for family-shared buckets |
+| `2026_05_03_160512_update_fund_rules_for_closeout_system` | Adds `destination_type`, `destination_id`, `destination_title` to `fund_rules`; makes `fund_id` nullable |
+| `2026_05_03_160512_create_month_soft_closes_table` | `month_soft_closes` (per-user monthly soft-close records) |
+| `2026_05_03_160512_create_month_hard_closes_table` | `month_hard_closes` (per-family monthly hard-close records) |
+| `2026_05_03_160513_add_is_pending_closeout_to_debts_table` | Adds `is_pending_closeout` boolean to `debts` |
+| `2026_05_03_160513_create_closeout_title_savings_table` | `closeout_title_savings` (titled allocation records created by closeout rules) |
 | `2026_04_30_190835_create_transactions_table` | `transactions` |
 | `2026_04_30_190836_create_fund_rules_table` | `fund_rules` |
 | `2026_04_30_190837_add_family_id_and_role_to_users_table` | Adds `family_id`, `role` to `users` |
@@ -34,8 +39,12 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_05_04_204012_fix_debts_transaction_id_cascade_and_repair_orphans` | Sets `is_pending_closeout=false` on pending debts with null `transaction_id`; replaces `debts.transaction_id` FK with `cascadeOnDelete` (was `nullOnDelete`) |
 | `2026_05_04_205520_add_contributions_to_debts_table` | Adds nullable `contributions` JSON column to `debts` |
 | `2026_05_04_211754_repair_missing_april_2026_split_debt` | Data repair: inserts a confirmed April 2026 inter-family split debt for family 1 if missing; no-ops in test environments |
+| `2026_05_05_201653_add_advance_fund_id_to_categories_table` | Nullable `advance_fund_id` FK on `categories` → `funds.id` (`nullOnDelete`) |
+| `2026_05_05_201653_add_advance_fund_id_to_transactions_table` | Nullable `advance_fund_id` FK on `transactions` → `funds.id` (`nullOnDelete`) |
 | `2026_05_05_212303_ensure_categories_are_income_xor_expense` | Data repair: normalizes `categories` so each row is income-only or expense-only (not both / not neither) |
 | `2026_05_05_214052_add_mirror_transaction_id_to_transactions_table` | Nullable `mirror_transaction_id` self-FK linking paired debt-payment expense ↔ creditor income rows |
+| `2026_05_06_154936_add_bank_balance_to_users_table` | Adds `bank_balance_enabled` (bool), `bank_balance` (decimal nullable), `bank_balance_set_at` (date nullable) to `users` |
+| `2026_05_06_154936_add_completion_to_closeout_title_savings_table` | Adds `is_completed` (bool) and `completed_at` (timestamp nullable) to `closeout_title_savings` |
 
 ## Table schemas
 
@@ -51,6 +60,9 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `family_id` | bigint FK nullable | → `families.id` |
 | `role` | varchar | `head_of_household` \| `member` (no more `admin` role — admin is now a boolean) |
 | `is_admin` | boolean | default false; grants system-admin permissions independent of family role |
+| `bank_balance_enabled` | boolean | default false; toggles whether manual bank balance tracking is enabled for the user |
+| `bank_balance` | decimal(15,2) nullable | optional current/last recorded bank balance value |
+| `bank_balance_set_at` | date nullable | date the bank balance was last explicitly set |
 | `two_factor_*` | various | Fortify 2FA columns |
 | `timestamps` | | |
 
@@ -161,9 +173,24 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `id` | bigint PK | |
 | `fund_id` | bigint FK | → `funds.id` |
 | `user_id` | bigint FK | → `users.id` |
-| `type` | varchar | `allocation` \| `borrow` \| `repayment` |
+| `type` | varchar | `allocation` \| `borrow` \| `repayment` \| `initial_value` \| `closeout_allocation` \| `advance_settlement` |
 | `amount` | decimal(15,2) | |
+| `description` | text nullable | |
 | `transaction_id` | bigint FK nullable | → `transactions.id` |
+| `timestamps` | | |
+
+### `closeout_title_savings`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint PK | |
+| `family_id` | bigint FK | → `families.id` |
+| `user_id` | bigint FK | → `users.id` |
+| `title` | varchar(255) | Title destination name from closeout rule |
+| `amount` | decimal(15,2) | Saved amount for the month closeout |
+| `month` | integer | Closeout month (1-12) |
+| `year` | integer | Closeout year (YYYY) |
+| `is_completed` | boolean | default false; marks a titled saving goal entry as completed |
+| `completed_at` | timestamp nullable | completion timestamp when marked complete |
 | `timestamps` | | |
 
 ## Entity relationship summary

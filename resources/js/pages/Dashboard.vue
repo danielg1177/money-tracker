@@ -31,6 +31,108 @@
         </p>
       </div>
 
+      <!-- Bank Account Balance -->
+      <div v-if="user?.family_id">
+        <!-- Feature not enabled: show enable prompt -->
+        <div
+          v-if="!bankBalance || !bankBalance.enabled"
+          class="bg-gray-800 border border-gray-700 rounded-xl p-4 flex items-center justify-between"
+        >
+          <div>
+            <p class="text-gray-400 text-xs font-semibold uppercase tracking-wide">Bank Account</p>
+            <p class="text-gray-500 text-sm mt-1">Track your account balance in real time</p>
+          </div>
+          <button
+            type="button"
+            class="shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"
+            @click="enableBankBalance"
+          >
+            Enable
+          </button>
+        </div>
+        <!-- Feature enabled: show balance card -->
+        <div v-else class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+          <div class="flex items-start justify-between gap-2 mb-3">
+            <p class="text-gray-400 text-xs font-semibold uppercase tracking-wide">Bank Account</p>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="!bankBalanceEdit"
+                type="button"
+                class="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                @click="startEditBankBalance"
+              >
+                Update
+              </button>
+              <button
+                type="button"
+                class="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+                @click="disableBankBalance"
+                title="Disable bank balance tracking"
+              >
+                Off
+              </button>
+            </div>
+          </div>
+          <!-- Balance display (not editing) -->
+          <div v-if="!bankBalanceEdit">
+            <p
+              v-if="bankBalance.computed_balance !== null"
+              class="text-3xl font-bold"
+              :class="bankBalance.computed_balance >= 0 ? 'text-white' : 'text-red-400'"
+            >
+              {{ formatCurrency(bankBalance.computed_balance) }}
+            </p>
+            <p v-else class="text-gray-400 text-sm">
+              Set your current balance to start tracking.
+              <button type="button" class="text-blue-400 underline ml-1" @click="startEditBankBalance">Set now</button>
+            </p>
+            <p v-if="bankBalance.bank_balance_set_at" class="text-gray-500 text-xs mt-1">
+              Since {{ bankBalance.bank_balance_set_at }}
+              <span v-if="bankBalance.delta" class="ml-2 text-gray-600">
+                ({{ bankBalance.delta.income >= 0 ? '+' : '' }}{{ formatCurrency(bankBalance.delta.income - bankBalance.delta.expense - bankBalance.delta.title_savings_completed) }} since set)
+              </span>
+            </p>
+          </div>
+          <!-- Edit mode -->
+          <div v-else class="space-y-3">
+            <div>
+              <label class="block text-xs text-gray-400 mb-1">Current account balance</label>
+              <div class="flex items-center gap-2">
+                <span class="text-gray-400 text-sm">$</span>
+                <input
+                  v-model="bankBalanceInput"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  class="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  @keydown.enter="saveBankBalance"
+                  @keydown.escape="cancelBankBalanceEdit"
+                />
+              </div>
+              <p class="text-xs text-gray-500 mt-1">Enter your bank's current balance. Future transactions will be tracked from today.</p>
+            </div>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                :disabled="bankBalanceSaving"
+                @click="saveBankBalance"
+              >
+                {{ bankBalanceSaving ? 'Saving...' : 'Save Balance' }}
+              </button>
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded-lg transition-colors"
+                @click="cancelBankBalanceEdit"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Family close progress: earliest calendar month that has transactions and is not hard-closed -->
       <div v-else-if="user?.family_id && closeoutYearMonth">
         <div class="px-1 mb-3">
@@ -245,7 +347,7 @@ import { useApi } from '../composables/useApi';
 import { debtPaymentCategoryLine } from '../support/debtPaymentLabel.js';
 
 const { user } = useAuth();
-const { get, post, loading, error } = useApi();
+const { get, post, put, loading, error } = useApi();
 
 const transactions = ref([]);
 const funds = ref([]);
@@ -255,6 +357,10 @@ const selectedSplitItem = ref(null);
 const familyUsers = ref([]);
 const closeoutStatus = ref(null);
 const monthlyTotals = ref({ total_income: 0, total_expenses: 0 });
+const bankBalance = ref(null);
+const bankBalanceEdit = ref(false);
+const bankBalanceInput = ref('');
+const bankBalanceSaving = ref(false);
 /** Earliest year/month that has transactions and is not hard-closed; drives closeout UI. */
 const closeoutYearMonth = ref(null);
 const closedMonths = ref([]);
@@ -381,13 +487,14 @@ async function load() {
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
 
-    const [tx, fd, db, splits, closed, totals] = await Promise.all([
+    const [tx, fd, db, splits, closed, totals, bal] = await Promise.all([
       get('/transactions'),
       get('/funds'),
       get('/debts'),
       get(`/split-debt-summary?year=${year}&month=${month}`),
       get('/closeout/closed-months'),
       get('/dashboard/monthly-totals'),
+      get('/bank-balance'),
     ]);
     transactions.value = Array.isArray(tx) ? tx : [];
     funds.value = Array.isArray(fd) ? fd : [];
@@ -395,6 +502,7 @@ async function load() {
     splitDebtSummary.value = Array.isArray(splits) ? splits : [];
     closedMonths.value = Array.isArray(closed) ? closed : [];
     monthlyTotals.value = totals && typeof totals === 'object' ? totals : { total_income: 0, total_expenses: 0 };
+    bankBalance.value = bal && typeof bal === 'object' ? bal : null;
 
     const closeoutTarget = pickFirstOpenTransactionMonth(transactions.value, closedMonths.value);
 
@@ -459,6 +567,52 @@ function formatDate(dateString) {
     day: 'numeric',
     year: 'numeric',
   }).format(date);
+}
+
+async function saveBankBalance() {
+  if (bankBalanceSaving.value) return;
+  const amount = parseFloat(bankBalanceInput.value);
+  if (isNaN(amount) || amount < 0) return;
+  bankBalanceSaving.value = true;
+  try {
+    const result = await put('/bank-balance', { bank_balance: amount });
+    bankBalance.value = result;
+    bankBalanceEdit.value = false;
+  } catch (err) {
+    console.error('Failed to save bank balance:', err);
+  } finally {
+    bankBalanceSaving.value = false;
+  }
+}
+
+async function enableBankBalance() {
+  try {
+    const result = await put('/bank-balance', { bank_balance_enabled: true });
+    bankBalance.value = result;
+  } catch (err) {
+    console.error('Failed to enable bank balance:', err);
+  }
+}
+
+async function disableBankBalance() {
+  if (!confirm('Disable bank balance tracking?')) return;
+  try {
+    const result = await put('/bank-balance', { bank_balance_enabled: false });
+    bankBalance.value = result;
+  } catch (err) {
+    console.error('Failed to disable bank balance:', err);
+  }
+}
+
+function startEditBankBalance() {
+  const current = bankBalance.value?.computed_balance ?? bankBalance.value?.bank_balance ?? '';
+  bankBalanceInput.value = current !== null && current !== '' ? String(current) : '';
+  bankBalanceEdit.value = true;
+}
+
+function cancelBankBalanceEdit() {
+  bankBalanceEdit.value = false;
+  bankBalanceInput.value = '';
 }
 
 function getNetAmountText(item) {

@@ -63,7 +63,7 @@ The frontend normalizes these into `isAdmin` via `normalizeAuthUser()`.
 
 | Middleware | Applied to |
 |---|---|
-| `auth` | All routes except `/`, `/login`, `/dashboard` (SPA shells), `/categories` (SPA shell), `/admin/categories` (SPA shell), `/my-family` (SPA shell) |
+| `auth` | All routes except `/`, `/login`, `/dashboard`, `/categories`, `/admin/categories`, `/debts`, `/month-summary/{yearMonth}`, `/my-family` (all SPA shells — no `auth` middleware; JSON endpoints at these paths still enforce auth server-side) |
 | `can:admin` | `POST /admin/users`, `PUT /admin/users/{user}`, `DELETE /admin/users/{user}`, `GET /admin/users`, `GET /admin/families`, `POST /admin/families` |
 | `can:manage_family` | `PUT /admin/families/{family}`, `DELETE /admin/families/{family}`, `POST /admin/families/{family}/users`, `DELETE /admin/families/{family}/users/{user}`, `GET /my-family` |
 

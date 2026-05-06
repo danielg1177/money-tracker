@@ -11,6 +11,39 @@ Format:
 
 ---
 
+## 2026-05-06 — Dashboard adds bank account balance card
+
+- Files touched: `resources/js/pages/Dashboard.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Dashboard now fetches `/bank-balance` and renders a mobile-first Bank Account card for family users. Users can enable tracking, set current balance (baseline set to today), and disable tracking from the card via `PUT /bank-balance`.
+
+## 2026-05-06 — Month summary adds title savings payload
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `GET /month-summary` now includes `title_savings` for the authenticated user when the selected month is hard-closed. Each row returns `id`, `title`, `amount`, `is_completed`, and `completed_at`. Non-hard-closed months return an empty `title_savings` array.
+
+## 2026-05-06 — Add bank balance tracking API and title-saving completion endpoints
+
+- Files touched: `app/Models/User.php`, `app/Models/CloseoutTitleSaving.php`, `app/Http/Requests/UpdateBankBalanceRequest.php`, `app/Http/Controllers/BankBalanceController.php`, `routes/web.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Added authenticated bank balance tracking endpoints (`GET/PUT /bank-balance`) and title-savings completion toggles (`POST/DELETE /title-savings/{id}/complete`). Users can enable/disable bank-balance mode, set a balance baseline date (today when a balance is submitted), and compute a live balance delta from transactions and completed title savings since that date.
+
+## 2026-05-06 — Add bank balance and closeout completion migration columns
+
+- Files touched: `database/migrations/2026_05_06_154936_add_bank_balance_to_users_table.php`, `database/migrations/2026_05_06_154936_add_completion_to_closeout_title_savings_table.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Added user-level bank balance tracking fields (`bank_balance_enabled`, `bank_balance`, `bank_balance_set_at`) and closeout title saving completion fields (`is_completed`, `completed_at`). Both migrations were applied successfully via `php artisan migrate`; no runtime errors during migration or formatting.
+
+## 2026-05-06 — Documentation audit and correction
+
+- Files touched: `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/05-auth-permissions.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Documentation-only. No code changes. Key corrections:
+  - **00**: Migration count corrected (25 → 30); feature test list updated to include `AdminUserManagementTest`, `CategoryTest`, and `DebtRepaymentTransactionTest`.
+  - **02**: User model relations named correctly (`debtsOwed`, `debtsOwedTo`, `monthSoftCloses`); Transaction model adds `advanceFund()` and `mirrorTransaction()` named relations; FundMovement adds `description` field and all 6 type values (`allocation`, `borrow`, `repayment`, `initial_value`, `closeout_allocation`, `advance_settlement`) plus its relations; Debt model adds `is_pending_closeout` to field list; DebtController adds missing `update()` and `splitDebtSummary()` methods, corrects `destroy()` as hard delete (not soft), corrects `paymentHistory()` to describe role-based filtering, corrects `paymentHistory()` initial_value entry; FundController `showRules()` corrected (no Fund parameter, no FundPolicy); DebtService `payDebt` signature updated with all 7 parameters.
+  - **04**: Added 7 missing migrations (5 from 2026-05-03 closeout system, 2 from 2026-05-05 advance fund); fund_movements table adds `description` column and complete `type` enum values.
+  - **05**: Route middleware `auth` exception list adds `/debts` and `/month-summary/{yearMonth}`.
+  - **06**: Feature numbers 13/14 corrected (Month Summary is 13, Fund rules/closeout is 14).
+  - **08**: `PUT /admin/users/{user}` notes updated to reflect optional `password` and `is_admin` fields.
+
+---
+
 ## 2026-05-05 — Transactions: repay debt + creditor mirror + closeout exclusions
 
 - Files touched: `database/migrations/2026_05_05_214052_add_mirror_transaction_id_to_transactions_table.php`, `app/Models/Transaction.php`, `app/Http/Requests/StoreTransactionRequest.php`, `app/Services/TransactionService.php`, `app/Services/DebtService.php`, `app/Http/Controllers/TransactionController.php`, `app/Http/Controllers/MonthSummaryController.php`, `resources/js/components/TransactionForm.vue`, `resources/js/components/AppNav.vue`, `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `resources/js/support/debtPaymentLabel.js`, `tests/Feature/DebtRepaymentTransactionTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

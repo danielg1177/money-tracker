@@ -43,7 +43,7 @@ money-tracker/
 │   └── Services/              # DebtService, FundService, MonthCloseoutService, SplitCalculator, TransactionService
 ├── database/
 │   ├── factories/             # 7 factories
-│   ├── migrations/            # 25 migrations (initial set 2026-04-30; ongoing additions 2026-05-03/04)
+│   ├── migrations/            # 30 migrations (initial set 2026-04-30; ongoing additions 2026-05-03/04/05)
 │   └── seeders/               # DatabaseSeeder (creates one admin user + family, no factories)
 ├── resources/
 │   ├── css/app.css            # Tailwind v4 entry
@@ -62,7 +62,7 @@ money-tracker/
 │   ├── web.php                # All application routes (SPA views + JSON endpoints)
 │   └── console.php            # Artisan `inspire` command only
 ├── tests/
-│   ├── Feature/               # CloseoutRulesApiTest, ExampleTest, FundAllocationTest, FundIndexTest, MonthCloseoutTransactionDateTest, SplitDebtSummaryTest, TransactionTest
+│   ├── Feature/               # AdminUserManagementTest, CategoryTest, CloseoutRulesApiTest, DebtRepaymentTransactionTest, ExampleTest, FundAllocationTest, FundIndexTest, MonthCloseoutTransactionDateTest, SplitDebtSummaryTest, TransactionTest
 │   └── Unit/                  # ExampleTest stub
 ├── config/                    # Standard Laravel config files + fortify.php
 ├── Caddyfile                  # FrankenPHP/Caddy runtime config (binds to `$PORT`, serves `/app/public`)

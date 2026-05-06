@@ -18,11 +18,11 @@ This document maps each user-visible feature to the backend and frontend files t
 
 ## 2. Dashboard / Summary
 
-**What it does:** Shows current-month income/expense totals and displays the same **viewer-scoped** transaction list as the Transactions page (see section 3). Also displays **This Month's Split Expenses** (per-counterpart net and a View Details sheet); there is no separate aggregate “split balance” card.
+**What it does:** Shows current-month income/expense totals and displays the same **viewer-scoped** transaction list as the Transactions page (see section 3). Also displays **This Month's Split Expenses** (per-counterpart net and a View Details sheet); there is no separate aggregate “split balance” card. For users in a family, it also shows a **Bank Account** card that reads/writes `/bank-balance` for enabling tracking and setting a baseline account balance.
 
 | Layer | Files |
 |---|---|
-| Backend | `GET /transactions` → `TransactionController::index`; `GET /dashboard/monthly-totals` → `DashboardController::monthlyTotals` |
+| Backend | `GET /transactions` → `TransactionController::index`; `GET /dashboard/monthly-totals` → `DashboardController::monthlyTotals`; `GET /bank-balance` + `PUT /bank-balance` → `BankBalanceController` |
 | Frontend | `resources/js/pages/Dashboard.vue` |
 
 **Monthly totals:** `DashboardController::monthlyTotals` calculates income and expense sums for the auth user for the current calendar month (excluding debt-payment transactions). Values are displayed in a two-column card above the stat cards. The **Transactions** stat card shows the count of loaded transactions whose `transaction_date` falls in the **current calendar month** (not lifetime total); the full unfiltered list is still used for family closeout month detection.
@@ -187,7 +187,7 @@ This document maps each user-visible feature to the backend and frontend files t
 
 ---
 
-## 14. Month Summary
+## 13. Month Summary
 
 **What it does:** Read-only financial overview for a specific past or current month. Shows close status, spending by category, family member split balances, monthly fund in/out activity, and a projected dry-run of the user's closeout rules. Accessible from the Dashboard (and any deep link).
 
@@ -207,7 +207,7 @@ This document maps each user-visible feature to the backend and frontend files t
 
 ---
 
-## 13. Fund rules and closeout allocation
+## 14. Fund rules and closeout allocation
 
 **What it does:** Users define `FundRule` rows (percentage/fixed, gross vs remaining, destination fund/debt/title) on the **Closeout Rules** page (`GET`/`POST`/`PUT`/`DELETE /closeout-rules`). Those rules are applied when a month is **hard-closed** (`MonthCloseoutService`), not when each income transaction is posted.
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\BankBalanceController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DebtController;
@@ -113,6 +114,10 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
 
     Route::get('/dashboard/monthly-totals', [DashboardController::class, 'monthlyTotals']);
+    Route::get('/bank-balance', [BankBalanceController::class, 'show']);
+    Route::put('/bank-balance', [BankBalanceController::class, 'update']);
+    Route::post('/title-savings/{id}/complete', [BankBalanceController::class, 'completeTitleSaving']);
+    Route::delete('/title-savings/{id}/complete', [BankBalanceController::class, 'incompleteTitleSaving']);
 
     Route::post('/closeout/status', [MonthCloseoutController::class, 'status']);
     Route::post('/closeout/soft-close', [MonthCloseoutController::class, 'softClose']);
