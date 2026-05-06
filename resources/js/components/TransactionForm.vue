@@ -410,6 +410,10 @@
 import { ref, computed, watch } from 'vue';
 import { useApi } from '../composables/useApi';
 import SplitEditor from './SplitEditor.vue';
+import {
+  equalSplitPayloadForFamilyUsers,
+  hasPositiveSplitShares,
+} from '../support/equalFamilySplit.js';
 
 const props = defineProps({
   categories: {
@@ -479,12 +483,19 @@ const incomeAttachableDebts = computed(() => {
 });
 
 const filteredCategories = computed(() => {
-  return props.categories.filter(cat => {
-    if (form.value.type === 'income') {
-      return cat.is_income;
-    }
-    return cat.is_expense;
-  });
+  return props.categories
+    .filter((cat) => {
+      if (form.value.type === 'income') {
+        return cat.is_income;
+      }
+
+      return cat.is_expense;
+    })
+    .sort((a, b) =>
+      String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, {
+        sensitivity: 'base',
+      })
+    );
 });
 
 const selectedCategory = computed(() => {
@@ -603,7 +614,15 @@ watch(payTowardDebt, (on) => {
 watch(() => form.value.is_split, (newVal) => {
   if (!newVal) {
     form.value.split_data = [];
+
+    return;
   }
+
+  if (!props.familyUsers?.length || hasPositiveSplitShares(form.value.split_data)) {
+    return;
+  }
+
+  form.value.split_data = equalSplitPayloadForFamilyUsers(props.familyUsers);
 });
 
 watch(() => form.value.type, (newType) => {
@@ -658,12 +677,28 @@ watch(() => form.value.category_id, () => {
   }
   if (selectedCategory.value?.is_split_default && selectedCategory.value?.split_default?.length) {
     form.value.is_split = true;
-    form.value.split_data = normalizeSplits(selectedCategory.value.split_default);
+    form.value.split_data = props.familyUsers?.length
+      ? equalSplitPayloadForFamilyUsers(props.familyUsers)
+      : [];
   }
   if (selectedCategory.value?.advance_fund_id) {
     form.value.advance_fund_id = selectedCategory.value.advance_fund_id;
   }
 });
+
+watch(
+  () => props.familyUsers,
+  () => {
+    if (form.value.type !== 'expense' || !form.value.is_split || !props.familyUsers?.length) {
+      return;
+    }
+    if (hasPositiveSplitShares(form.value.split_data)) {
+      return;
+    }
+    form.value.split_data = equalSplitPayloadForFamilyUsers(props.familyUsers);
+  },
+  { deep: true }
+);
 
 function resetForm() {
   payTowardDebt.value = false;

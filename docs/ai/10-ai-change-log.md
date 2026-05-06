@@ -11,6 +11,29 @@ Format:
 
 ---
 
+## 2026-05-06 — Transactions page: refetch list after edit so date changes apply immediately
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Saving an edit from the Transactions modal now **reloads the current filter** (same as after create), so moving a transaction out of the viewed month/range removes it from the list without a full page refresh—and moving one in shows it after refetch.
+
+## 2026-05-06 — Default transaction splits equally across family
+
+- Files touched:
+  - `resources/js/support/equalFamilySplit.js` (new)
+  - `resources/js/components/TransactionForm.vue`, `resources/js/components/SplitEditor.vue`
+  - Docs: `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Turning on **Split** or choosing an expense category with split default fills **equal percentages** across all loaded family members (precise rounding to 100%); users edit from there. Saved category `split_default` templates no longer seed the form—only the category’s “use split” signal is used. **Equal Split** in `SplitEditor` uses the same rounding logic.
+
+## 2026-05-06 — Remove Split title-row pill from Transactions list
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Split expenses no longer show a **Split** pill next to the category title; only the existing amount-column **Split: Total…** control + modal remain.
+
+## 2026-05-06 — Alphabetical category dropdown in TransactionForm
+
+- Files touched: `resources/js/components/TransactionForm.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: When creating or editing a transaction (FAB or Transactions modal), income and expense category options are listed **A–Z by name** (case-insensitive), instead of API order.
+
 ## 2026-05-06 — Add heart icon option to category icon picker
 
 - Files touched: `resources/js/components/IconPicker.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

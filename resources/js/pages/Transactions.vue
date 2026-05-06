@@ -816,7 +816,8 @@ function transactionPayerDisplayLabel(transaction) {
 }
 
 /**
- * Small attribute pills on each row (debt repayment, advance, split, borrow, closeout).
+ * Small attribute pills on each row (debt repayment, advance, borrow, closeout).
+ * Split expenses use only the purple “Split: Total…” control beside the amount, not a title-row pill.
  * @param {object} tx
  * @returns {{ key: string, label: string, classes: string, title?: string }[]}
  */
@@ -860,15 +861,6 @@ function transactionKindPills(tx) {
       key: 'repayment',
       label: 'Repayment',
       classes: 'bg-sky-900/55 text-sky-200',
-    });
-  }
-
-  if (tx.type === 'expense' && tx.is_split) {
-    pills.push({
-      key: 'split',
-      label: 'Split',
-      classes: 'bg-purple-900/55 text-purple-200',
-      title: 'Split between family members',
     });
   }
 
@@ -956,11 +948,8 @@ async function handleTransactionCreated(transaction) {
   showForm.value = false;
 }
 
-async function handleTransactionUpdated(transaction) {
-  const index = transactions.value.findIndex(t => t.id === transaction.id);
-  if (index !== -1) {
-    transactions.value[index] = transaction;
-  }
+async function handleTransactionUpdated() {
+  await reloadCurrentFilterData();
   showForm.value = false;
   editingTransactionId.value = null;
 }

@@ -77,6 +77,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue';
+import { equalSharePercentages } from '../support/equalFamilySplit.js';
 
 const props = defineProps({
   familyUsers: {
@@ -146,9 +147,13 @@ function userAmount(index) {
 }
 
 function equalSplit() {
-  const equalPercentage = (100 / props.familyUsers.length).toFixed(1);
-  splits.value.forEach(split => {
-    split.share_percentage = parseFloat(equalPercentage);
+  const n = props.familyUsers.length;
+  if (n <= 0) {
+    return;
+  }
+  const percents = equalSharePercentages(n);
+  splits.value.forEach((split, index) => {
+    split.share_percentage = percents[index] ?? 0;
   });
 }
 

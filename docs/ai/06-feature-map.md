@@ -64,7 +64,7 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 | Request | `app/Http/Requests/StoreCategoryRequest.php` |
 | Frontend | `resources/js/pages/Categories.vue`, `resources/js/components/IconPicker.vue` |
 
-**`split_default` / `advance_fund_id`:** Only honored when `is_expense` is true. Stored as JSON FK respectively; excluded when saving an income-only category. The transaction form applies these defaults only when the active transaction **type is expense**.
+**`split_default` / `advance_fund_id`:** Only honored when `is_expense` is true. Stored as JSON FK respectively; excluded when saving an income-only category. The transaction form applies these defaults only when the active transaction **type is expense**. If the category enables split (`is_split_default` with `split_default`), the form turns **split** on and fills **equal shares across the current family** (`familyUsers`); the stored `split_default` JSON documents the category for reference but does not pre-fill those percentages in the transaction form.
 
 ---
 

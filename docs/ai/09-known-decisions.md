@@ -101,7 +101,7 @@ These Form Request classes exist in `app/Http/Requests/` but are not used by the
 ## Needs Verification
 
 - **Fortify `home` config:** `config/fortify.php` sets `home => '/home'`. The app navigates to `/dashboard`. It's unclear if this causes any redirect issue after login (Fortify's redirect after login may attempt `/home` which has no Laravel route).
-- **`split_default` / `advance_fund_id` in `TransactionForm`:** When type is **expense** and the selected category has these fields set (and the category is expense-capable), the form pre-populates split and advance fund. Income transactions ignore category defaults.
+- **`split_default` / `advance_fund_id` in `TransactionForm`:** When type is **expense** and the selected category has these fields set (and the category is expense-capable), the form enables split (**equal shares** across `familyUsers`, not the saved `split_default` percentages) and pre-populates advance fund when set. Income transactions ignore category defaults.
 - **`FundMovement` factory:** No factory exists for `FundMovement`. Tests that need fund movement records must create them manually.
 - **`TransactionSplit` factory:** No factory exists for `TransactionSplit`.
 - **`DebtController::store` family validation:** The store endpoint checks both users are in the same family as the auth user. However, it doesn't prevent creating a debt where the auth user is neither debtor nor creditor.
