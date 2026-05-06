@@ -204,6 +204,7 @@ class TransactionTest extends TestCase
             'debt_id' => $debt->id,
             'amount' => 50.00,
             'description' => 'Partial payment',
+            'transaction_date' => '2026-04-13',
         ])->assertStatus(200);
 
         $this->assertDatabaseHas('debts', [
@@ -216,6 +217,7 @@ class TransactionTest extends TestCase
             'type' => 'expense',
             'is_debt_payment' => true,
             'debt_id' => $debt->id,
+            'transaction_date' => '2026-04-13 00:00:00',
         ]);
 
         $this->assertDatabaseHas('transactions', [
@@ -223,6 +225,7 @@ class TransactionTest extends TestCase
             'type' => 'income',
             'is_debt_payment' => true,
             'debt_id' => $debt->id,
+            'transaction_date' => '2026-04-13 00:00:00',
         ]);
     }
 
@@ -378,6 +381,7 @@ class TransactionTest extends TestCase
             'debt_id' => $debt->id,
             'amount' => 25.00,
             'description' => 'Single pay',
+            'transaction_date' => '2026-04-14',
         ])->assertOk();
 
         $debtorHistory = $this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->json();
@@ -386,17 +390,22 @@ class TransactionTest extends TestCase
         $debtorExpenseRows = array_values(array_filter($debtorHistory, fn ($row) => ($row['type'] ?? '') === 'expense'));
         $this->assertCount(1, $debtorExpenseRows);
         $this->assertEqualsWithDelta(25.0, (float) $debtorExpenseRows[0]['amount'], 0.001);
+        $this->assertStringStartsWith('2026-04-14', $debtorExpenseRows[0]['transaction_date']);
+        $this->assertNull($debtorExpenseRows[0]['split_breakdown']);
         $this->assertCount(1, array_values(array_filter($debtorHistory, fn ($row) => ($row['type'] ?? '') === 'initial_value')));
 
         $creditorIncomeRows = array_values(array_filter($creditorHistory, fn ($row) => ($row['type'] ?? '') === 'income'));
         $this->assertCount(1, $creditorIncomeRows);
         $this->assertEqualsWithDelta(25.0, (float) $creditorIncomeRows[0]['amount'], 0.001);
+        $this->assertStringStartsWith('2026-04-14', $creditorIncomeRows[0]['transaction_date']);
+        $this->assertNull($creditorIncomeRows[0]['split_breakdown']);
         $this->assertCount(1, array_values(array_filter($creditorHistory, fn ($row) => ($row['type'] ?? '') === 'initial_value')));
 
         $this->actingAs($debtor)->postJson('/debts/pay', [
             'debt_id' => $debt->fresh()->id,
             'amount' => 10.00,
             'description' => 'Second pay',
+            'transaction_date' => '2026-04-16',
         ])->assertOk();
 
         $twoPays = $this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->json();
@@ -404,6 +413,56 @@ class TransactionTest extends TestCase
         $this->assertSame([10.0, 25.0], $twoPayExpenses);
         $this->assertCount(1, collect($twoPays)->where('type', 'initial_value'));
         $this->assertCount(3, $twoPays);
+    }
+
+    public function test_split_debt_payment_history_includes_per_user_contribution_breakdown(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id, 'name' => 'Debtor']);
+        $creditor = User::factory()->create(['family_id' => $family->id, 'name' => 'Creditor']);
+
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 120.00,
+            'balance' => 120.00,
+            'is_pending_closeout' => false,
+            'is_family_debt' => false,
+        ]);
+
+        $this->actingAs($debtor)->postJson('/debts/pay', [
+            'debt_id' => $debt->id,
+            'amount' => 40.00,
+            'description' => 'Split pay',
+            'transaction_date' => '2026-04-20',
+            'split_with_user_id' => $creditor->id,
+            'split_percentage' => 25,
+        ])->assertOk();
+
+        $debtorHistory = collect($this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->json());
+        $creditorHistory = collect($this->actingAs($creditor)->getJson("/debts/{$debt->id}/payments")->json());
+
+        $debtorPayment = $debtorHistory->first(fn ($row) => ($row['type'] ?? null) === 'expense');
+        $this->assertNotNull($debtorPayment);
+        $this->assertStringStartsWith('2026-04-20', $debtorPayment['transaction_date']);
+        $this->assertCount(2, $debtorPayment['split_breakdown']);
+        $participantIds = collect($debtorPayment['split_breakdown'])->pluck('user_id')->all();
+        $this->assertContains($debtor->id, $participantIds);
+        $this->assertContains($creditor->id, $participantIds);
+        $this->assertSame(
+            [10.0, 30.0],
+            collect($debtorPayment['split_breakdown'])->pluck('amount')->map(fn ($value) => round((float) $value, 2))->sort()->values()->all()
+        );
+
+        $creditorPayment = $creditorHistory->first(fn ($row) => ($row['type'] ?? null) === 'income');
+        $this->assertNotNull($creditorPayment);
+        $this->assertStringStartsWith('2026-04-20', $creditorPayment['transaction_date']);
+        $this->assertCount(2, $creditorPayment['split_breakdown']);
+        $this->assertSame(
+            [10.0, 30.0],
+            collect($creditorPayment['split_breakdown'])->pluck('amount')->map(fn ($value) => round((float) $value, 2))->sort()->values()->all()
+        );
     }
 
     public function test_income_transaction_strips_split_and_advance_even_when_sent(): void

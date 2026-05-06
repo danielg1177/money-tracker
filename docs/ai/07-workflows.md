@@ -46,11 +46,12 @@ Detailed step-by-step flows for the most complex operations in the app.
      "debt_id": 5,
      "amount": 50.00,
      "description": "Partial payment",
+     "transaction_date": "2026-05-03",
      "split_with_user_id": null,
      "split_percentage": null
    }
    ```
-   Optional split fields allow the payer to split the payment expense with another family member (creates a pending `Debt` for the split portion).
+   Optional split fields allow the payer to split the payment expense with another family member (creates a pending `Debt` for the split portion). `transaction_date` is optional; if omitted, backend uses today's date.
 4. `PayDebtRequest` validates
 5. `DebtController::payDebt` loads the debt, calls `DebtService::payDebt`
 6. `DebtService::payDebt` validates:
@@ -81,6 +82,7 @@ The payment history modal in `Debts.vue` displays:
 - Date of payment
 - Amount paid
 - Who made the payment (payer's name)
+- Split contribution breakdown (when payment was split), showing each participant's amount and percentage
 - Whether it was initiated from a closeout (shown as a "Closeout" badge if applicable)
 
 ---

@@ -20,6 +20,7 @@ class DebtService
      * @param  string  $description  Optional description for the transactions
      * @param  User  $payer  The user making the payment (must be the debtor)
      * @param  bool  $isCloseoutInitiated  Whether the payment was initiated from a month closeout
+     * @param  string|null  $paymentDate  Optional explicit date for the payment transaction
      * @param  int|null  $splitWithUserId  User ID to split payment with (optional)
      * @param  float|null  $splitPercentage  Split percentage for the other user (optional)
      *
@@ -31,6 +32,7 @@ class DebtService
         string $description,
         User $payer,
         bool $isCloseoutInitiated = false,
+        ?string $paymentDate = null,
         ?int $splitWithUserId = null,
         ?float $splitPercentage = null,
     ): void {
@@ -56,8 +58,8 @@ class DebtService
             throw new InvalidArgumentException('Payment amount cannot exceed the remaining debt balance.');
         }
 
-        DB::transaction(function () use ($debt, $paymentAmount, $description, $payer, $isCloseoutInitiated, $splitWithUserId, $splitPercentage): void {
-            $transactionDate = Carbon::today()->toDateString();
+        DB::transaction(function () use ($debt, $paymentAmount, $description, $payer, $isCloseoutInitiated, $paymentDate, $splitWithUserId, $splitPercentage): void {
+            $transactionDate = $paymentDate ?: Carbon::today()->toDateString();
             $hasSplit = $splitWithUserId !== null && $splitPercentage !== null && $splitPercentage > 0;
 
             $payerTransaction = Transaction::create([
@@ -127,7 +129,7 @@ class DebtService
             $debt->balance -= $paymentAmount;
             $debt->save();
 
-            if (! $hasSplit && $creditorIncome) {
+            if ($creditorIncome) {
                 $payerTransaction->forceFill(['mirror_transaction_id' => $creditorIncome->id])->save();
                 $creditorIncome->forceFill(['mirror_transaction_id' => $payerTransaction->id])->save();
             }

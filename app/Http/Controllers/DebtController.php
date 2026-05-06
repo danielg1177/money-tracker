@@ -168,6 +168,7 @@ class DebtController extends Controller
                 $request->description ?? '',
                 $user,
                 false,
+                $request->input('transaction_date'),
                 $request->split_with_user_id ? (int) $request->split_with_user_id : null,
                 $request->split_percentage ? (float) $request->split_percentage : null,
             );
@@ -190,7 +191,7 @@ class DebtController extends Controller
 
         $paymentsQuery = Transaction::query()
             ->where('debt_id', $debt->id)
-            ->with('paidByUser');
+            ->with(['paidByUser', 'splits.user', 'mirrorTransaction.splits.user']);
 
         $isViewerCreditor = $debt->creditor_id !== null && $debt->creditor_id === $user->id;
         if ($isViewerCreditor) {
@@ -214,6 +215,7 @@ class DebtController extends Controller
                     'created_at' => $payment->created_at,
                     'paid_by_user_id' => $payment->paid_by_user_id,
                     'is_closeout_initiated' => $payment->is_closeout_initiated,
+                    'split_breakdown' => $this->resolveSplitBreakdown($payment),
                     'paid_by_user' => $payment->paidByUser ? [
                         'id' => $payment->paidByUser->id,
                         'name' => $payment->paidByUser->name,
@@ -258,6 +260,53 @@ class DebtController extends Controller
             ->push($initialValueEntry);
 
         return response()->json($timeline->values());
+    }
+
+    /**
+     * @return array<int, array{user_id:int|null,user_name:string,amount:float,share_percentage:float}>|null
+     */
+    private function resolveSplitBreakdown(Transaction $payment): ?array
+    {
+        $splitSource = null;
+
+        if ($payment->type === 'expense') {
+            $splitSource = $payment;
+        }
+
+        if ($payment->type === 'income') {
+            $mirror = $payment->mirrorTransaction;
+            if ($mirror && $mirror->type === 'expense') {
+                $splitSource = $mirror;
+            } else {
+                $splitSource = Transaction::query()
+                    ->where('debt_id', $payment->debt_id)
+                    ->where('type', 'expense')
+                    ->where('is_debt_payment', true)
+                    ->whereDate('transaction_date', $payment->transaction_date)
+                    ->where('amount', $payment->amount)
+                    ->where('paid_by_user_id', $payment->paid_by_user_id)
+                    ->where('family_id', $payment->family_id)
+                    ->with('splits.user')
+                    ->orderByDesc('created_at')
+                    ->first();
+            }
+        }
+
+        if (! $splitSource || ! $splitSource->is_split) {
+            return null;
+        }
+
+        $splitSource->loadMissing('splits.user');
+
+        return $splitSource->splits
+            ->map(fn ($split): array => [
+                'user_id' => $split->user?->id,
+                'user_name' => $split->user?->name ?? 'Unknown user',
+                'amount' => (float) $split->amount,
+                'share_percentage' => (float) $split->share_percentage,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

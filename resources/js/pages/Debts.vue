@@ -518,6 +518,15 @@
               rows="3"
             />
 
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-2">Payment Date</label>
+              <input
+                v-model="payForm.transaction_date"
+                type="date"
+                class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
             <!-- Split toggle -->
             <div class="flex items-center justify-between py-2">
               <label class="text-sm font-medium text-gray-300">Split this payment?</label>
@@ -703,6 +712,20 @@
                         {{ payment.type === 'income' ? 'From:' : 'Paid by:' }}
                         <span class="text-gray-300 font-medium">{{ payment.paid_by_user.name }}</span>
                       </p>
+                      <div
+                        v-if="payment.split_breakdown && payment.split_breakdown.length > 0"
+                        class="mt-1 space-y-0.5"
+                      >
+                        <p
+                          v-for="(split, splitIndex) in payment.split_breakdown"
+                          :key="`${payment.id ?? 'row'}-split-${split.user_id ?? splitIndex}`"
+                          class="text-xs text-gray-500"
+                        >
+                          {{ getSplitParticipantLabel(split.user_id, split.user_name) }} paid
+                          <span class="text-gray-300 font-medium">{{ formatCurrency(split.amount) }}</span>
+                          ({{ Number(split.share_percentage).toFixed(2) }}%)
+                        </p>
+                      </div>
                     </div>
                     <p
                       class="text-sm font-bold ml-3 flex-shrink-0"
@@ -892,6 +915,7 @@ const addDebtForm = ref({
 const payForm = ref({
   amount: null,
   description: '',
+  transaction_date: '',
   is_split: false,
   split_with_user_id: '',
   split_percentage: 50,
@@ -937,6 +961,14 @@ function formatCurrency(amount) {
   }).format(amount);
 }
 
+function todayDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getSplitParticipantLabel(userId, userName) {
+  return userId === authUser.value.id ? 'You' : userName;
+}
+
 function isAddDebtFormValid() {
   if (!addDebtForm.value.amount || addDebtForm.value.amount <= 0) {
     return false;
@@ -961,7 +993,14 @@ function isAddDebtFormValid() {
 
 function openPayModal(debt) {
   selectedDebt.value = debt;
-  payForm.value = { amount: debt.balance, description: '', is_split: false, split_with_user_id: '', split_percentage: 50 };
+  payForm.value = {
+    amount: debt.balance,
+    description: '',
+    transaction_date: todayDateString(),
+    is_split: false,
+    split_with_user_id: '',
+    split_percentage: 50,
+  };
   payError.value = null;
   showPayModal.value = true;
 }
@@ -1064,6 +1103,7 @@ async function submitPayment() {
       debt_id: selectedDebt.value.id,
       amount: payForm.value.amount,
       description: payForm.value.description,
+      transaction_date: payForm.value.transaction_date || todayDateString(),
     };
     if (payForm.value.is_split && payForm.value.split_with_user_id) {
       payload.split_with_user_id = payForm.value.split_with_user_id;

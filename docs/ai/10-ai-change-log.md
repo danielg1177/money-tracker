@@ -786,6 +786,20 @@ Format:
      real-world arithmetic: $5,000 + $7,000 earned + $8 received − $370 spent − $300 transferred.
 - Behavioral impact: Tests only — no production code changed. All 5 tests pass (107 assertions).
 
+## 2026-05-06 — Fix split debt payment date + per-user history attribution
+- Files touched:
+  - Backend: `app/Http/Requests/PayDebtRequest.php`, `app/Services/DebtService.php`, `app/Http/Controllers/DebtController.php`
+  - Frontend: `resources/js/pages/Debts.vue`
+  - Tests: `tests/Feature/TransactionTest.php`
+  - Docs: `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - `POST /debts/pay` now accepts optional `transaction_date`; when provided, payer expense and creditor income debt-payment rows use that date (instead of always using current date).
+  - Debt repayment mirror linking is now applied for split debt payments too (`mirror_transaction_id` set for expense/income pair).
+  - `GET /debts/{debt}/payments` now returns `split_breakdown` for split debt-payment entries so history can show exactly how much each participant paid.
+  - Debts pay modal now includes a payment-date picker and sends `transaction_date`.
+  - Debt history UI now renders per-participant split contribution lines (amount + percentage) for split payments.
+  - Added/updated feature tests to cover explicit debt payment dates and split-contribution history output.
+
 ## 2026-05-03 — Month closeout system foundation (migrations & models)
 - Files touched: 
   - Migrations: `database/migrations/2026_05_03_160512_add_family_id_to_funds_table.php`, `database/migrations/2026_05_03_160512_update_fund_rules_for_closeout_system.php`, `database/migrations/2026_05_03_160512_create_month_soft_closes_table.php`, `database/migrations/2026_05_03_160512_create_month_hard_closes_table.php`, `database/migrations/2026_05_03_160513_add_is_pending_closeout_to_debts_table.php`, `database/migrations/2026_05_03_160513_create_closeout_title_savings_table.php`

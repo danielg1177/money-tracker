@@ -142,7 +142,7 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 2. Automatic (fund borrow): via `FundService`
 3. Manual: `POST /debts`
 
-**Debt payment (`DebtService::payDebt`):** Creates two transactions — an expense for the debtor, and an income for the creditor (if `creditor_id` is not null / not a fund debt). Rejects pending split debts. **`GET /debts/{debt}/payments`** lists one entry per pay action for those debts by excluding the mirror **income** row when a matching **expense** exists (paired on `debt_id`, date, amount, `paid_by_user_id`, and `created_at`). A synthetic `'initial_value'` entry is appended at the end showing the debt's original amount and creation date.
+**Debt payment (`DebtService::payDebt`):** Creates two transactions — an expense for the debtor, and an income for the creditor (if `creditor_id` is not null / not a fund debt). Rejects pending split debts. Accepts optional `transaction_date` so debt payments use the user-selected date instead of always defaulting to today. **`GET /debts/{debt}/payments`** lists one entry per pay action for those debts by excluding the mirror **income** row when a matching **expense** exists (paired on `debt_id`, date, amount, `paid_by_user_id`, and `created_at`). Payment rows now include `split_breakdown` when applicable so history can show each participant’s paid share for split repayments. A synthetic `'initial_value'` entry is appended at the end showing the debt's original amount and creation date.
 
 **Initial value history:** The debt's origin is displayed in the payment history modal as an `'initial_value'` entry, showing the debt's original amount and the date it was created. This entry is appended to the `GET /debts/{debt}/payments` response.
 

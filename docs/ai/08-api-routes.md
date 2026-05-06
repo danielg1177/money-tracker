@@ -82,8 +82,8 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | GET | `/split-debt-summary` | `DebtController::splitDebtSummary` | Query: `year`, `month` (1–12). JSON: pending closeout split debts grouped by counterpart; each nested `transaction` includes `category` and, when applicable, `debt` with `creditor`, `debtor`, `fund` for debt-payment rows |
 | POST | `/debts` | `DebtController::store` | `{is_family_debt?, is_interfamily?, creditor_id?, creditor_name?, amount, description?, interest_enabled?, interest_rate?, loan_received_date?}` |
 | PUT | `/debts/{debt}` | `DebtController::update` | Updates debt fields (`description`, `creditor_name`, `interest_enabled`, `interest_rate`, `loan_received_date`) |
-| POST | `/debts/pay` | `DebtController::payDebt` | `{debt_id, amount, description?, split_with_user_id?, split_percentage?}` |
-| GET | `/debts/{debt}/payments` | `DebtController::paymentHistory` | Debtor, creditor, or `can_manage_family`; JSON array of payment rows (creditor sees income rows, others see expense rows) |
+| POST | `/debts/pay` | `DebtController::payDebt` | `{debt_id, amount, description?, transaction_date?, split_with_user_id?, split_percentage?}` |
+| GET | `/debts/{debt}/payments` | `DebtController::paymentHistory` | Debtor, creditor, or `can_manage_family`; JSON array of payment rows (creditor sees income rows, others see expense rows), includes `split_breakdown` when a payment was split |
 | DELETE | `/debts/{debt}` | `DebtController::destroy` | Only debtor or `can_manage_family` user can delete |
 | POST | `/debts/{debt}/repay-fund` | `FundController::repayFund` | `{amount}`; only for fund debts |
 
@@ -218,11 +218,12 @@ When `is_expense` is false, `is_split_default`, `split_default`, and `advance_fu
   "debt_id": 5,
   "amount": 50.00,
   "description": "optional",
+  "transaction_date": "2026-05-03",
   "split_with_user_id": null,
   "split_percentage": null
 }
 ```
-`split_with_user_id` and `split_percentage` are optional. When provided, the payer's expense transaction is split with the specified family member (creates a pending `Debt` for their share).
+`split_with_user_id` and `split_percentage` are optional. When provided, the payer's expense transaction is split with the specified family member (creates a pending `Debt` for their share). `transaction_date` is optional; when omitted, backend uses today's date.
 
 ---
 

@@ -106,8 +106,8 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `store(Request)` also accepts optional loan/interest fields (`interest_enabled`, `interest_rate`, `loan_received_date`)
 - `update(Request, Debt)` — updates `description`, `creditor_name`, and optional loan/interest settings (`interest_enabled`, `interest_rate`, `loan_received_date`); only debtor or `can_manage_family` user may update; rejects pending closeout debts
 - `destroy(Debt)` — hard delete (`$debt->delete()`); only debtor or `can_manage_family` user can delete; cannot delete pending closeout debts
-- `payDebt(PayDebtRequest)` — delegates to `DebtService::payDebt`
-- `paymentHistory(Debt)` — role-based filtering: creditors see **income** rows with their `user_id`; all others (debtor, family manager) see **expense** rows; appends a synthetic `initial_value` entry showing the debt's original amount and creation date; debtor/creditor/`can_manage_family` required to access
+- `payDebt(PayDebtRequest)` — delegates to `DebtService::payDebt`; accepts optional `transaction_date` to backdate/explicitly date debt-payment transactions
+- `paymentHistory(Debt)` — role-based filtering: creditors see **income** rows with their `user_id`; all others (debtor, family manager) see **expense** rows; includes optional `split_breakdown` per payment (`[{user_id, user_name, amount, share_percentage}]`) when the debt payment was split; appends a synthetic `initial_value` entry showing the debt's original amount and creation date; debtor/creditor/`can_manage_family` required to access
 - `paymentHistory(Debt)` also appends `interest_accrual` entries from `debt.interest_accruals` so debt history includes interest events
 - `splitDebtSummary(Request)` — `GET /split-debt-summary?year=&month=`; returns pending split debts for the current user's family grouped by counterpart user with `you_owe`, `they_owe`, and nested `transactions`
 
@@ -171,11 +171,12 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `repayFund(Debt, float, User): void` — validates fund association, debtor match, amount; increments fund balance, creates `FundMovement` (type=`repayment`), creates expense transaction with `is_debt_payment=true`, decrements debt balance
 
 ### DebtService (`app/Services/DebtService.php`)
-- `payDebt(Debt, float, string, User, bool $isCloseoutInitiated = false, ?int $splitWithUserId = null, ?float $splitPercentage = null): void` — validates and records a debt payment:
+- `payDebt(Debt, float, string, User, bool $isCloseoutInitiated = false, ?string $paymentDate = null, ?int $splitWithUserId = null, ?float $splitPercentage = null): void` — validates and records a debt payment:
   - For **family debts** (`is_family_debt=true`): payer must be a family member
   - For **personal debts**: payer must be the debtor
+  - Uses `paymentDate` when provided, otherwise defaults transaction date to today
   - Creates expense transaction for payer; when `splitWithUserId` / `splitPercentage` are provided, splits that expense and creates a pending `Debt` for the co-payer's share
-  - Creates income transaction for creditor if `creditor_id` is not null; unsplit flows set `mirror_transaction_id` linking the expense ↔ income pair
+  - Creates income transaction for creditor if `creditor_id` is not null; sets `mirror_transaction_id` linking the expense ↔ income pair (including split debt payments)
   - Decrements `debt.balance`
   - Rejects `is_pending_closeout=true` debts with `InvalidArgumentException`
 
