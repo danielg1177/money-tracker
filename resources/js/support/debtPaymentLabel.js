@@ -18,7 +18,7 @@ export function debtPaymentCategoryLine(transaction) {
       return `Repayment received · ${counterparty}`;
     }
     if (transaction.type === 'expense' && counterparty) {
-      return `Pay toward · ${counterparty}`;
+      return `Debt Payment · ${counterparty}`;
     }
   }
 
@@ -33,7 +33,7 @@ export function debtPaymentCategoryLine(transaction) {
     return 'Debt repayment';
   }
 
-  return 'Debt payment';
+  return 'Debt Payment';
 }
 
 /**

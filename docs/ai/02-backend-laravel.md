@@ -78,7 +78,7 @@
 All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRequests`).
 
 ### TransactionController
-- `index(Request)` — returns viewer-scoped family transactions (`user_id` or `transaction_splits` participation), filtered by `start_date`/`end_date`, eager-loads `user`, `category`, `splits.user`, `debt` (+ nested relations); excludes split debt-payment expenses for the creditor when they duplicate that creditor’s repayment income row
+- `index(Request)` — returns viewer-scoped family transactions (`user_id` or `transaction_splits` participation), filtered by `start_date`/`end_date`, eager-loads `user`, `category`, `splits.user`, `debt` (+ nested relations), `advanceFund`; excludes split debt-payment expenses for the creditor when they duplicate that creditor’s repayment income row
 - `store(StoreTransactionRequest)` — delegates to `TransactionService::createTransaction`
 - `update(StoreTransactionRequest, Transaction)` — checks ownership or same family, delegates to `TransactionService::updateTransaction`
 - `destroy(Transaction)` — checks ownership or same family; delegates `TransactionService::deleteTransaction()` (paired debt-payment cleanup + mirror rows)

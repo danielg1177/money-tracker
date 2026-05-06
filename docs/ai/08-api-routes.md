@@ -49,7 +49,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
-| GET | `/transactions` | `TransactionController::index` | Accepts `?start_date=&end_date=` filters; JSON includes `debt` (with `creditor`, `debtor`, `fund` when present) for debt-payment rows; omits split debt-payment **expense** for the creditor when that row duplicates their repayment **income** for the same debt |
+| GET | `/transactions` | `TransactionController::index` | Accepts `?start_date=&end_date=` filters; JSON includes `debt` (with `creditor`, `debtor`, `fund` when present) for debt-payment rows, `advanceFund` when `advance_fund_id` is set; omits split debt-payment **expense** for the creditor when that row duplicates their repayment **income** for the same debt |
 | POST | `/transactions` | `TransactionController::store` | Body: see `StoreTransactionRequest` |
 | PUT | `/transactions/{transaction}` | `TransactionController::update` | Same body as store; debt-payment **expense** rows can be edited (recalculates debt balance + mirrored income), debt-payment **income** mirror rows are rejected |
 | DELETE | `/transactions/{transaction}` | `TransactionController::destroy` | — |

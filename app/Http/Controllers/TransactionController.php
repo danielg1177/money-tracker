@@ -28,7 +28,7 @@ class TransactionController extends Controller
         }
 
         $query = $user->family->transactions()
-            ->with(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
+            ->with(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund', 'advanceFund'])
             ->where(function ($q) use ($user): void {
                 $q->where('user_id', $user->id)
                     ->orWhereHas('splits', function ($splitQuery) use ($user): void {

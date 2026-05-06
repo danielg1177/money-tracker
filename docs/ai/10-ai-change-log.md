@@ -838,6 +838,16 @@ Format:
 - Removed the `.where('is_debt_payment', false)` filter from `TransactionController::index` so all transactions (including debt payments) are returned
 - Renamed `test_transactions_index_excludes_debt_payment_rows` → `test_transactions_index_includes_debt_payment_rows` and updated assertions to confirm both normal and debt-payment transactions appear in the response
 
+## 2026-05-06 — Transactions list: attribute pills + debt row label/icon updates
+- Files touched:
+  - Backend: `app/Http/Controllers/TransactionController.php` (eager-load `advanceFund` on index)
+  - Frontend: `resources/js/pages/Transactions.vue`, `resources/js/support/debtPaymentLabel.js`
+  - Docs: `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - Transaction rows show small pills for **Debt payment**, **Repayment**, **Advance** (fund advance), **Borrow** (fund borrow income), **Split**, and **Closeout** (additive with existing closeout card styling).
+  - Debt-payment expenses show the category **icon** when `category.icon` is present.
+  - Payer debt line copy uses **`Debt Payment · {counterparty}`** instead of “Pay toward”; generic expense fallback label is **`Debt Payment`**.
+
 ## 2026-05-06 — Make debt-payment transactions editable from payer expense rows
 - Files touched:
   - Backend: `app/Services/TransactionService.php`
