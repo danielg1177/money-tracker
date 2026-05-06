@@ -161,7 +161,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
   - `none`: regular income
   - `existing`: increments selected debt `amount` + `balance` by the income amount and links `transactions.debt_id`
   - `new`: creates a new debt from the same amount (external or interfamily) and links `transactions.debt_id`; supports optional new-debt settings (`income_new_interest_enabled`, `income_new_interest_rate`) and sets `loan_received_date` from the income transaction date
-  For **expense + `debt_id`**, runs `createDebtRepaymentExpense()` (categorized payer expense, mirrored creditor income when applicable, decrement balance, `mirror_transaction_id` linkage) instead of ordinary split plumbing; validates split percentages when splits are present; creates splits + debts only for ordinary expense splits; does **not** call `FundService::processIncome`
+  For **expense + `debt_id`**, runs `createDebtRepaymentExpense()` (categorized payer expense, mirrored creditor income when applicable, decrement balance, `mirror_transaction_id` linkage); split debt-payment expenses are supported and create `transaction_splits` plus pending split debts for non-payer participants; does **not** call `FundService::processIncome`
 - `updateTransaction(Transaction, array): Transaction` — **rejects rows with `is_debt_payment` set** (`InvalidArgumentException` → 422); otherwise rolls back any existing income-debt linkage, reapplies linkage from the updated payload, and then recreates splits/debts for ordinary split expenses
 - `deleteTransaction(Transaction): void` — used by `TransactionController::destroy`; reverses mirrored debt-payment pairs (+ debt balance increment) or deletes splits/linked debts for normal rows
 

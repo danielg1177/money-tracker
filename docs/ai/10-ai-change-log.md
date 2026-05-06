@@ -800,6 +800,19 @@ Format:
   - Debt history UI now renders per-participant split contribution lines (amount + percentage) for split payments.
   - Added/updated feature tests to cover explicit debt payment dates and split-contribution history output.
 
+## 2026-05-06 — Keep split UI when debt payment is enabled in transaction form
+- Files touched:
+  - Backend: `app/Http/Requests/StoreTransactionRequest.php`, `app/Services/TransactionService.php`
+  - Frontend: `resources/js/components/TransactionForm.vue`
+  - Tests: `tests/Feature/DebtRepaymentTransactionTest.php`
+  - Docs: `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - Enabling **Pay toward a tracked debt** no longer hides/clears split controls in `TransactionForm`.
+  - Expense transactions posted with both `debt_id` and split data now preserve split state and save `transaction_splits`.
+  - Split debt-payment expenses now create pending split debts for non-payer participants (same closeout settlement pattern as other split expenses).
+  - Advance fund remains disabled when debt-payment mode is enabled.
+  - Added a feature test proving split debt repayment via `POST /transactions` reduces target debt balance, creates split rows, and creates the expected pending split debt.
+
 ## 2026-05-03 — Month closeout system foundation (migrations & models)
 - Files touched: 
   - Migrations: `database/migrations/2026_05_03_160512_add_family_id_to_funds_table.php`, `database/migrations/2026_05_03_160512_update_fund_rules_for_closeout_system.php`, `database/migrations/2026_05_03_160512_create_month_soft_closes_table.php`, `database/migrations/2026_05_03_160512_create_month_hard_closes_table.php`, `database/migrations/2026_05_03_160513_add_is_pending_closeout_to_debts_table.php`, `database/migrations/2026_05_03_160513_create_closeout_title_savings_table.php`

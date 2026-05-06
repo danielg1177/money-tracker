@@ -43,8 +43,6 @@ class StoreTransactionRequest extends FormRequest
 
         if ($this->filled('debt_id')) {
             $this->merge([
-                'is_split' => false,
-                'split_data' => null,
                 'advance_fund_id' => null,
             ]);
         }
@@ -92,10 +90,6 @@ class StoreTransactionRequest extends FormRequest
             $amount = round((float) $this->input('amount'), 2);
             if ($amount <= 0) {
                 return;
-            }
-
-            if ($this->boolean('is_split')) {
-                $v->errors()->add('debt_id', 'A debt repayment cannot be combined with splitting the expense.');
             }
 
             $debt = Debt::query()

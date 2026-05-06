@@ -310,7 +310,7 @@
 
     <!-- Split Toggle (expense only) -->
     <div
-      v-if="form.type === 'expense' && !payTowardDebt"
+      v-if="form.type === 'expense'"
       @click="!isDebtPaymentEditBlocked && (form.is_split = !form.is_split)"
       class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
       :class="isDebtPaymentEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
@@ -364,7 +364,7 @@
     </div>
 
     <!-- Split Editor -->
-    <div v-if="form.type === 'expense' && form.is_split && !payTowardDebt">
+    <div v-if="form.type === 'expense' && form.is_split">
       <SplitEditor
         :family-users="familyUsers"
         :total-amount="form.amount"
@@ -592,8 +592,6 @@ watch(payTowardDebt, (on) => {
 
     return;
   }
-  form.value.is_split = false;
-  form.value.split_data = [];
   form.value.advance_fund_id = null;
   if (payableDebts.value.length === 1) {
     form.value.debt_id = payableDebts.value[0].id;
@@ -760,10 +758,10 @@ async function handleSubmit() {
       category_id: form.value.category_id,
       description: form.value.description,
       transaction_date: form.value.transaction_date,
-      is_split: form.value.type === 'expense' && form.value.is_split && !payTowardDebt.value,
+      is_split: form.value.type === 'expense' && form.value.is_split,
       advance_fund_id:
         form.value.type === 'expense' && !payTowardDebt.value ? (form.value.advance_fund_id || null) : null,
-      ...(form.value.type === 'expense' && form.value.is_split && !payTowardDebt.value
+      ...(form.value.type === 'expense' && form.value.is_split
         ? { split_data: form.value.split_data }
         : {}),
       ...(form.value.type === 'expense' && payTowardDebt.value && form.value.debt_id

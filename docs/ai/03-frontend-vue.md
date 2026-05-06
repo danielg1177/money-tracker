@@ -157,7 +157,7 @@ Admin-only route in the router. **Has no corresponding POST route on the backend
 ## Components
 
 ### `TransactionForm.vue` (`resources/js/components/TransactionForm.vue`)
-Modal form for creating or editing a transaction. Props: `categories` (Array), `familyUsers` (Array), `funds` (Array), **`debtsPayload`** (shape of `GET /debts`; optional), `transaction` (Object, optional for edit mode). Fields: type (income/expense), amount, description, date, category. **Pay toward a tracked debt** (expense only): mutually exclusive with split & advance fund; submits `debt_id`. **Split** controls are shown only for **expense** when debt repayment is off; switching type to income clears split and expense-debt-payment linkage. **Advance against fund** toggle remains expense-only when debt repayment is off.
+Modal form for creating or editing a transaction. Props: `categories` (Array), `familyUsers` (Array), `funds` (Array), **`debtsPayload`** (shape of `GET /debts`; optional), `transaction` (Object, optional for edit mode). Fields: type (income/expense), amount, description, date, category. **Pay toward a tracked debt** (expense only): submits `debt_id`. **Split** controls remain available for expense transactions even when debt repayment is on, allowing split debt-payment expenses from the transaction form. **Advance against fund** remains disabled when debt repayment is on.
 
 For **income**, a dedicated debt association block supports:
 - `No` (plain income)

@@ -63,6 +63,77 @@ class DebtRepaymentTransactionTest extends TestCase
         $this->assertEqualsWithDelta(25.0, (float) data_get($creditorSummary->json(), 'debt_repayments.received.0.amount'), 0.001);
     }
 
+    public function test_posting_split_expense_with_debt_id_keeps_split_and_creates_pending_split_debt(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+        $otherMember = User::factory()->create(['family_id' => $family->id]);
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 200.00,
+            'balance' => 200.00,
+            'is_pending_closeout' => false,
+        ]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->actingAs($debtor)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 50,
+            'category_id' => $category->id,
+            'transaction_date' => '2026-05-06',
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $debtor->id, 'share_percentage' => 60],
+                ['user_id' => $otherMember->id, 'share_percentage' => 40],
+            ],
+            'description' => 'Split debt pay',
+            'debt_id' => $debt->id,
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('debts', [
+            'id' => $debt->id,
+            'balance' => '150.00',
+        ]);
+
+        $expense = Transaction::query()->where('user_id', $debtor->id)->where('type', 'expense')->sole();
+        $income = Transaction::query()->where('user_id', $creditor->id)->where('type', 'income')->sole();
+
+        $this->assertTrue($expense->is_debt_payment);
+        $this->assertTrue($expense->is_split);
+        $this->assertTrue($income->is_debt_payment);
+        $this->assertSame($expense->mirror_transaction_id, $income->id);
+        $this->assertSame($income->mirror_transaction_id, $expense->id);
+
+        $this->assertDatabaseHas('transaction_splits', [
+            'transaction_id' => $expense->id,
+            'user_id' => $debtor->id,
+            'share_percentage' => '60.00',
+            'amount' => '30.00',
+        ]);
+        $this->assertDatabaseHas('transaction_splits', [
+            'transaction_id' => $expense->id,
+            'user_id' => $otherMember->id,
+            'share_percentage' => '40.00',
+            'amount' => '20.00',
+        ]);
+
+        $this->assertDatabaseHas('debts', [
+            'transaction_id' => $expense->id,
+            'debtor_id' => $otherMember->id,
+            'creditor_id' => $debtor->id,
+            'amount' => '20.00',
+            'balance' => '20.00',
+            'is_pending_closeout' => true,
+        ]);
+    }
+
     public function test_deleting_debtor_expense_restores_balance_and_removes_partner_row(): void
     {
         $family = Family::factory()->create();

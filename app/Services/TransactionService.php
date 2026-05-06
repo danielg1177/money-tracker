@@ -100,10 +100,6 @@ class TransactionService
      */
     private function createDebtRepaymentExpense(array $data, User $user): Transaction
     {
-        if ($data['is_split'] ?? false) {
-            throw new InvalidArgumentException('A debt repayment cannot be split.');
-        }
-
         return DB::transaction(function () use ($data, $user) {
             $debt = Debt::query()
                 ->where('family_id', $user->family_id)
@@ -115,6 +111,13 @@ class TransactionService
             if ($amount > round((float) $debt->balance, 2)) {
                 throw new InvalidArgumentException('Payment amount cannot exceed the remaining debt balance.');
             }
+
+            $hasSplit = (bool) ($data['is_split'] ?? false);
+            $splitData = $hasSplit ? ($data['split_data'] ?? []) : [];
+            if ($hasSplit && ! SplitCalculator::validate($splitData)) {
+                throw new InvalidArgumentException('Split percentages must sum to 100%.');
+            }
+            $storedSplitData = $hasSplit ? $splitData : null;
 
             $payerExpense = Transaction::query()->create([
                 'family_id' => $user->family_id,
@@ -128,10 +131,35 @@ class TransactionService
                 'debt_id' => $debt->id,
                 'paid_by_user_id' => $user->id,
                 'is_closeout_initiated' => false,
-                'is_split' => false,
-                'split_data' => null,
+                'is_split' => $hasSplit,
+                'split_data' => $storedSplitData,
                 'advance_fund_id' => null,
             ]);
+
+            if ($hasSplit) {
+                $allocatedSplits = SplitCalculator::allocate($amount, $splitData);
+                foreach ($allocatedSplits as $split) {
+                    TransactionSplit::query()->create([
+                        'transaction_id' => $payerExpense->id,
+                        'user_id' => $split['user_id'],
+                        'share_percentage' => $split['share_percentage'],
+                        'amount' => $split['amount'],
+                    ]);
+
+                    if ((int) $split['user_id'] !== (int) $user->id) {
+                        Debt::query()->create([
+                            'family_id' => $user->family_id,
+                            'debtor_id' => $split['user_id'],
+                            'creditor_id' => $user->id,
+                            'transaction_id' => $payerExpense->id,
+                            'amount' => $split['amount'],
+                            'balance' => $split['amount'],
+                            'description' => 'Split from debt payment: '.((string) ($data['description'] ?? 'Debt payment')),
+                            'is_pending_closeout' => true,
+                        ]);
+                    }
+                }
+            }
 
             $creditorIncome = null;
             if ($debt->creditor_id !== null) {
