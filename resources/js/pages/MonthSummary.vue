@@ -5,7 +5,7 @@ import { useApi } from '../composables/useApi';
 
 const route = useRoute();
 const router = useRouter();
-const { get, post, loading, error } = useApi();
+const { get, post, del, loading, error } = useApi();
 
 // Parse route params
 const yearMonth = route.params.yearMonth; // "2026-05"
@@ -146,6 +146,34 @@ async function handleHardClose() {
   }
 }
 
+async function handleCompleteTitleSaving(id) {
+  try {
+    const updated = await post(`/title-savings/${id}/complete`, {});
+    if (summary.value?.title_savings) {
+      const idx = summary.value.title_savings.findIndex(s => s.id === id);
+      if (idx !== -1) {
+        summary.value.title_savings[idx] = updated;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to complete title saving:', err);
+  }
+}
+
+async function handleIncompleteTitleSaving(id) {
+  try {
+    const updated = await del(`/title-savings/${id}/complete`);
+    if (summary.value?.title_savings) {
+      const idx = summary.value.title_savings.findIndex(s => s.id === id);
+      if (idx !== -1) {
+        summary.value.title_savings[idx] = updated;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to incomplete title saving:', err);
+  }
+}
+
 // Separate expenses and income categories
 const expenseCategories = computed(() => {
   return (summary.value?.category_totals || []).filter(cat => cat.type === 'expense');
@@ -162,6 +190,8 @@ const fundMovementGroups = computed(() => {
 const debtRepaymentsReceived = computed(() => summary.value?.debt_repayments?.received ?? []);
 
 const debtRepaymentsPaid = computed(() => summary.value?.debt_repayments?.paid ?? []);
+
+const titleSavings = computed(() => summary.value?.title_savings ?? []);
 
 function movementTypeLabel(type) {
   const labels = {
@@ -533,6 +563,63 @@ function movementTypeLabel(type) {
             </div>
           </div>
         </template>
+      </div>
+
+      <!-- Section 5: Title Savings (hard-closed months only) -->
+      <div v-if="isHardClosed && titleSavings.length > 0" class="px-4 mt-6 pb-4">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-1">Title Savings</h2>
+        <p class="text-xs text-gray-500 mb-3">
+          Money set aside by your closeout rules. Mark complete when you have physically
+          transferred or spent this amount. Completing a title saving reduces your tracked bank balance.
+        </p>
+        <div class="space-y-2">
+          <div
+            v-for="saving in titleSavings"
+            :key="saving.id"
+            class="flex items-center justify-between gap-3 px-3 py-3 bg-gray-800 rounded-xl border"
+            :class="saving.is_completed ? 'border-green-800/60' : 'border-gray-700'"
+          >
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-medium text-gray-200 truncate">{{ saving.title }}</span>
+                <span
+                  v-if="saving.is_completed"
+                  class="shrink-0 inline-block px-2 py-0.5 bg-green-900 text-green-300 text-xs rounded-full font-medium"
+                >
+                  Done
+                </span>
+              </div>
+              <p
+                class="text-sm font-semibold mt-0.5"
+                :class="saving.is_completed ? 'text-green-400' : 'text-gray-300'"
+              >
+                {{ formatCurrency(saving.amount) }}
+              </p>
+              <p v-if="saving.completed_at" class="text-xs text-gray-500 mt-0.5">
+                Completed
+                {{ new Date(saving.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}
+              </p>
+            </div>
+            <div class="shrink-0">
+              <button
+                v-if="!saving.is_completed"
+                type="button"
+                class="px-3 py-2 bg-green-700 hover:bg-green-600 text-white text-xs font-medium rounded-lg transition-colors"
+                @click="handleCompleteTitleSaving(saving.id)"
+              >
+                Mark Done
+              </button>
+              <button
+                v-else
+                type="button"
+                class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs font-medium rounded-lg transition-colors"
+                @click="handleIncompleteTitleSaving(saving.id)"
+              >
+                Undo
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

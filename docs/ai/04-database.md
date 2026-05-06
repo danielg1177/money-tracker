@@ -60,9 +60,9 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `family_id` | bigint FK nullable | → `families.id` |
 | `role` | varchar | `head_of_household` \| `member` (no more `admin` role — admin is now a boolean) |
 | `is_admin` | boolean | default false; grants system-admin permissions independent of family role |
-| `bank_balance_enabled` | boolean | default false; toggles whether manual bank balance tracking is enabled for the user |
-| `bank_balance` | decimal(15,2) nullable | optional current/last recorded bank balance value |
-| `bank_balance_set_at` | date nullable | date the bank balance was last explicitly set |
+| `bank_balance_enabled` | boolean | default false; opt-in flag — user must enable bank balance tracking |
+| `bank_balance` | decimal(15,2) nullable | user-set anchor balance (the manually reconciled amount) |
+| `bank_balance_set_at` | date nullable | date when anchor was last set; transactions on/after this date form the running delta |
 | `two_factor_*` | various | Fortify 2FA columns |
 | `timestamps` | | |
 
@@ -187,10 +187,10 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `user_id` | bigint FK | → `users.id` |
 | `title` | varchar(255) | Title destination name from closeout rule |
 | `amount` | decimal(15,2) | Saved amount for the month closeout |
+| `is_completed` | boolean | default false; true when user marks this saving as physically spent/transferred |
+| `completed_at` | timestamp nullable | when the saving was marked complete |
 | `month` | integer | Closeout month (1-12) |
 | `year` | integer | Closeout year (YYYY) |
-| `is_completed` | boolean | default false; marks a titled saving goal entry as completed |
-| `completed_at` | timestamp nullable | completion timestamp when marked complete |
 | `timestamps` | | |
 
 ## Entity relationship summary

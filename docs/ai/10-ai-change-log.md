@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-05-06 — Bank account balance tracking
+
+- Files touched: `database/migrations/..._add_bank_balance_to_users_table.php`, `database/migrations/..._add_completion_to_closeout_title_savings_table.php`, `app/Models/User.php`, `app/Models/CloseoutTitleSaving.php`, `app/Http/Requests/UpdateBankBalanceRequest.php`, `app/Http/Controllers/BankBalanceController.php`, `app/Http/Controllers/MonthSummaryController.php`, `routes/web.php`, `resources/js/pages/Dashboard.vue`, `resources/js/pages/MonthSummary.vue`
+- Behavioral impact: Added opt-in per-user feature to track real bank account balance. Users set an anchor balance from the Dashboard; subsequent transactions are applied in real time as debits/credits. Split expense payers are debited the full fronted amount. After month hard-close, MonthSummary shows title savings records with a "Mark Done" toggle; completion subtracts the amount from the computed bank balance. No existing behavior changed. `GET /month-summary` now always includes a `title_savings` key (empty array when month is not hard-closed or user has no title rules). Four new API routes added. Dashboard shows a new bank balance section to users who opt in; users who do not enable the feature see only a small "Enable" prompt card.
+
+## 2026-05-06 — Month summary adds Title Savings completion UI
+
+- Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Month Summary now renders a **Title Savings** section for hard-closed months when `title_savings` is non-empty. Users can mark each row complete (`POST /title-savings/{id}/complete`) or undo completion (`DELETE /title-savings/{id}/complete`) directly from the page, with in-place row updates for `is_completed` / `completed_at`.
+
 ## 2026-05-06 — Dashboard adds bank account balance card
 
 - Files touched: `resources/js/pages/Dashboard.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`

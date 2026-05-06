@@ -133,7 +133,8 @@ Displays a comprehensive financial summary for a specific month (route param: `/
 - **Family Balances:** Shows inter-member debts from split transactions (only if balances exist), indicating whether each member owes you or you owe them
 - **Fund In/Out:** Displays monthly fund movement activity grouped by fund, including non-rule and rule-related movements (borrow, repayment, initial value, closeout allocation, advance settlement) with in/out/net totals
 - **Projected Closeout / Closeout Results:** Dry-run preview of the month's fund allocation rules with basis (gross income, expenses, remaining) and projected amounts for each active rule
-All data is read-only; displays loading/error/empty states. Uses `useApi` and `useRoute`/`useRouter`.
+- **Title Savings:** For hard-closed months with `title_savings` rows, a new section lists each closeout title allocation and allows completion toggles per row. **Mark Done** calls `POST /title-savings/{id}/complete`; **Undo** calls `DELETE /title-savings/{id}/complete`. Completed rows show a green "Done" badge, green amount tint, and formatted completion date.
+Month summary remains read-only for summary aggregates but now supports title-saving completion state updates in-place (without a full refetch). Uses `useApi` (`get`, `post`, `del`) and `useRoute`/`useRouter`.
 
 ### `admin/Users.vue` (`resources/js/pages/admin/Users.vue`)
 Admin-only. Lists all users, create/edit/delete. Lets admin assign `family_id`, `role`, and optionally set a new password while editing (blank keeps the current password).
