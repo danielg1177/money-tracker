@@ -4,6 +4,8 @@
 
 **Users are expected to use Money Tracker mainly on mobile devices** (phones, touch-first). When planning or implementing any UI work:
 
+- **Viewport / horizontal scroll:** `resources/views/app.blade.php` uses `width=device-width, initial-scale=1, viewport-fit=cover`. Global CSS (`resources/css/app.css`) sets `overflow-x: clip` on `html`, `body`, and `#app`, and shells (`AppShell.vue`, `AppNav.vue`) use `max-w-full` plus **`min-w-0` on flex main content** so intrinsic-width children cannot force sideways scrolling (common flex pitfall).
+- **iOS focus zoom:** On viewports ≤640px, **`input`, `select`, `textarea`** (except checkbox/radio/range/button types) force **`font-size: 16px`** so Safari does not zoom the whole layout when focusing fields (login and forms use `text-sm` otherwise).
 - **Default viewport:** Design and test for **narrow widths first**; use Tailwind’s mobile-first utilities (`sm:`, `md:`, etc.) to enhance for larger screens, not the other way around.
 - **Touch:** Prefer large enough tap targets, spacing between controls, and patterns that work with thumbs (bottom nav, sheets/modals reachable on small screens).
 - **Density:** Avoid desktop-only density (tiny text, many columns, hover-only affordances). If something works on mobile, it should still be acceptable on desktop.
@@ -18,7 +20,7 @@ It also registers a global Axios response interceptor that treats `401`/`419` re
 
 ```
 AppShell.vue
-├── AppNav.vue              (rendered when `useAuth().user` is set)
+├── AppNav.vue              (rendered when `useAuth().user` is set; bottom nav uses `padding-bottom: env(safe-area-inset-bottom)`; spacer height includes safe-area)
 │   ├── bottom nav bar      (Dashboard, Transactions, Funds, Debts, Account button)
 │   ├── FAB button          (opens TransactionForm modal)
 │   ├── TransactionForm.vue (modal overlay, inline in AppNav)

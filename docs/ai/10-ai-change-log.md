@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-06 — Mobile viewport: no horizontal scroll, reduce iOS zoom-on-focus
+
+- Files touched: `resources/views/app.blade.php`, `resources/css/app.css`, `resources/js/AppShell.vue`, `resources/js/components/AppNav.vue`, `resources/js/pages/Login.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`viewport-fit=cover`**, **`overflow-x: clip`** on root elements, **`min-w-0`** on nav’s main slot, **`100dvh`** min-heights where relevant, nav **safe-area bottom padding**, and **16px minimum** on form controls **at mobile widths** to avoid incidental zoom and sideways panning after login.
+
 ## 2026-05-06 — Month summary category totals scoped to authenticated user
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

@@ -1,5 +1,41 @@
 @import 'tailwindcss';
 
+@layer base {
+    html {
+        overflow-x: clip;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+    }
+
+    body {
+        margin: 0;
+        min-height: 100dvh;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: clip;
+        @apply bg-gray-950 antialiased;
+    }
+
+    #app {
+        min-height: 100dvh;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: clip;
+    }
+}
+
+/*
+ * iOS Safari zooms the viewport when focusing inputs/selects/textareas smaller than ~16px.
+ * Keep ≥16px on narrow viewports only so desktop typography can stay tighter.
+ */
+@media (max-width: 640px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='submit']):not([type='button']),
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+}
+
 button, a, [role="button"], label[for], select, input[type="checkbox"], input[type="radio"] {
   cursor: pointer;
 }

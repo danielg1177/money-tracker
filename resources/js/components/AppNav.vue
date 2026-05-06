@@ -1,10 +1,11 @@
 <template>
-  <div class="flex flex-col min-h-screen">
-    <div class="flex-1">
+  <div class="flex flex-col min-h-dvh min-h-screen w-full max-w-full overflow-x-clip">
+    <!-- min-w-0 lets flex children shrink below intrinsic content width (prevents horizontal scroll) -->
+    <div class="flex-1 min-w-0 w-full">
       <slot />
     </div>
-    
-    <nav class="fixed bottom-0 left-0 right-0 z-30 bg-gray-900 border-t border-gray-800 safe-area-inset-bottom">
+
+    <nav class="fixed bottom-0 left-0 right-0 z-30 bg-gray-900 border-t border-gray-800 pb-[env(safe-area-inset-bottom,0px)]">
       <div class="flex items-center justify-between px-3 py-2">
         <div class="flex gap-1 flex-1">
           <router-link 
@@ -217,7 +218,7 @@
       </div>
     </Transition>
 
-    <div class="h-20" />
+    <div class="shrink-0 w-full h-[calc(5rem+env(safe-area-inset-bottom,0px))]" aria-hidden="true" />
   </div>
 </template>
 
