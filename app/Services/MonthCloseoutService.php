@@ -209,6 +209,8 @@ class MonthCloseoutService
      */
     private function processUserCloseoutRules(User $user, int $year, int $month): void
     {
+        $closeoutMonthTag = sprintf('%04d-%02d', $year, $month);
+
         $grossIncome = Transaction::query()
             ->where('user_id', $user->id)
             ->where('type', 'income')
@@ -261,6 +263,7 @@ class MonthCloseoutService
                 ->where('type', 'expense')
                 ->where('is_split', false)
                 ->where('is_debt_payment', false)
+                ->where('is_closeout_initiated', false)
                 ->where('is_borrow', false)
                 ->whereYear('transaction_date', $year)
                 ->whereMonth('transaction_date', $month)
@@ -277,14 +280,16 @@ class MonthCloseoutService
 
             $totalExpenses = $soloExpenses + $splitExpenses;
 
-            $remainingPool = $grossIncome - $grossAllocationsTotal - $totalExpenses;
+            $remainingBasePool = $grossIncome - $grossAllocationsTotal - $totalExpenses;
+            $remainingAvailablePool = $remainingBasePool;
 
-            if ($remainingPool > 0) {
+            if ($remainingAvailablePool > 0) {
                 foreach ($remainingRules as $rule) {
                     if ($rule->allocation_type === 'percentage') {
-                        $allocate = round($remainingPool * $rule->amount / 100, 2);
+                        $projectedAmount = round($remainingBasePool * $rule->amount / 100, 2);
+                        $allocate = min($projectedAmount, $remainingAvailablePool);
                     } else {
-                        $allocate = min((float) $rule->amount, $remainingPool);
+                        $allocate = min((float) $rule->amount, $remainingAvailablePool);
                     }
 
                     if ($allocate <= 0) {
@@ -292,16 +297,16 @@ class MonthCloseoutService
                     }
 
                     $actualAllocated = $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
-                    $remainingPool -= $actualAllocated;
+                    $remainingAvailablePool -= $actualAllocated;
 
-                    if ($remainingPool <= 0) {
+                    if ($remainingAvailablePool <= 0) {
                         break;
                     }
                 }
             }
         }
 
-        $this->applyFundAdvances($user, $year, $month);
+        $this->applyFundAdvances($user, $closeoutMonthTag, $year, $month);
     }
 
     /**
@@ -328,12 +333,26 @@ class MonthCloseoutService
         $fund = Fund::query()->findOrFail($rule->destination_id);
         $fund->increment('balance', $amount);
 
+        Transaction::query()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $rule->closeout_expense_category_id,
+            'type' => 'expense',
+            'amount' => $amount,
+            'description' => "Closeout transfer to fund: {$fund->name}",
+            'transaction_date' => $this->resolveCloseoutTransactionDate($year, $month),
+            'is_debt_payment' => false,
+            'is_closeout_initiated' => true,
+            'is_split' => false,
+            'split_data' => null,
+        ]);
+
         FundMovement::query()->create([
             'fund_id' => $fund->id,
             'user_id' => $user->id,
             'type' => 'closeout_allocation',
             'amount' => $amount,
-            'description' => "Closeout rule: {$rule->name} ({$year}-{$month})",
+            'description' => sprintf('Closeout rule: %s (%04d-%02d)', $rule->name, $year, $month),
         ]);
 
         return $amount;
@@ -362,6 +381,7 @@ class MonthCloseoutService
             Transaction::query()->create([
                 'family_id' => $user->family_id,
                 'user_id' => $user->id,
+                'category_id' => $rule->closeout_expense_category_id,
                 'type' => 'expense',
                 'amount' => $payAmount,
                 'description' => "Debt Payment: {$debtLabel}",
@@ -419,7 +439,7 @@ class MonthCloseoutService
      *
      * @private
      */
-    private function applyFundAdvances(User $user, int $year, int $month): void
+    private function applyFundAdvances(User $user, string $closeoutMonthTag, int $year, int $month): void
     {
         $advances = Transaction::query()
             ->where('user_id', $user->id)
@@ -445,7 +465,7 @@ class MonthCloseoutService
                 'user_id' => $user->id,
                 'type' => 'advance_settlement',
                 'amount' => $total,
-                'description' => "Advance settlement ({$year}-{$month})",
+                'description' => "Advance settlement ({$closeoutMonthTag})",
             ]);
         }
     }

@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\UpdateBankBalanceRequest;
 use App\Models\CloseoutTitleSaving;
+use App\Models\FundRule;
 use App\Models\Transaction;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 
 class BankBalanceController extends Controller
 {
@@ -41,12 +43,14 @@ class BankBalanceController extends Controller
         $incomeTotal = (float) Transaction::query()
             ->where('user_id', $user->id)
             ->where('type', 'income')
+            ->where('is_closeout_initiated', false)
             ->whereDate('transaction_date', '>=', $setAt)
             ->sum('amount');
 
         $expenseTotal = (float) Transaction::query()
             ->where('user_id', $user->id)
             ->where('type', 'expense')
+            ->where('is_closeout_initiated', false)
             ->whereDate('transaction_date', '>=', $setAt)
             ->sum('amount');
 
@@ -103,17 +107,48 @@ class BankBalanceController extends Controller
     {
         $user = auth()->user();
 
-        $titleSaving = CloseoutTitleSaving::query()
-            ->where('id', $id)
-            ->where('user_id', $user->id)
-            ->firstOrFail();
+        $titleSaving = DB::transaction(function () use ($id, $user): CloseoutTitleSaving {
+            $titleSaving = CloseoutTitleSaving::query()
+                ->where('id', $id)
+                ->where('user_id', $user->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $titleSaving->update([
-            'is_completed' => true,
-            'completed_at' => now(),
-        ]);
+            if ($titleSaving->completion_transaction_id) {
+                $titleSaving->update([
+                    'is_completed' => true,
+                    'completed_at' => now(),
+                ]);
 
-        return response()->json($titleSaving->fresh());
+                return $titleSaving;
+            }
+
+            $rule = $titleSaving->rule_id ? FundRule::query()->find($titleSaving->rule_id) : null;
+
+            $transaction = Transaction::query()->create([
+                'family_id' => $user->family_id,
+                'user_id' => $user->id,
+                'category_id' => $rule?->closeout_expense_category_id,
+                'type' => 'expense',
+                'amount' => (float) $titleSaving->amount,
+                'description' => "Completed title saving: {$titleSaving->title}",
+                'transaction_date' => now()->toDateString(),
+                'is_debt_payment' => false,
+                'is_closeout_initiated' => true,
+                'is_split' => false,
+                'split_data' => null,
+            ]);
+
+            $titleSaving->update([
+                'is_completed' => true,
+                'completed_at' => now(),
+                'completion_transaction_id' => $transaction->id,
+            ]);
+
+            return $titleSaving;
+        });
+
+        return response()->json($titleSaving->fresh('completionTransaction'));
     }
 
     /**
@@ -123,15 +158,29 @@ class BankBalanceController extends Controller
     {
         $user = auth()->user();
 
-        $titleSaving = CloseoutTitleSaving::query()
-            ->where('id', $id)
-            ->where('user_id', $user->id)
-            ->firstOrFail();
+        $titleSaving = DB::transaction(function () use ($id, $user): CloseoutTitleSaving {
+            $titleSaving = CloseoutTitleSaving::query()
+                ->where('id', $id)
+                ->where('user_id', $user->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $titleSaving->update([
-            'is_completed' => false,
-            'completed_at' => null,
-        ]);
+            if ($titleSaving->completion_transaction_id) {
+                Transaction::query()
+                    ->where('id', $titleSaving->completion_transaction_id)
+                    ->where('user_id', $user->id)
+                    ->where('is_closeout_initiated', true)
+                    ->delete();
+            }
+
+            $titleSaving->update([
+                'is_completed' => false,
+                'completed_at' => null,
+                'completion_transaction_id' => null,
+            ]);
+
+            return $titleSaving;
+        });
 
         return response()->json($titleSaving->fresh());
     }

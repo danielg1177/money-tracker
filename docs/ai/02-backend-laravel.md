@@ -32,7 +32,7 @@
 - `split_data` is a snapshot of split percentages stored on the transaction itself
 - `debt_id` links a payment transaction to the debt it settles
 - `paid_by_user_id` tracks which user initiated the payment (may differ from `user_id` for creditor income rows)
-- `is_closeout_initiated` distinguishes manual payments (`false`) from closeout-rule-triggered payments (`true`)
+- `is_closeout_initiated` distinguishes manual rows (`false`) from backend-generated closeout movement rows (`true`) across debt payments, fund allocations, and title-completion expenses
 - Relations: `belongsTo(Family)`, `belongsTo(User)`, `belongsTo(User, 'paid_by_user_id')` as `paidByUser`, `belongsTo(Category)`, `belongsTo(Fund)`, `belongsTo(Fund, 'advance_fund_id')` as `advanceFund`, `belongsTo(Debt)` via `debt_id`, `belongsTo(Transaction, 'mirror_transaction_id')` as `mirrorTransaction`, `hasMany(TransactionSplit)` as `splits`, `hasMany(Debt)` as `debts` (split-linked debts)
 
 ### TransactionSplit (`app/Models/TransactionSplit.php`)
@@ -46,7 +46,7 @@
 - Relations: `belongsTo(User)`, `hasMany(FundRule)`, `hasMany(FundMovement)`, `hasMany(Debt)`
 
 ### FundRule (`app/Models/FundRule.php`)
-- Fields: `user_id`, `fund_id`, `name`, `order` (int), `allocation_type` (`percentage`|`fixed`), `amount` (decimal:2), `allocation_base` (`gross_income`|`net_income`|`remaining`), `is_active` (bool)
+- Fields: `user_id`, `fund_id`, `name`, `order` (int), `allocation_type` (`percentage`|`fixed`), `amount` (decimal:2), `allocation_base` (`gross_income`|`net_income`|`remaining`), `is_active` (bool), `destination_type` (`fund`|`debt`|`title`), `destination_id` (nullable), `destination_title` (nullable), `closeout_expense_category_id` (nullable expense-category FK)
 - Rules are processed in `order` ASC during month hard-close processing; inactive rules are skipped
 - `net_income` base is tracked but **not independently reduced** by deductions — it equals `gross` unless manually managed (Needs verification: whether net differs from gross in current implementation)
 - Relations: `belongsTo(User)`, `belongsTo(Fund)`
@@ -69,7 +69,7 @@
 - Relations: `belongsTo(Family)`, `belongsTo(User, 'debtor_id')`, `belongsTo(User, 'creditor_id')`, `belongsTo(Fund)`, `belongsTo(Transaction)`
 
 ### CloseoutTitleSaving (`app/Models/CloseoutTitleSaving.php`)
-- Fields: `family_id`, `user_id`, `year`, `month`, `title`, `amount`, `rule_id`, `is_completed`, `completed_at`
+- Fields: `family_id`, `user_id`, `year`, `month`, `title`, `amount`, `rule_id`, `is_completed`, `completed_at`, `completion_transaction_id`
 - Casts: `amount` decimal:2, `year` integer, `month` integer, `is_completed` bool, `completed_at` datetime
 - Relations: `belongsTo(Family)`, `belongsTo(User)`
 
@@ -136,8 +136,8 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 ### BankBalanceController
 - `show()` — returns bank balance tracking state for auth user: disabled/null state when feature is off, baseline-not-set state when no baseline date exists, or computed balance state (`bank_balance + income - expense - completed title savings` since `bank_balance_set_at`)
 - `update(UpdateBankBalanceRequest)` — updates `bank_balance_enabled` and/or baseline `bank_balance`; when a balance is provided it also sets `bank_balance_set_at` to today and forces enabled state
-- `completeTitleSaving(int $id)` — marks one user-owned `CloseoutTitleSaving` row as completed and stamps `completed_at`
-- `incompleteTitleSaving(int $id)` — clears completion state and timestamp for one user-owned title saving row
+- `completeTitleSaving(int $id)` — marks one user-owned `CloseoutTitleSaving` row as completed, stamps `completed_at`, and creates a closeout-tagged expense transaction (`is_closeout_initiated=true`) using the rule’s optional `closeout_expense_category_id`
+- `incompleteTitleSaving(int $id)` — clears completion state/timestamp and deletes the generated completion transaction when present
 
 ### MonthCloseoutController
 - `status(Request)` — `POST /closeout/status`; accepts `{year, month}`; returns `{soft_closes, hard_close, all_soft_closed, family_user_count}` via `MonthCloseoutService::getMonthStatus`
@@ -184,6 +184,12 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `allocate(float, array): array` — distributes amount proportionally; last split absorbs rounding remainder
 - `sumAmounts(array): float` — utility to verify allocation totals
 - `distributeEqually(array $userIds, float): array` — equal split utility (used internally; not currently called from controllers)
+
+### MonthCloseoutService (`app/Services/MonthCloseoutService.php`)
+- `processUserCloseoutRules(User, int, int): void` excludes `is_closeout_initiated=true` expenses from rule expense-basis calculations so closeout-generated movement rows do not recursively affect the same closeout run
+- Remaining-base percentage rules use a shared post-expense basis for the phase (not cascading percentage-on-percentage reduction); fixed remaining rules still consume the available remaining pool in order
+- `allocateToFund(...)` creates both a `FundMovement` (`closeout_allocation`) and a closeout-tagged expense transaction for ledger visibility in Transactions
+- `allocateToDebt(...)` applies `closeout_expense_category_id` to closeout-created debt-payment expense rows
 
 ## Form Requests
 

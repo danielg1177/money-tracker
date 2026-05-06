@@ -202,7 +202,9 @@ class MonthSummaryController extends Controller
      */
     private function getFundMovements(object $user, int $year, int $month): array
     {
-        $monthTag = sprintf('%04d-%02d', $year, $month);
+        $monthTagPadded = sprintf('%04d-%02d', $year, $month);
+        $monthTagUnpadded = sprintf('%04d-%d', $year, $month);
+        $closeoutMovementTypes = ['closeout_allocation', 'advance_settlement'];
 
         $movements = FundMovement::query()
             ->whereHas('fund', function ($q) use ($user): void {
@@ -214,15 +216,22 @@ class MonthSummaryController extends Controller
                 });
             })
             ->with('fund')
-            ->where(function ($q) use ($year, $month, $monthTag): void {
+            ->where(function ($q) use ($year, $month, $monthTagPadded, $monthTagUnpadded, $closeoutMovementTypes): void {
                 $q->whereHas('transaction', fn ($txQuery) => $txQuery
                     ->whereYear('transaction_date', $year)
                     ->whereMonth('transaction_date', $month)
                 )->orWhere(function ($movementQuery) use ($year, $month): void {
                     $movementQuery->whereNull('transaction_id')
+                        ->whereNotIn('type', ['closeout_allocation', 'advance_settlement'])
                         ->whereYear('created_at', $year)
                         ->whereMonth('created_at', $month);
-                })->orWhere('description', 'like', "%({$monthTag})%");
+                })->orWhere(function ($movementQuery) use ($closeoutMovementTypes, $monthTagPadded, $monthTagUnpadded): void {
+                    $movementQuery->whereIn('type', $closeoutMovementTypes)
+                        ->where(function ($descriptionQuery) use ($monthTagPadded, $monthTagUnpadded): void {
+                            $descriptionQuery->where('description', 'like', "%({$monthTagPadded})%")
+                                ->orWhere('description', 'like', "%({$monthTagUnpadded})%");
+                        });
+                });
             })
             ->latest('id')
             ->get();
@@ -421,6 +430,7 @@ class MonthSummaryController extends Controller
             ->where('type', 'expense')
             ->where('is_split', false)
             ->where('is_debt_payment', false)
+            ->where('is_closeout_initiated', false)
             ->where('is_borrow', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
@@ -470,17 +480,19 @@ class MonthSummaryController extends Controller
             $ruleResults[] = $this->formatRuleForPreview($rule, $projectedAmount);
         }
 
-        $remainingPool = max(0, $grossIncome - $grossAllocationsTotal - $totalExpenses);
+        $remainingBasePool = max(0, $grossIncome - $grossAllocationsTotal - $totalExpenses);
+        $remainingAvailablePool = $remainingBasePool;
 
         foreach ($remainingRules as $rule) {
             if ($rule->allocation_type === 'percentage') {
-                $projectedAmount = round($remainingPool * $rule->amount / 100, 2);
+                $projectedAmount = round($remainingBasePool * $rule->amount / 100, 2);
+                $projectedAmount = min($projectedAmount, $remainingAvailablePool);
             } else {
-                $projectedAmount = min((float) $rule->amount, $remainingPool);
+                $projectedAmount = min((float) $rule->amount, $remainingAvailablePool);
             }
 
             if ($projectedAmount > 0) {
-                $remainingPool -= $projectedAmount;
+                $remainingAvailablePool -= $projectedAmount;
             }
 
             $ruleResults[] = $this->formatRuleForPreview($rule, $projectedAmount);

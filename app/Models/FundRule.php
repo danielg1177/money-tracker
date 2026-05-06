@@ -22,12 +22,14 @@ class FundRule extends Model
         'destination_type',
         'destination_id',
         'destination_title',
+        'closeout_expense_category_id',
     ];
 
     protected $casts = [
         'order' => 'integer',
         'amount' => 'decimal:2',
         'is_active' => 'bool',
+        'closeout_expense_category_id' => 'integer',
     ];
 
     public function user(): BelongsTo

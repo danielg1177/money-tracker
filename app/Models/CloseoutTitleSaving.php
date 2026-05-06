@@ -17,6 +17,7 @@ class CloseoutTitleSaving extends Model
         'rule_id',
         'is_completed',
         'completed_at',
+        'completion_transaction_id',
     ];
 
     protected $casts = [
@@ -35,5 +36,10 @@ class CloseoutTitleSaving extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function completionTransaction(): BelongsTo
+    {
+        return $this->belongsTo(Transaction::class, 'completion_transaction_id');
     }
 }

@@ -11,6 +11,21 @@ Format:
 
 ---
 
+## 2026-05-06 — Fix month-summary fund movements leaking prior closeout month
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `app/Services/MonthCloseoutService.php`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `GET /month-summary` fund movement filtering now scopes closeout movement types (`closeout_allocation`, `advance_settlement`) by the tagged closeout month instead of movement `created_at`, preventing prior-month closeouts run later from showing in the wrong month (for example, April closeout movements appearing in May). New closeout movement descriptions are normalized to `YYYY-MM` tags, and regression coverage verifies the month separation.
+
+## 2026-05-06 — Fix remaining-percentage closeout rules to use shared basis
+
+- Files touched: `app/Services/MonthCloseoutService.php`, `app/Http/Controllers/MonthSummaryController.php`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Remaining-base percentage closeout rules now compute from one shared remaining-after-expenses basis (instead of cascading on a shrinking percentage pool). This applies consistently to both hard-close execution and `GET /month-summary` rule preview, so scenarios like two 50% remaining rules now project/apply equal amounts from the same base.
+
+## 2026-05-06 — Closeout-generated movement transactions + rule default expense category
+
+- Files touched: `database/migrations/2026_05_06_161500_add_closeout_transaction_fields.php`, `app/Models/FundRule.php`, `app/Models/CloseoutTitleSaving.php`, `app/Services/MonthCloseoutService.php`, `app/Http/Controllers/FundController.php`, `app/Http/Controllers/BankBalanceController.php`, `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/CloseoutRules.vue`, `resources/js/pages/Transactions.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Hard-close rule allocations to **funds** now also create closeout-tagged expense transactions in the ledger; debt-allocation closeout payments can now carry a default category from the rule; closeout rules now support optional `closeout_expense_category_id`. Title savings completion now creates a closeout-tagged expense transaction (and undo completion deletes it). Transactions UI now visually distinguishes closeout-generated rows with a dedicated badge/tint and blocks manual edit/delete for those system-generated entries. Closeout expense-basis math excludes closeout-tagged rows so generated movement entries do not recursively alter same-run allocation results.
+
 ## 2026-05-06 — Transactions month dropdown now includes next two months
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

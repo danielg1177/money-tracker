@@ -144,11 +144,11 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
 4. **Calculate remaining pool:** `remainingPool = grossIncome - grossAllocations - totalExpenses`
 5. **Remaining-based rules loop:**
    a. Calculates allocation amount from remaining pool:
-      - `percentage`: `round(remainingPool * rule.amount / 100, 2)`
-      - `fixed`: `min(rule.amount, $remainingPool)`
+      - `percentage`: `round(remainingPool * rule.amount / 100, 2)` using the same shared `remainingPool` basis for every percentage rule in this phase
+      - `fixed`: `min(rule.amount, $remainingAvailablePool)` (fixed allocations consume the available pool)
    b. Applies rule to destination — returns **actual** allocated amount
-   c. Subtracts **actual** allocated amount from `$remainingPool`
-   d. If `$remainingPool ≤ 0`: stops
+   c. Subtracts **actual** allocated amount from `$remainingAvailablePool`
+   d. If `$remainingAvailablePool ≤ 0`: stops
 
 **Important:** If a debt rule allocates $500 but the debt balance is only $200, only $200 is allocated, and the remaining $300 stays available for subsequent rules (as of 2026-05-04 fix).
 
@@ -160,6 +160,12 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
 - The `paid_by_user_id` field is set to the user executing the rule, allowing multi-user families to track who contributed to debt paydown
 - The debt's balance is decremented by the payment amount
 - This allows fund rules to automatically pay down debts during month closeout, and the payment history properly attributes the payment to the user whose rule triggered it
+
+**Fund allocation details:** When a rule's destination is a fund (`destination_type = 'fund'`):
+- Fund balance is increased and a `FundMovement` of type `closeout_allocation` is recorded
+- A matching closeout-tagged `expense` transaction is created for Transactions-page visibility (category defaults to `rule.closeout_expense_category_id` when present)
+
+**Title completion details:** `destination_type='title'` creates `CloseoutTitleSaving` records at hard-close; when user later marks one complete (`POST /title-savings/{id}/complete`), backend creates a closeout-tagged expense transaction using the rule's default closeout category if configured. Undo completion deletes that generated transaction.
 
 **After rule processing:** `hardClose` runs `consolidatePendingSplitDebts`, which nets pending split debts for the closed month—including pending rows with a null `transaction_id` so they are not skipped—and writes confirmed debts before deleting the pending rows.
 

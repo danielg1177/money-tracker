@@ -107,6 +107,14 @@ class FundController extends Controller
             'destination_type' => ['required', Rule::in(['fund', 'debt', 'title'])],
             'destination_id' => 'nullable|integer',
             'destination_title' => 'nullable|string|max:255|required_if:destination_type,title',
+            'closeout_expense_category_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('categories', 'id')->where(function ($query): void {
+                    $query->where('family_id', auth()->user()->family_id)
+                        ->where('is_expense', true);
+                }),
+            ],
         ]);
 
         return FundRule::create($validated + ['user_id' => auth()->id()]);
@@ -129,6 +137,14 @@ class FundController extends Controller
             'destination_type' => ['required', Rule::in(['fund', 'debt', 'title'])],
             'destination_id' => 'nullable|integer',
             'destination_title' => 'nullable|string|max:255|required_if:destination_type,title',
+            'closeout_expense_category_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('categories', 'id')->where(function ($query): void {
+                    $query->where('family_id', auth()->user()->family_id)
+                        ->where('is_expense', true);
+                }),
+            ],
         ]);
 
         $fundRule->update($validated);

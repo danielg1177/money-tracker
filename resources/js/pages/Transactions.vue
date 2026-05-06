@@ -199,18 +199,19 @@
             :key="transaction.id"
             :class="[
               'bg-gray-800 border border-gray-700 rounded-lg sm:rounded-xl p-2 sm:p-3 transition-colors',
+              transaction.is_closeout_initiated ? 'border-purple-600/40 bg-purple-900/10' : '',
               confirmDelete[transaction.id] ? 'border-red-600 bg-red-900/20' : '',
               isCurrentMonthHardClosed ? 'opacity-75' : '',
-              !confirmDelete[transaction.id] && !isCurrentMonthHardClosed && transaction.is_debt_payment ? 'cursor-default' : '',
-              !confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !transaction.is_debt_payment ? 'cursor-pointer hover:border-gray-600' : '',
+              !confirmDelete[transaction.id] && !isCurrentMonthHardClosed && isSystemCloseoutEntry(transaction) ? 'cursor-default' : '',
+              !confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !isSystemCloseoutEntry(transaction) ? 'cursor-pointer hover:border-gray-600' : '',
             ]"
-            @click="!confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !transaction.is_debt_payment && openEditForm(transaction.id)"
+            @click="!confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !isSystemCloseoutEntry(transaction) && openEditForm(transaction.id)"
           >
             <!-- Main transaction row: one horizontal row on all breakpoints so amount + split stay beside title on mobile -->
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
               <div
                 class="min-w-0 flex-1"
-                :class="!confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !transaction.is_debt_payment && 'cursor-pointer'"
+                :class="!confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !isSystemCloseoutEntry(transaction) && 'cursor-pointer'"
               >
                 <div class="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1 min-w-0 flex-wrap">
                   <span
@@ -227,6 +228,12 @@
                     class="inline-flex shrink-0 items-center rounded-md bg-sky-900/55 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-sky-200"
                   >
                     Repayment
+                  </span>
+                  <span
+                    v-if="transaction.is_closeout_initiated"
+                    class="inline-flex shrink-0 items-center rounded-md bg-purple-900/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-purple-200"
+                  >
+                    Closeout
                   </span>
                 </div>
                 <p v-if="transaction.description" class="hidden sm:block text-gray-400 text-xs truncate">
@@ -287,9 +294,9 @@
                   <div v-if="!confirmDelete[transaction.id]" class="flex gap-1">
                     <button
                       @click.stop="confirmDelete[transaction.id] = true"
-                      :disabled="isCurrentMonthHardClosed"
-                      :class="['p-1 sm:p-2 rounded-md sm:rounded-lg transition-colors', isCurrentMonthHardClosed ? 'text-gray-500 cursor-not-allowed' : 'text-gray-400 hover:text-red-400 hover:bg-gray-700']"
-                      :title="isCurrentMonthHardClosed ? 'Cannot edit locked transactions' : 'Delete'"
+                      :disabled="isCurrentMonthHardClosed || transaction.is_closeout_initiated"
+                      :class="['p-1 sm:p-2 rounded-md sm:rounded-lg transition-colors', (isCurrentMonthHardClosed || transaction.is_closeout_initiated) ? 'text-gray-500 cursor-not-allowed' : 'text-gray-400 hover:text-red-400 hover:bg-gray-700']"
+                      :title="isCurrentMonthHardClosed ? 'Cannot edit locked transactions' : (transaction.is_closeout_initiated ? 'Closeout-generated entries cannot be deleted here' : 'Delete')"
                     >
                       <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -870,6 +877,10 @@ function getTransactionById(id) {
   return transactions.value.find(t => t.id === id);
 }
 
+function isSystemCloseoutEntry(transaction) {
+  return Boolean(transaction?.is_debt_payment || transaction?.is_closeout_initiated);
+}
+
 async function handleTransactionCreated(transaction) {
   await reloadCurrentFilterData();
   showForm.value = false;
@@ -923,7 +934,7 @@ function handleFormClose() {
 
 function openEditForm(transactionId) {
   const tx = getTransactionById(transactionId);
-  if (tx?.is_debt_payment) {
+  if (isSystemCloseoutEntry(tx)) {
     return;
   }
   editingTransactionId.value = transactionId;

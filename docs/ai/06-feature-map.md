@@ -210,7 +210,7 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 
 - `category_totals`: family transactions grouped by category (expenses then income, sorted by total descending), excluding debt payments
 - `member_balances`: net amount owed between the auth user and each other family member from split expenses; only shown when non-zero balances exist
-- `fund_movements`: monthly fund movement summary for funds visible to the auth user, grouped by fund with in/out/net totals and movement lines (covers closeout and non-closeout movement types)
+- `fund_movements`: monthly fund movement summary for funds visible to the auth user, grouped by fund with in/out/net totals and movement lines
 - `rule_preview`: `{basis: {gross_income, total_expenses, remaining_after_expenses}, rules: [...]}` — dry-run projection; no writes occur
 - `debt_repayments`: `{paid, received}` arrays for repayment rows in the selected month (shown in a dedicated section in `MonthSummary.vue`)
 - `title_savings`: closeout title allocations for the authenticated user in hard-closed months, each with `{id, title, amount, is_completed, completed_at}`; UI can mark complete/incomplete via `/title-savings/{id}/complete`
@@ -219,7 +219,7 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 
 ## 14. Fund rules and closeout allocation
 
-**What it does:** Users define `FundRule` rows (percentage/fixed, gross vs remaining, destination fund/debt/title) on the **Closeout Rules** page (`GET`/`POST`/`PUT`/`DELETE /closeout-rules`). Those rules are applied when a month is **hard-closed** (`MonthCloseoutService`), not when each income transaction is posted.
+**What it does:** Users define `FundRule` rows (percentage/fixed, gross vs remaining, destination fund/debt/title) on the **Closeout Rules** page (`GET`/`POST`/`PUT`/`DELETE /closeout-rules`). Rules can also set optional `closeout_expense_category_id` for generated closeout movement rows. Rules are applied when a month is **hard-closed** (`MonthCloseoutService`), not when each income transaction is posted.
 
 | Layer | Files |
 |---|---|
@@ -231,6 +231,16 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 **Debt destination date behavior:** If a closeout rule allocates to a debt, the generated debt-payment transaction is dated:
 - today's date when closing the current month
 - month-end of the closed month when closing a non-current month
+
+**Closeout movement transactions:** Hard-close now records user-visible closeout movement expenses in Transactions:
+- `destination_type=fund`: creates closeout-tagged expense + `FundMovement(closeout_allocation)`
+- `destination_type=debt`: creates closeout-tagged debt-payment expense (with optional rule category)
+- `destination_type=title`: no transaction at hard-close; completion creates a closeout-tagged expense when marked done
+- Closeout-tagged expense rows are excluded from closeout expense-basis math so they do not affect the same closeout run’s remaining-pool calculations
+
+**Fund movement month scoping:** In `GET /month-summary`, closeout movement types (`closeout_allocation`, `advance_settlement`) are scoped by their tagged closeout month in movement descriptions, while non-closeout movement types still use transaction date or movement month as appropriate. This keeps late-run closeouts (e.g., April closeout executed in May) in the April summary.
+
+**Remaining percentage basis:** During hard-close and month-summary preview, each `allocation_base='remaining'` + `allocation_type='percentage'` rule uses the same shared remaining basis (post-expense and post-gross-allocation) rather than a cascading percentage-on-percentage reduction.
 
 ---
 

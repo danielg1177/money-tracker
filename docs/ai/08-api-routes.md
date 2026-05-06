@@ -70,7 +70,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | Method | Path | Controller | Notes |
 |---|---|---|---|
 | GET | `/closeout-rules` | `FundController::showRules` | JSON: auth user’s `FundRule` rows ordered by `order` |
-| POST | `/closeout-rules` | `FundController::storeRule` | `{name, order, allocation_type, amount, allocation_base?, is_active?, destination_type, destination_id?, destination_title?, fund_id?}` |
+| POST | `/closeout-rules` | `FundController::storeRule` | `{name, order, allocation_type, amount, allocation_base?, is_active?, destination_type, destination_id?, destination_title?, fund_id?, closeout_expense_category_id?}` (`closeout_expense_category_id` must be an expense category in the user’s family) |
 | PUT | `/closeout-rules/{fundRule}` | `FundController::updateRule` | Same body as POST; `{fundRule}` must belong to auth user |
 | DELETE | `/closeout-rules/{fundRule}` | `FundController::destroyRule` | — |
 

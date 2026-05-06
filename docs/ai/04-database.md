@@ -48,6 +48,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_05_06_140000_add_interest_accruals_to_debts_table` | Adds nullable `interest_accruals` JSON to `debts` |
 | `2026_05_06_154936_add_bank_balance_to_users_table` | Adds `bank_balance_enabled` (bool), `bank_balance` (decimal nullable), `bank_balance_set_at` (date nullable) to `users` |
 | `2026_05_06_154936_add_completion_to_closeout_title_savings_table` | Adds `is_completed` (bool) and `completed_at` (timestamp nullable) to `closeout_title_savings` |
+| `2026_05_06_161500_add_closeout_transaction_fields` | Adds `fund_rules.closeout_expense_category_id` (nullable FK to categories) and `closeout_title_savings.completion_transaction_id` (nullable FK to transactions) |
 
 ## Table schemas
 
@@ -117,6 +118,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `destination_type` | varchar(16) | `fund` \| `debt` \| `title`; determines where the allocation goes |
 | `destination_id` | bigint nullable | FK to the target `fund` or `debt` id when `destination_type` is `fund` or `debt` |
 | `destination_title` | varchar(255) nullable | Custom title string when `destination_type = 'title'` (e.g., "Medical Reserve") |
+| `closeout_expense_category_id` | bigint FK nullable | → `categories.id` with `nullOnDelete`; optional default expense category for closeout-generated movement transactions |
 | `timestamps` | | |
 
 ### `transactions`
@@ -197,6 +199,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `amount` | decimal(15,2) | Saved amount for the month closeout |
 | `is_completed` | boolean | default false; true when user marks this saving as physically spent/transferred |
 | `completed_at` | timestamp nullable | when the saving was marked complete |
+| `completion_transaction_id` | bigint FK nullable | → `transactions.id` with `nullOnDelete`; closeout-generated expense row created when the title saving is marked complete |
 | `month` | integer | Closeout month (1-12) |
 | `year` | integer | Closeout year (YYYY) |
 | `timestamps` | | |

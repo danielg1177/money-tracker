@@ -66,6 +66,9 @@
               <div :class="{ 'text-green-400': rule.destination_type === 'title' }">
                 {{ getDestinationLabel(rule) }}
               </div>
+              <div v-if="getCloseoutCategoryName(rule)" class="text-purple-300">
+                Expense category: {{ getCloseoutCategoryName(rule) }}
+              </div>
             </div>
           </div>
           <div class="flex gap-2 flex-shrink-0">
@@ -240,6 +243,19 @@
               />
             </div>
 
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1">Closeout Expense Category (optional)</label>
+              <select
+                v-model.number="formData.closeout_expense_category_id"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option :value="null">-- Uncategorized --</option>
+                <option v-for="category in expenseCategories" :key="category.id" :value="category.id">
+                  {{ category.icon ? `${category.icon} ` : '' }}{{ category.name }}
+                </option>
+              </select>
+            </div>
+
             <!-- Active Toggle -->
             <div class="flex items-center gap-3">
               <input
@@ -274,6 +290,7 @@ const { get, post, put, del, loading, error } = useApi();
 const rules = ref([]);
 const funds = ref([]);
 const debts = ref({});
+const categories = ref([]);
 const showForm = ref(false);
 const editingRule = ref(null);
 const deleteConfirm = ref(null);
@@ -287,7 +304,12 @@ const formData = ref({
   destination_type: 'fund',
   destination_id: null,
   destination_title: '',
+  closeout_expense_category_id: null,
   is_active: true,
+});
+
+const expenseCategories = computed(() => {
+  return categories.value.filter(category => category.is_expense);
 });
 
 const userDebts = computed(() => {
@@ -376,16 +398,28 @@ function getDestinationLabel(rule) {
   return `→ Save as: ${rule.destination_title}`;
 }
 
+function getCloseoutCategoryName(rule) {
+  const categoryId = Number(rule?.closeout_expense_category_id);
+  if (!categoryId) {
+    return null;
+  }
+
+  const category = categories.value.find(c => Number(c.id) === categoryId);
+  return category ? category.name : 'Unknown category';
+}
+
 async function fetchData() {
   try {
-    const [rulesData, fundsData, debtsData] = await Promise.all([
+    const [rulesData, fundsData, debtsData, categoriesData] = await Promise.all([
       get('/closeout-rules'),
       get('/funds'),
       get('/debts'),
+      get('/categories'),
     ]);
     rules.value = rulesData.sort((a, b) => a.order - b.order);
     funds.value = fundsData;
     debts.value = debtsData;
+    categories.value = categoriesData;
   } catch (err) {
     console.error('Failed to fetch data:', err);
   }
@@ -402,6 +436,7 @@ function editRule(rule) {
     destination_type: rule.destination_type,
     destination_id: rule.destination_id,
     destination_title: rule.destination_title,
+    closeout_expense_category_id: rule.closeout_expense_category_id,
     is_active: rule.is_active,
   };
   showForm.value = true;
@@ -454,6 +489,7 @@ function closeForm() {
     destination_type: 'fund',
     destination_id: null,
     destination_title: '',
+    closeout_expense_category_id: null,
     is_active: true,
   };
 }

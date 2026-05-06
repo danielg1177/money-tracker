@@ -29,6 +29,12 @@ When closeout rules allocate to a debt, the generated debt-payment transaction d
 - **today** if the hard-close month is the same month/year as the current date
 - **month-end** (`endOfMonth`) for any non-current closeout month (including past months)
 
+### Closeout-generated movement rows are informational and excluded from closeout basis math
+Hard-close now creates closeout-tagged expense rows (`transactions.is_closeout_initiated=true`) for fund/debt allocations, and title-completion creates a similar row when marked done. `MonthCloseoutService` excludes these rows from expense-basis calculations during closeout so they cannot recursively alter same-run allocations.
+
+### Remaining-base percentage closeout rules use a shared basis
+For rules with `allocation_base='remaining'` and `allocation_type='percentage'`, each rule calculates from the same remaining-after-expenses basis (after gross/fixed deductions), not from a progressively reduced percentage base. Fixed remaining rules still consume the available pool in rule order.
+
 ### Debt interest accrues at closed month-end (not closeout run time)
 For debts with `interest_enabled=true` and a configured `interest_rate`, hard-close applies interest using daily accrual (`APR / 365`) bounded by the closed month. In-month debt payments reduce interest from the payment date onward. `interest_last_applied_at` is set to the **closed month's last day**, so accrual timing remains tied to the closed month even if users close early/late in real time.
 
