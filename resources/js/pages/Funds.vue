@@ -218,6 +218,7 @@
                 <span class="absolute left-4 top-2 text-gray-400">$</span>
                 <input
                   v-model.number="newFund.starting_balance"
+                  v-bind="mobileDecimalNumberAttrs"
                   type="number"
                   step="0.01"
                   min="0"
@@ -336,6 +337,7 @@
             />
             <input
               v-model.number="editingRule.order"
+              v-bind="mobileIntegerNumberAttrs"
               type="number"
               min="1"
               placeholder="Order"
@@ -350,6 +352,7 @@
             </select>
             <input
               v-model.number="editingRule.amount"
+              v-bind="mobileDecimalNumberAttrs"
               type="number"
               min="0"
               step="0.01"
@@ -420,6 +423,7 @@
                 <span class="absolute left-4 top-2 text-gray-400">$</span>
                 <input
                   v-model.number="borrowForm.amount"
+                  v-bind="mobileDecimalNumberAttrs"
                   type="number"
                   step="0.01"
                   min="0"
@@ -538,6 +542,7 @@
 import { ref, onMounted } from 'vue';
 import { useAuth } from '../composables/useAuth';
 import { useApi } from '../composables/useApi';
+import { mobileDecimalNumberAttrs, mobileIntegerNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 
 const { user } = useAuth();
 const { get, post, put, del, loading, error } = useApi();

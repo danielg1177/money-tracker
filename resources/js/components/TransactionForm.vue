@@ -50,6 +50,7 @@
         <input
           id="amount"
           v-model.number="form.amount"
+          v-bind="mobileDecimalNumberAttrs"
           type="number"
           step="0.01"
           min="0"
@@ -255,6 +256,7 @@
             <label class="mb-1 block text-xs font-medium text-gray-400">Annual Interest Rate (APR %)</label>
             <input
               v-model.number="form.income_new_interest_rate"
+              v-bind="mobileDecimalNumberAttrs"
               type="number"
               min="0"
               max="100"
@@ -409,6 +411,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { useApi } from '../composables/useApi';
+import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 import SplitEditor from './SplitEditor.vue';
 import {
   equalSplitPayloadForFamilyUsers,

@@ -379,6 +379,7 @@
                 <input
                   id="add-amount"
                   v-model.number="addDebtForm.amount"
+                  v-bind="mobileDecimalNumberAttrs"
                   type="number"
                   step="0.01"
                   min="0.01"
@@ -419,6 +420,7 @@
                 <label class="block text-sm font-medium text-gray-300 mb-2">Annual Interest Rate (APR %)</label>
                 <input
                   v-model.number="addDebtForm.interest_rate"
+                  v-bind="mobileDecimalNumberAttrs"
                   type="number"
                   min="0"
                   max="100"
@@ -501,6 +503,7 @@
                 <input
                   id="pay-amount"
                   v-model.number="payForm.amount"
+                  v-bind="mobileDecimalNumberAttrs"
                   type="number"
                   step="0.01"
                   min="0"
@@ -815,6 +818,7 @@
                 <label class="block text-sm font-medium text-gray-300 mb-2">Annual Interest Rate (APR %)</label>
                 <input
                   v-model.number="editDebtForm.interest_rate"
+                  v-bind="mobileDecimalNumberAttrs"
                   type="number"
                   min="0"
                   max="100"
@@ -862,6 +866,7 @@ import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
 import { useAuth } from '../composables/useAuth';
+import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 
 const { get, post, put, del, loading, error } = useApi();
 

@@ -101,6 +101,7 @@
                 <span class="text-gray-400 text-sm">$</span>
                 <input
                   v-model="bankBalanceInput"
+                  v-bind="mobileDecimalNumberAttrs"
                   type="number"
                   step="0.01"
                   min="0"
@@ -345,6 +346,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useAuth } from '../composables/useAuth';
 import { useApi } from '../composables/useApi';
 import { debtPaymentCategoryLine } from '../support/debtPaymentLabel.js';
+import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 
 const { user } = useAuth();
 const { get, post, put, loading, error } = useApi();

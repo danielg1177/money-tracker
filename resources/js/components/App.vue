@@ -92,7 +92,7 @@
                   <option value="">Select Category</option>
                   <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
                 </select>
-                <input v-model="newTransaction.amount" type="number" step="0.01" placeholder="Amount" required class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
+                <input v-model="newTransaction.amount" v-bind="mobileDecimalNumberAttrs" type="number" step="0.01" placeholder="Amount" required class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
                 <input v-model="newTransaction.description" type="text" placeholder="Description" class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
                 <label class="flex items-center gap-2 text-sm">
                   <input v-model="newTransaction.is_split" type="checkbox" class="rounded border-slate-300" />
@@ -105,7 +105,7 @@
                       <option value="">Select User</option>
                       <option v-for="u in familyUsers" :key="u.id" :value="u.id">{{ u.name }}</option>
                     </select>
-                    <input v-model="split.percentage" type="number" min="0" max="100" step="0.1" placeholder="%" required class="w-20 rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
+                    <input v-model="split.percentage" v-bind="mobileDecimalNumberAttrs" type="number" min="0" max="100" step="0.1" placeholder="%" required class="w-20 rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
                     <button @click="removeSplit(index)" type="button" class="text-red-500">×</button>
                   </div>
                   <button @click="addSplit" type="button" class="text-sm text-slate-900 underline">Add Split</button>
@@ -169,8 +169,8 @@
                   <option value="percentage">Percentage</option>
                   <option value="fixed">Fixed Amount</option>
                 </select>
-                <input v-model="newFundRule.amount" type="number" step="0.01" placeholder="Amount" required class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
-                <input v-model="newFundRule.order" type="number" placeholder="Order" required class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
+                <input v-model="newFundRule.amount" v-bind="mobileDecimalNumberAttrs" type="number" step="0.01" placeholder="Amount" required class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
+                <input v-model="newFundRule.order" v-bind="mobileIntegerNumberAttrs" type="number" placeholder="Order" required class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
                 <div class="flex gap-2">
                   <button type="submit" class="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700">Create</button>
                   <button @click="cancelCreateRule" type="button" class="rounded-2xl bg-slate-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-400">Cancel</button>
@@ -213,7 +213,7 @@
               <h5 class="text-sm font-semibold text-slate-900">Pay Debt to {{ payingDebt.creditor.name }}</h5>
               <form @submit.prevent="payDebt" class="mt-3 space-y-3">
                 <p class="text-sm text-slate-600">Amount owed: ${{ parseFloat(payingDebt.balance).toFixed(2) }}</p>
-                <input v-model="paymentAmount" type="number" step="0.01" placeholder="Payment Amount" required class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
+                <input v-model="paymentAmount" v-bind="mobileDecimalNumberAttrs" type="number" step="0.01" placeholder="Payment Amount" required class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
                 <input v-model="paymentDescription" type="text" placeholder="Description" class="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200" />
                 <div class="flex gap-2">
                   <button type="submit" class="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700">Pay</button>
@@ -234,6 +234,7 @@
 
 <script setup>
 import { reactive, ref } from 'vue';
+import { mobileDecimalNumberAttrs, mobileIntegerNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 
 const authenticated = ref(false);
 const error = ref('');

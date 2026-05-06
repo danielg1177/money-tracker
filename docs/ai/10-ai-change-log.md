@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-06 — Mobile numeric fields use inputmode for digit-first keypads
+
+- Files touched: `resources/js/support/mobileNumericInputAttrs.js` (new), `resources/js/components/TransactionForm.vue`, `resources/js/components/SplitEditor.vue`, `resources/js/components/App.vue`, `resources/js/pages/Dashboard.vue`, `resources/js/pages/CloseoutRules.vue`, `resources/js/pages/Funds.vue`, `resources/js/pages/Debts.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`inputmode="decimal"`** (amounts, APR %, split %) and **`inputmode="numeric"`** (integer-only like rule order) plus **`enterkeyhint="done"`** on **`type="number"`** fields so iOS/Android open appropriate numeric keyboards instead of defaulting to the full QWERTY layout.
+
 ## 2026-05-06 — Mobile viewport: no horizontal scroll, reduce iOS zoom-on-focus
 
 - Files touched: `resources/views/app.blade.php`, `resources/css/app.css`, `resources/js/AppShell.vue`, `resources/js/components/AppNav.vue`, `resources/js/pages/Login.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

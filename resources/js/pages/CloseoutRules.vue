@@ -141,6 +141,7 @@
               <label class="block text-sm font-medium text-gray-300 mb-1">Order</label>
               <input
                 v-model.number="formData.order"
+                v-bind="mobileIntegerNumberAttrs"
                 type="number"
                 min="1"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
@@ -166,6 +167,7 @@
               </label>
               <input
                 v-model.number="formData.amount"
+                v-bind="mobileDecimalNumberAttrs"
                 type="number"
                 step="0.01"
                 :placeholder="formData.allocation_type === 'percentage' ? '0-100' : '0.00'"
@@ -284,6 +286,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
+import { mobileDecimalNumberAttrs, mobileIntegerNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 
 const { get, post, put, del, loading, error } = useApi();
 

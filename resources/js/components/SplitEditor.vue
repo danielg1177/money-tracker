@@ -39,6 +39,7 @@
           <input
             :value="splitPercentage(index)"
             @input="updateSplitPercentage(index, $event.target.value)"
+            v-bind="mobileDecimalNumberAttrs"
             type="number"
             min="0"
             max="100"
@@ -78,6 +79,7 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue';
 import { equalSharePercentages } from '../support/equalFamilySplit.js';
+import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 
 const props = defineProps({
   familyUsers: {
