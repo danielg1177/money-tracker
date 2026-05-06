@@ -327,12 +327,12 @@ function movementTypeLabel(type) {
 
     <!-- Content -->
     <div v-else-if="summary">
-      <!-- Section 1a: Expenses -->
+      <!-- Section 1a: Expenses (viewer-scoped; split rows use your share) -->
       <div class="px-4 mt-6">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Expenses</h2>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Your Expenses</h2>
 
         <div v-if="expenseCategories.length === 0" class="text-sm text-gray-500">
-          No expenses this month
+          No expenses for you this month
         </div>
 
         <div v-else class="space-y-2">
@@ -356,14 +356,14 @@ function movementTypeLabel(type) {
 
       <!-- Section 1b: Income -->
       <div class="px-4 mt-6">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Income</h2>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Your Income</h2>
         <p class="text-xs text-gray-500 mb-3">
           Category totals exclude <span class="text-sky-300/95">repayment someone paid toward a tracked debt owed to you</span>.
           Those appear under Debt repayments below and are excluded from gross income when closeout rules run.
         </p>
 
         <div v-if="incomeCategories.length === 0" class="text-sm text-gray-500">
-          No income this month
+          No income for you this month
         </div>
 
         <div v-else class="space-y-2">

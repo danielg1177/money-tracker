@@ -136,7 +136,7 @@ Shows current user's family info and members. Only accessible to `head_of_househ
 ### `MonthSummary.vue` (`resources/js/pages/MonthSummary.vue`)
 Displays a comprehensive financial summary for a specific month (route param: `/month-summary/:yearMonth`, e.g., `/month-summary/2026-05`). Shows:
 - **Close status header:** Lock icon indicating hard-closed (amber), all members soft-closed (blue), or open (gray outline)
-- **Spending by Category:** Lists all transactions grouped by category, showing expense totals in red and income totals in green (**category aggregates exclude debt-repayment transactions** — same query as backend)
+- **Your expenses / your income categories:** Viewer-scoped monthly totals grouped by category (expense totals in red, income in green; **split bills use only your portion** — same rules as **`GET /month-summary` `category_totals`**); **debt-repayment** ledger rows stay out of categories and appear under **Debt repayments**
 - **Income note:** Explains that debtor repayments owed to you are excluded from income category totals; see Debt repayments
 - **Debt repayments:** Dedicated section backed by JSON `debt_repayments.{paid,received}` — sky-tint rows for repayment **received**, amber tint for repayment **paid**; **`paid`** amounts reflect **your split share** when the payer-side repayment was split among family members; copy states these are excluded from gross income / allocation rules at hard close
 - **Family Balances:** Shows inter-member debts from split transactions (only if balances exist), indicating whether each member owes you or you owe them

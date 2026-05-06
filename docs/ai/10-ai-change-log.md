@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-06 — Month summary category totals scoped to authenticated user
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`GET /month-summary` `category_totals`** no longer aggregates the whole household; each member sees **their own income and expenses** plus **their split-share amounts** only. **`MonthSummary.vue`** labels Expenses/Income sections as yours.
+
 ## 2026-05-06 — Month summary rule preview nets fund allocations against advances
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

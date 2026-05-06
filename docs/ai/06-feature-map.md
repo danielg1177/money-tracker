@@ -208,7 +208,7 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 
 **Response shape:** `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements, debt_repayments, title_savings}`
 
-- `category_totals`: family transactions grouped by category (expenses then income, sorted by total descending), excluding debt payments
+- `category_totals`: **viewer-scoped** category totals for the authenticated user only (solo income/expenses owned by viewer + viewer’s shares of split expenses; excluding debt-payment rows), sorted expenses then income by total descending
 - `member_balances`: net amount owed between the auth user and each other family member from split expenses; only shown when non-zero balances exist
 - `fund_movements`: monthly fund movement summary for funds visible to the auth user, grouped by fund with in/out/net totals and movement lines
 - `rule_preview`: `{basis: {gross_income, total_expenses, remaining_after_expenses}, rules: [...]}` — dry-run projection; no writes occur. Fund-destination rows include **`net_after_advances`** (subtracts month **`advance_fund_id`** totals against that destination fund, applied in rule order across multiple rules targeting the same fund; **negative net allowed**) plus **`fund_advance_outstanding_before`** for captioning **projected − advances**

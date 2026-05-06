@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Category;
 use App\Models\CloseoutTitleSaving;
 use App\Models\Debt;
 use App\Models\Fund;
@@ -38,7 +39,7 @@ class MonthSummaryController extends Controller
 
         $status = $this->monthCloseoutService->getMonthStatus($user->family, $year, $month);
 
-        $categoryTotals = $this->getCategoryTotals($user->family_id, $year, $month);
+        $categoryTotals = $this->getCategoryTotals($user, $year, $month);
 
         $memberBalances = $this->getMemberBalances($user, $year, $month);
 
@@ -328,35 +329,84 @@ class MonthSummaryController extends Controller
     }
 
     /**
-     * Fetch category totals for the month, excluding debt payments.
+     * Fetch category totals for the month for the authenticated user only (split expenses use viewer split rows).
+     * Excludes debt payments.
      *
      * @return array<array{category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int, type: string}>
      */
-    private function getCategoryTotals(int $familyId, int $year, int $month): array
+    private function getCategoryTotals(User $viewer, int $year, int $month): array
     {
-        $transactions = Transaction::query()
-            ->where('family_id', $familyId)
+        $grouped = [];
+
+        $viewerIncomes = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('user_id', $viewer->id)
+            ->where('type', 'income')
             ->where('is_debt_payment', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->with('category')
             ->get();
 
-        $grouped = [];
-        foreach ($transactions as $tx) {
-            $key = "{$tx->type}_{$tx->category_id}";
-            if (! isset($grouped[$key])) {
-                $grouped[$key] = [
-                    'type' => $tx->type,
-                    'category_id' => $tx->category_id,
-                    'category_name' => $tx->category?->name ?? 'Uncategorized',
-                    'category_icon' => $tx->category?->icon,
-                    'total' => 0.0,
-                    'transaction_count' => 0,
-                ];
+        foreach ($viewerIncomes as $tx) {
+            $this->addViewerCategoryAggregate(
+                $grouped,
+                'income',
+                $tx->category_id,
+                $tx->category,
+                (float) $tx->amount,
+                1
+            );
+        }
+
+        $viewerSoloExpenses = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('user_id', $viewer->id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_debt_payment', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with('category')
+            ->get();
+
+        foreach ($viewerSoloExpenses as $tx) {
+            $this->addViewerCategoryAggregate(
+                $grouped,
+                'expense',
+                $tx->category_id,
+                $tx->category,
+                (float) $tx->amount,
+                1
+            );
+        }
+
+        $viewerSplitShares = TransactionSplit::query()
+            ->where('user_id', $viewer->id)
+            ->whereHas('transaction', fn ($q) => $q
+                ->where('family_id', $viewer->family_id)
+                ->where('type', 'expense')
+                ->where('is_split', true)
+                ->where('is_debt_payment', false)
+                ->whereYear('transaction_date', $year)
+                ->whereMonth('transaction_date', $month))
+            ->with(['transaction.category'])
+            ->get();
+
+        foreach ($viewerSplitShares as $split) {
+            $tx = $split->transaction;
+            if (! $tx) {
+                continue;
             }
-            $grouped[$key]['total'] += (float) $tx->amount;
-            $grouped[$key]['transaction_count']++;
+
+            $this->addViewerCategoryAggregate(
+                $grouped,
+                'expense',
+                $tx->category_id,
+                $tx->category,
+                (float) $split->amount,
+                1
+            );
         }
 
         $result = array_values($grouped);
@@ -370,6 +420,26 @@ class MonthSummaryController extends Controller
         });
 
         return $result;
+    }
+
+    /**
+     * @param  array<string, array{type: string, category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int}>  $grouped
+     */
+    private function addViewerCategoryAggregate(array &$grouped, string $type, ?int $categoryId, ?Category $category, float $amount, int $countDelta): void
+    {
+        $key = "{$type}_{$categoryId}";
+        if (! isset($grouped[$key])) {
+            $grouped[$key] = [
+                'type' => $type,
+                'category_id' => $categoryId,
+                'category_name' => $category?->name ?? 'Uncategorized',
+                'category_icon' => $category?->icon,
+                'total' => 0.0,
+                'transaction_count' => 0,
+            ];
+        }
+        $grouped[$key]['total'] += $amount;
+        $grouped[$key]['transaction_count'] += $countDelta;
     }
 
     /**
