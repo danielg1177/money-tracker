@@ -838,6 +838,19 @@ Format:
 - Removed the `.where('is_debt_payment', false)` filter from `TransactionController::index` so all transactions (including debt payments) are returned
 - Renamed `test_transactions_index_excludes_debt_payment_rows` → `test_transactions_index_includes_debt_payment_rows` and updated assertions to confirm both normal and debt-payment transactions appear in the response
 
+## 2026-05-06 — Make debt-payment transactions editable from payer expense rows
+- Files touched:
+  - Backend: `app/Services/TransactionService.php`
+  - Frontend: `resources/js/components/TransactionForm.vue`, `resources/js/pages/Transactions.vue`
+  - Tests: `tests/Feature/DebtRepaymentTransactionTest.php`
+  - Docs: `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - `PUT /transactions/{id}` now supports editing existing debt-payment **expense** rows.
+  - Editing a debt-payment expense now restores the old repayment amount to debt balance, applies the edited amount, and keeps mirrored creditor income synchronized (including date/amount/description and debt link).
+  - Split edits on debt-payment expenses now recreate split rows and pending split debts to match edited split percentages and amount.
+  - Transactions list now allows opening debt-payment **expense** rows for edit; debt-payment **income** mirror rows remain non-editable.
+  - Updated feature coverage to assert debt-payment updates succeed and correctly update debt balance + mirror row fields.
+
 ## 2026-05-03 — Initial AI documentation set created
 - Files touched: `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/05-auth-permissions.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
 - Behavioral impact: Documentation only — no code changes made

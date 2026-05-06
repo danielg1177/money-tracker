@@ -1,10 +1,10 @@
 <template>
   <form @submit.prevent="handleSubmit" class="space-y-6 pb-4">
     <div
-      v-if="isDebtPaymentEditBlocked"
+      v-if="isDebtPaymentIncomeEditBlocked"
       class="rounded-lg border border-amber-700/50 bg-amber-900/20 p-3 text-sm text-amber-200"
     >
-      This debt repayment cannot be edited here. Delete it from your transaction list to reverse the payment (the debt balance will be restored).
+      Debt repayment income entries cannot be edited directly. Edit the matching expense payment instead.
     </div>
 
     <!-- Type Toggle (Income / Expense) -->
@@ -13,7 +13,7 @@
       <div class="grid grid-cols-2 gap-2">
         <button
           type="button"
-          :disabled="submitLoading || isDebtPaymentEditBlocked"
+          :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
           @click="form.type = 'expense'"
           :class="[
             'py-2 px-4 rounded-lg font-medium transition-colors disabled:opacity-50',
@@ -26,7 +26,7 @@
         </button>
         <button
           type="button"
-          :disabled="submitLoading || isDebtPaymentEditBlocked"
+          :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
           @click="form.type = 'income'"
           :class="[
             'py-2 px-4 rounded-lg font-medium transition-colors disabled:opacity-50',
@@ -54,7 +54,7 @@
           step="0.01"
           min="0"
           required
-          :disabled="submitLoading || isDebtPaymentEditBlocked"
+          :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
           class="w-full pl-8 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
           placeholder="0.00"
         />
@@ -70,7 +70,7 @@
         id="category"
         v-model.number="form.category_id"
         required
-        :disabled="submitLoading || isDebtPaymentEditBlocked"
+        :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
         class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
       >
         <option value="" disabled selected>Select a category</option>
@@ -93,7 +93,7 @@
         id="description"
         v-model="form.description"
         type="text"
-        :disabled="submitLoading || isDebtPaymentEditBlocked"
+        :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
         class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
         placeholder="Add a note..."
       />
@@ -109,7 +109,7 @@
         v-model="form.transaction_date"
         type="date"
         required
-        :disabled="submitLoading || isDebtPaymentEditBlocked"
+        :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
         class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
       />
     </div>
@@ -159,7 +159,7 @@
         <select
           id="income-existing-debt"
           v-model.number="form.income_existing_debt_id"
-          :disabled="submitLoading || isDebtPaymentEditBlocked"
+          :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white focus:border-sky-500 focus:outline-none"
         >
           <option :value="null" disabled>Select a debt</option>
@@ -271,9 +271,9 @@
     <!-- Pay toward debt (expense only) -->
     <div v-if="form.type === 'expense'" class="space-y-2">
       <div
-        @click="!isDebtPaymentEditBlocked && togglePayTowardDebt()"
+        @click="!isDebtPaymentIncomeEditBlocked && togglePayTowardDebt()"
         class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
-        :class="isDebtPaymentEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+        :class="isDebtPaymentIncomeEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
       >
         <div>
           <p class="text-sm font-medium text-gray-300">Pay toward a tracked debt</p>
@@ -294,7 +294,7 @@
         <select
           id="debt-select"
           v-model.number="form.debt_id"
-          :disabled="submitLoading || isDebtPaymentEditBlocked"
+          :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
           class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-sky-500"
         >
           <option :value="null" disabled>Select a debt</option>
@@ -311,9 +311,9 @@
     <!-- Split Toggle (expense only) -->
     <div
       v-if="form.type === 'expense'"
-      @click="!isDebtPaymentEditBlocked && (form.is_split = !form.is_split)"
+      @click="!isDebtPaymentIncomeEditBlocked && (form.is_split = !form.is_split)"
       class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
-      :class="isDebtPaymentEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+      :class="isDebtPaymentIncomeEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
     >
       <div>
         <p class="text-sm font-medium text-gray-300">Split between family members</p>
@@ -333,9 +333,9 @@
     <!-- Advance Against Fund -->
     <div v-if="form.type === 'expense' && !payTowardDebt" class="space-y-2">
       <div
-        @click="!isDebtPaymentEditBlocked && toggleAdvanceFund()"
+        @click="!isDebtPaymentIncomeEditBlocked && toggleAdvanceFund()"
         class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
-        :class="isDebtPaymentEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+        :class="isDebtPaymentIncomeEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
       >
         <div>
           <p class="text-sm font-medium text-gray-300">Advance against fund</p>
@@ -390,7 +390,7 @@
       </button>
       <button
         type="submit"
-        :disabled="submitLoading || isDebtPaymentEditBlocked"
+        :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
         class="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:bg-gray-700 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         <span v-if="submitLoading">
@@ -493,8 +493,10 @@ const selectedCategory = computed(() => {
 
 const isEditMode = computed(() => !!props.transaction);
 
-const isDebtPaymentEditBlocked = computed(
-  () => isEditMode.value && Boolean(props.transaction?.is_debt_payment)
+const isDebtPaymentIncomeEditBlocked = computed(
+  () => isEditMode.value
+    && Boolean(props.transaction?.is_debt_payment)
+    && props.transaction?.type === 'income'
 );
 
 function formatCurrency(amount) {
@@ -704,7 +706,7 @@ function handleClose() {
 async function handleSubmit() {
   formError.value = null;
 
-  if (isDebtPaymentEditBlocked.value) {
+  if (isDebtPaymentIncomeEditBlocked.value) {
     formError.value = 'This transaction cannot be edited.';
     return;
   }

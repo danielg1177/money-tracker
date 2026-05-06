@@ -212,7 +212,7 @@ class DebtRepaymentTransactionTest extends TestCase
         $this->assertSame(0, Transaction::query()->count());
     }
 
-    public function test_debt_payment_transaction_cannot_be_updated(): void
+    public function test_debt_payment_transaction_can_be_updated_from_expense_row(): void
     {
         $family = Family::factory()->create();
         $debtor = User::factory()->create(['family_id' => $family->id]);
@@ -244,11 +244,27 @@ class DebtRepaymentTransactionTest extends TestCase
 
         $this->actingAs($debtor)->putJson("/transactions/{$expense->id}", [
             'type' => 'expense',
-            'amount' => 10,
+            'amount' => 25,
             'category_id' => $category->id,
-            'transaction_date' => '2026-05-15',
+            'transaction_date' => '2026-05-16',
             'is_split' => false,
-            'description' => 'edited',
-        ])->assertStatus(422);
+            'description' => 'edited repayment',
+            'debt_id' => $debt->id,
+        ])->assertOk();
+
+        $this->assertDatabaseHas('debts', [
+            'id' => $debt->id,
+            'balance' => '15.00',
+        ]);
+
+        $expense->refresh();
+        $this->assertSame('edited repayment', $expense->description);
+        $this->assertSame('2026-05-16', $expense->transaction_date->format('Y-m-d'));
+        $this->assertSame(25.0, (float) $expense->amount);
+
+        $income = Transaction::query()->where('user_id', $creditor->id)->where('type', 'income')->sole();
+        $this->assertSame('edited repayment', $income->description);
+        $this->assertSame('2026-05-16', $income->transaction_date->format('Y-m-d'));
+        $this->assertSame(25.0, (float) $income->amount);
     }
 }

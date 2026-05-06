@@ -878,7 +878,11 @@ function getTransactionById(id) {
 }
 
 function isSystemCloseoutEntry(transaction) {
-  return Boolean(transaction?.is_debt_payment || transaction?.is_closeout_initiated);
+  if (transaction?.is_closeout_initiated) {
+    return true;
+  }
+
+  return Boolean(transaction?.is_debt_payment && transaction?.type === 'income');
 }
 
 async function handleTransactionCreated(transaction) {
