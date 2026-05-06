@@ -50,6 +50,28 @@ const isHardClosed = computed(() => summary.value?.is_hard_closed === true);
 const allSoftClosed = computed(() => summary.value?.close_status?.all_soft_closed === true);
 
 // Format allocation (matching CloseoutRules.vue pattern)
+function rulePreviewNet(rule) {
+  return typeof rule.net_after_advances === 'number'
+    ? rule.net_after_advances
+    : rule.projected_amount;
+}
+
+function rulePreviewAdvanceBefore(rule) {
+  return typeof rule.fund_advance_outstanding_before === 'number'
+    ? rule.fund_advance_outstanding_before
+    : 0;
+}
+
+function rulePreviewNetClass(amount) {
+  if (amount < 0) {
+    return 'text-amber-400';
+  }
+  if (amount > 0) {
+    return 'text-green-400';
+  }
+  return 'text-gray-400';
+}
+
 const formatAllocation = (rule) => {
   if (rule.allocation_type === 'percentage') {
     const base = rule.allocation_base === 'gross_income'
@@ -539,15 +561,23 @@ function movementTypeLabel(type) {
                 <span class="text-sm font-medium text-gray-200">{{ rule.rule_name }}</span>
               </div>
 
-              <!-- Allocation description + amount -->
-              <div class="flex items-center justify-between px-2 mb-2">
+              <!-- Allocation description + net to destination (fund rules net out month advances tagging that fund) -->
+              <div class="flex items-center justify-between px-2 mb-2 gap-3">
                 <span class="text-xs text-gray-400">{{ formatAllocation(rule) }}</span>
-                <span
-                  :class="rule.projected_amount > 0 ? 'text-green-400' : 'text-gray-400'"
-                  class="text-sm font-medium"
-                >
-                  {{ formatCurrency(rule.projected_amount) }}
-                </span>
+                <div class="flex flex-col items-end gap-0.5 shrink-0 min-w-0">
+                  <span
+                    :class="rulePreviewNetClass(rulePreviewNet(rule))"
+                    class="text-sm font-medium tabular-nums"
+                  >
+                    {{ formatCurrency(rulePreviewNet(rule)) }}
+                  </span>
+                  <span
+                    v-if="rule.destination_type === 'fund' && rulePreviewAdvanceBefore(rule) >= 0.005"
+                    class="text-[10px] text-gray-500 text-right leading-tight tabular-nums max-w-[12rem]"
+                  >
+                    Rule {{ formatCurrency(rule.projected_amount) }} − advances tagged to fund {{ formatCurrency(rulePreviewAdvanceBefore(rule)) }}
+                  </span>
+                </div>
               </div>
 
               <!-- Destination badge -->

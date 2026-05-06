@@ -132,7 +132,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
-| GET | `/month-summary` | `MonthSummaryController::show` | Query: `year`, `month`. Returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements, debt_repayments, title_savings}`; `title_savings` is populated only for hard-closed months and includes `{id, title, amount, is_completed, completed_at}` rows for the authenticated user. Requires `family_id` (403 if unset). All read-only. |
+| GET | `/month-summary` | `MonthSummaryController::show` | Query: `year`, `month`. Returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements, debt_repayments, title_savings}`; `title_savings` is populated only for hard-closed months and includes `{id, title, amount, is_completed, completed_at}` rows for the authenticated user. **`rule_preview.rules[]`** includes **`fund_advance_outstanding_before`** and **`net_after_advances`** for fund allocations (subtracts month's advance-tagged expenses to that fund, rule-order; **`net_after_advances` may be negative**). **`debt_repayments.paid`** uses each viewer's split share for split debt repayments (and lists co-payers on those expenses). Requires `family_id` (403 if unset). All read-only. |
 
 ---
 

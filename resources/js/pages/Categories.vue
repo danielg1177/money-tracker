@@ -91,9 +91,15 @@
       <div
         v-for="category in filteredCategories"
         :key="category.id"
-        class="bg-gray-800 border border-gray-700 rounded-lg p-3 flex items-center justify-between gap-3"
+        class="bg-gray-800 border border-gray-700 rounded-xl p-3 flex items-stretch justify-between gap-3 min-h-[52px] touch-manipulation transition-colors hover:border-gray-600 active:bg-gray-800/80"
+        role="button"
+        tabindex="0"
+        :aria-label="`Edit category ${category.name}`"
+        @click="editCategory(category)"
+        @keydown.enter.prevent="editCategory(category)"
+        @keydown.space.prevent="editCategory(category)"
       >
-        <div class="flex-1 min-w-0">
+        <div class="flex-1 min-w-0 self-center py-1 pr-2">
           <div class="flex items-center gap-2 mb-2">
             <span v-if="category.icon" class="text-xl">{{ category.icon }}</span>
             <span class="text-gray-200 font-medium truncate">{{ category.name }}</span>
@@ -110,20 +116,13 @@
             </span>
           </div>
         </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="flex items-center shrink-0 self-start sm:self-center pt-1 sm:pt-0 border-l border-gray-700/50 pl-3 -mr-1" @click.stop>
           <button
-            @click="editCategory(category)"
-            class="p-2 text-gray-400 hover:text-blue-400 transition-colors"
-            title="Edit"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-          <button
+            type="button"
             @click="deleteCategory(category)"
-            class="p-2 text-gray-400 hover:text-red-400 transition-colors"
+            class="p-3 -m-1 text-gray-400 hover:text-red-400 hover:bg-gray-700/80 rounded-lg transition-colors"
             title="Delete"
+            aria-label="Delete category"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -346,10 +345,14 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue';
+import { computed, ref, watch, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
 import IconPicker from '../components/IconPicker.vue';
 import SplitEditor from '../components/SplitEditor.vue';
+import {
+  equalSplitPayloadForFamilyUsers,
+  hasPositiveSplitShares,
+} from '../support/equalFamilySplit.js';
 
 const { get, post, put, delete: apiDelete, loading } = useApi();
 
@@ -390,6 +393,51 @@ onMounted(() => {
   fetchCategories();
   fetchFunds();
 });
+
+watch(
+  () => form.value.is_split_default,
+  (on) => {
+    if (!on) {
+      form.value.split_default = [];
+
+      return;
+    }
+
+    ensureEqualSplitDefaultsWhenEnabled();
+  }
+);
+
+watch(
+  () => familyUsers.value,
+  () => {
+    if (!form.value.is_split_default) {
+      return;
+    }
+    ensureEqualSplitDefaultsWhenEnabled();
+  },
+  { deep: true }
+);
+
+watch(
+  () => categoryType.value,
+  (t) => {
+    if (t !== 'expense') {
+      form.value.is_split_default = false;
+      form.value.split_default = [];
+    }
+  }
+);
+
+/** When split default is on and there is nothing to preserve, seed equal percentages for all family members. */
+function ensureEqualSplitDefaultsWhenEnabled() {
+  if (!familyUsers.value?.length) {
+    return;
+  }
+  if (hasPositiveSplitShares(form.value.split_default)) {
+    return;
+  }
+  form.value.split_default = equalSplitPayloadForFamilyUsers(familyUsers.value);
+}
 
 async function fetchCategories() {
   error.value = null;

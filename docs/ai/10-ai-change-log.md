@@ -11,6 +11,26 @@ Format:
 
 ---
 
+## 2026-05-06 — Month summary rule preview nets fund allocations against advances
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `GET /month-summary` **`rule_preview.rules`** now adds **`fund_advance_outstanding_before`** and **`net_after_advances`**. For **fund** destinations, advances are summed from viewer expenses this month with matching **`advance_fund_id`**; each rule consumes the outstanding advance pool in rule order (**same fund, multiple rules** shares one pool—second rule sees reduced outstanding). **`net_after_advances` = projected − outstanding before**, so it **can go negative**. Debt/title rules keep **`fund_advance_outstanding_before`** at 0 and **`net_after_advances` = projected_amount**. **`MonthSummary.vue`** shows the net prominently (amber when negative).
+
+## 2026-05-06 — Month summary split debt repayment shows each member's share
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `tests/Feature/DebtRepaymentTransactionTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `GET /month-summary` **`debt_repayments.paid`** now filters payer-side **`is_debt_payment` expense** rows to anyone on **`transaction_splits`**, not only **transaction.owner**; **`amount`** is that viewer's **`transaction_splits`** share for **`is_split`** repayments (solo repayment rows unchanged). Creditor **`received`** lines remain the full mirrored income amount.
+
+## 2026-05-06 — Categories: equal split when enabling split default
+
+- Files touched: `resources/js/pages/Categories.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: On the category add/edit modal, checking **Use as split default** now fills **`split_default` with equal shares** across the family (same helper as transactions). Existing saved distributions still load when editing until the checkbox is turned off/cleared.
+
+## 2026-05-06 — Categories: tap row to edit category
+
+- Files touched: `resources/js/pages/Categories.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: The category list opens the edit modal when the **row** is tapped or clicked (plus keyboard Enter/Space when focused); the pencil control was removed. **Delete** stays on the right with a larger touch target and `click.stop` so it never opens edit.
+
 ## 2026-05-06 — Transactions page: refetch list after edit so date changes apply immediately
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

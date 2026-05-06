@@ -134,6 +134,51 @@ class DebtRepaymentTransactionTest extends TestCase
         ]);
     }
 
+    public function test_month_summary_debt_repayments_paid_use_each_members_split_share(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+        $otherMember = User::factory()->create(['family_id' => $family->id]);
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 100.00,
+            'balance' => 100.00,
+            'is_pending_closeout' => false,
+        ]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->actingAs($debtor)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 50,
+            'category_id' => $category->id,
+            'transaction_date' => '2026-05-21',
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $debtor->id, 'share_percentage' => 60],
+                ['user_id' => $otherMember->id, 'share_percentage' => 40],
+            ],
+            'description' => 'Split debt pay summary',
+            'debt_id' => $debt->id,
+        ])->assertCreated();
+
+        $debtorPaid = $this->actingAs($debtor)->getJson('/month-summary?year=2026&month=5')->assertOk();
+        $partnerPaid = $this->actingAs($otherMember)->getJson('/month-summary?year=2026&month=5')->assertOk();
+        $creditorReceived = $this->actingAs($creditor)->getJson('/month-summary?year=2026&month=5')->assertOk();
+
+        $this->assertEqualsWithDelta(30.0, (float) data_get($debtorPaid->json(), 'debt_repayments.paid.0.amount'), 0.001);
+        $this->assertEqualsWithDelta(20.0, (float) data_get($partnerPaid->json(), 'debt_repayments.paid.0.amount'), 0.001);
+
+        // Creditor still sees the gross repayment deposited (mirror income stays full principal/balance attribution).
+        $this->assertEqualsWithDelta(50.0, (float) data_get($creditorReceived->json(), 'debt_repayments.received.0.amount'), 0.001);
+    }
+
     public function test_deleting_debtor_expense_restores_balance_and_removes_partner_row(): void
     {
         $family = Family::factory()->create();

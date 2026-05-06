@@ -587,6 +587,147 @@ class MonthCloseoutTransactionDateTest extends TestCase
         $this->assertEqualsWithDelta(2000.00, (float) $rules->firstWhere('rule_id', $ruleB->id)['projected_amount'], 0.01);
     }
 
+    public function test_month_summary_preview_fund_rule_shows_net_after_advances_tagged_to_same_fund(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $fund = Fund::factory()->create(['user_id' => $user->id, 'balance' => 0]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'income',
+            'amount' => 7000,
+            'description' => 'Salary',
+            'transaction_date' => '2026-05-01',
+            'is_split' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 250,
+            'description' => 'Advance spend',
+            'transaction_date' => '2026-05-06',
+            'is_split' => false,
+            'is_debt_payment' => false,
+            'advance_fund_id' => $fund->id,
+        ]);
+
+        $fundRule = FundRule::query()->create([
+            'user_id' => $user->id,
+            'fund_id' => $fund->id,
+            'name' => 'Emergency top-up',
+            'order' => 1,
+            'allocation_type' => 'fixed',
+            'amount' => 600,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'fund',
+            'destination_id' => $fund->id,
+            'destination_title' => null,
+        ]);
+
+        $titleRule = FundRule::query()->create([
+            'user_id' => $user->id,
+            'fund_id' => null,
+            'name' => 'Title bucket',
+            'order' => 2,
+            'allocation_type' => 'fixed',
+            'amount' => 100,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'title',
+            'destination_id' => null,
+            'destination_title' => 'Savings Goal',
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/month-summary?year=2026&month=5')->assertOk();
+        $rules = collect($response->json('rule_preview.rules'));
+
+        $fundRow = $rules->firstWhere('rule_id', $fundRule->id);
+        $this->assertEqualsWithDelta(600.00, (float) $fundRow['projected_amount'], 0.01);
+        $this->assertEqualsWithDelta(250.00, (float) $fundRow['fund_advance_outstanding_before'], 0.01);
+        $this->assertEqualsWithDelta(350.00, (float) $fundRow['net_after_advances'], 0.01);
+
+        $titleRow = $rules->firstWhere('rule_id', $titleRule->id);
+        $this->assertEqualsWithDelta(100.00, (float) $titleRow['projected_amount'], 0.01);
+        $this->assertEqualsWithDelta(0.00, (float) $titleRow['fund_advance_outstanding_before'], 0.01);
+        $this->assertEqualsWithDelta(100.00, (float) $titleRow['net_after_advances'], 0.01);
+    }
+
+    public function test_month_summary_preview_fund_rule_net_can_go_negative_and_second_rule_uses_remaining_advances(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $fund = Fund::factory()->create(['user_id' => $user->id, 'balance' => 0]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'income',
+            'amount' => 10000,
+            'description' => 'Salary',
+            'transaction_date' => '2026-06-08',
+            'is_split' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 550,
+            'description' => 'Advance tagged',
+            'transaction_date' => '2026-06-12',
+            'is_split' => false,
+            'is_debt_payment' => false,
+            'advance_fund_id' => $fund->id,
+        ]);
+
+        $ruleOne = FundRule::query()->create([
+            'user_id' => $user->id,
+            'fund_id' => $fund->id,
+            'name' => 'First allocation',
+            'order' => 1,
+            'allocation_type' => 'fixed',
+            'amount' => 400,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'fund',
+            'destination_id' => $fund->id,
+            'destination_title' => null,
+        ]);
+
+        $ruleTwo = FundRule::query()->create([
+            'user_id' => $user->id,
+            'fund_id' => $fund->id,
+            'name' => 'Second allocation',
+            'order' => 2,
+            'allocation_type' => 'fixed',
+            'amount' => 250,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'fund',
+            'destination_id' => $fund->id,
+            'destination_title' => null,
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/month-summary?year=2026&month=6')->assertOk();
+        $rules = collect($response->json('rule_preview.rules'));
+
+        $rowOne = $rules->firstWhere('rule_id', $ruleOne->id);
+        $rowTwo = $rules->firstWhere('rule_id', $ruleTwo->id);
+
+        $this->assertEqualsWithDelta(400.00, (float) $rowOne['projected_amount'], 0.01);
+        $this->assertEqualsWithDelta(550.00, (float) $rowOne['fund_advance_outstanding_before'], 0.01);
+        $this->assertEqualsWithDelta(-150.00, (float) $rowOne['net_after_advances'], 0.01);
+
+        $this->assertEqualsWithDelta(250.00, (float) $rowTwo['projected_amount'], 0.01);
+        $this->assertEqualsWithDelta(150.00, (float) $rowTwo['fund_advance_outstanding_before'], 0.01);
+        $this->assertEqualsWithDelta(100.00, (float) $rowTwo['net_after_advances'], 0.01);
+    }
+
     public function test_month_summary_fund_movements_do_not_include_prior_month_closeout_by_created_at(): void
     {
         Carbon::setTestNow(Carbon::create(2026, 5, 10, 12, 0, 0));

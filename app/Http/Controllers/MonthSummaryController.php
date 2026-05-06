@@ -63,6 +63,7 @@ class MonthSummaryController extends Controller
 
     /**
      * Debt repayment activity for the viewer in this month (excluded from category totals and closeout gross income).
+     * Split debt-payment expenses list each participant's portion (split row amount), not only the payer's transaction total.
      *
      * @return array{
      *     paid: array<int, array{
@@ -80,16 +81,22 @@ class MonthSummaryController extends Controller
     {
         $paid = Transaction::query()
             ->where('family_id', $user->family_id)
-            ->where('user_id', $user->id)
             ->where('type', 'expense')
             ->where('is_debt_payment', true)
             ->whereNotNull('debt_id')
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
-            ->with(['debt.creditor', 'debt.debtor', 'debt.fund'])
+            ->where(function ($q) use ($user): void {
+                $q->where('user_id', $user->id)
+                    ->orWhereHas('splits', fn ($sq) => $sq->where('user_id', $user->id));
+            })
+            ->with(['debt.creditor', 'debt.debtor', 'debt.fund', 'splits'])
             ->orderBy('transaction_date')
             ->get()
-            ->map(fn (Transaction $tx) => $this->serializeDebtRepaymentTransaction($tx))->all();
+            ->map(fn (Transaction $tx) => $this->serializeDebtRepaymentTransaction($tx, $user))
+            ->filter(fn (array $row) => abs((float) $row['amount']) >= 0.005)
+            ->values()
+            ->all();
 
         $received = Transaction::query()
             ->where('family_id', $user->family_id)
@@ -102,7 +109,7 @@ class MonthSummaryController extends Controller
             ->with(['debt.creditor', 'debt.debtor', 'debt.fund', 'paidByUser'])
             ->orderBy('transaction_date')
             ->get()
-            ->map(fn (Transaction $tx) => $this->serializeDebtRepaymentTransaction($tx))->all();
+            ->map(fn (Transaction $tx) => $this->serializeDebtRepaymentTransaction($tx, $user))->all();
 
         return [
             'paid' => $paid,
@@ -150,7 +157,7 @@ class MonthSummaryController extends Controller
      *     role: string,
      * }
      */
-    private function serializeDebtRepaymentTransaction(Transaction $tx): array
+    private function serializeDebtRepaymentTransaction(Transaction $tx, User $viewer): array
     {
         $debt = $tx->debt;
         $counterpartyLabel = null;
@@ -163,9 +170,13 @@ class MonthSummaryController extends Controller
             }
         }
 
+        $amount = $tx->type === 'expense'
+            ? round($this->viewerDebtExpenseAmount($tx, $viewer), 2)
+            : round((float) $tx->amount, 2);
+
         return [
             'id' => $tx->id,
-            'amount' => round((float) $tx->amount, 2),
+            'amount' => $amount,
             'transaction_date' => $tx->transaction_date instanceof \DateTimeInterface
                 ? $tx->transaction_date->format('Y-m-d')
                 : (string) $tx->transaction_date,
@@ -174,6 +185,24 @@ class MonthSummaryController extends Controller
             'debt_id' => (int) $tx->debt_id,
             'role' => $tx->type === 'expense' ? 'paid' : 'received',
         ];
+    }
+
+    /**
+     * Monetary share of an expense-shaped debt-payment row attributed to this viewer for summary display.
+     */
+    private function viewerDebtExpenseAmount(Transaction $expenseRow, User $viewer): float
+    {
+        if (! $expenseRow->is_split) {
+            return (int) $expenseRow->user_id === (int) $viewer->id ? (float) $expenseRow->amount : 0.0;
+        }
+
+        foreach ($expenseRow->splits as $split) {
+            if ((int) $split->user_id === (int) $viewer->id) {
+                return (float) $split->amount;
+            }
+        }
+
+        return 0.0;
     }
 
     /**
@@ -461,6 +490,8 @@ class MonthSummaryController extends Controller
             ->orderBy('order')
             ->get();
 
+        $fundAdvanceRemaining = $this->fundAdvanceOutstandingByFundForUserMonth($user, $year, $month);
+
         $grossRemaining = $grossIncome;
         $grossAllocationsTotal = 0;
         $ruleResults = [];
@@ -477,7 +508,7 @@ class MonthSummaryController extends Controller
                 $grossAllocationsTotal += $projectedAmount;
             }
 
-            $ruleResults[] = $this->formatRuleForPreview($rule, $projectedAmount);
+            $this->pushRulePreviewResult($ruleResults, $fundAdvanceRemaining, $rule, $projectedAmount);
         }
 
         $remainingBasePool = max(0, $grossIncome - $grossAllocationsTotal - $totalExpenses);
@@ -495,7 +526,7 @@ class MonthSummaryController extends Controller
                 $remainingAvailablePool -= $projectedAmount;
             }
 
-            $ruleResults[] = $this->formatRuleForPreview($rule, $projectedAmount);
+            $this->pushRulePreviewResult($ruleResults, $fundAdvanceRemaining, $rule, $projectedAmount);
         }
 
         return [
@@ -509,11 +540,57 @@ class MonthSummaryController extends Controller
     }
 
     /**
+     * Sum of month's advance-tag expenses per fund (`advance_fund_id`) for pool consumption in rule-order.
+     *
+     * @return array<int, float>
+     */
+    private function fundAdvanceOutstandingByFundForUserMonth(object $user, int $year, int $month): array
+    {
+        return Transaction::query()
+            ->where('user_id', $user->id)
+            ->where('type', 'expense')
+            ->whereNotNull('advance_fund_id')
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->selectRaw('advance_fund_id, SUM(amount) as total_advanced')
+            ->groupBy('advance_fund_id')
+            ->get()
+            ->mapWithKeys(fn ($row) => [(int) $row->advance_fund_id => (float) $row->total_advanced])
+            ->all();
+    }
+
+    /**
+     * @param  array<int, float>  $fundAdvanceRemaining
+     */
+    private function pushRulePreviewResult(array &$ruleResults, array &$fundAdvanceRemaining, FundRule $rule, float $projectedAmount): void
+    {
+        $outstandingBeforeRounded = 0.0;
+        $netRounded = round($projectedAmount, 2);
+
+        if ($rule->destination_type === 'fund' && $rule->destination_id) {
+            $fundId = (int) $rule->destination_id;
+            if ($fundId > 0) {
+                $outstandingBefore = (float) ($fundAdvanceRemaining[$fundId] ?? 0.0);
+                $netRounded = round($projectedAmount - $outstandingBefore, 2);
+                $outstandingBeforeRounded = round($outstandingBefore, 2);
+                $fundAdvanceRemaining[$fundId] = max(0.0, $outstandingBefore - $projectedAmount);
+            }
+        }
+
+        $ruleResults[] = $this->formatRuleForPreview(
+            $rule,
+            $projectedAmount,
+            $outstandingBeforeRounded,
+            $netRounded,
+        );
+    }
+
+    /**
      * Format a rule result for preview output.
      *
-     * @return array{rule_id: int, rule_name: string, order: int, allocation_type: string, amount: float, allocation_base: string, destination_type: string, destination_name: string, projected_amount: float, is_active: bool}
+     * @return array{rule_id: int, rule_name: string, order: int, allocation_type: string, amount: float, allocation_base: string, destination_type: string, destination_name: string, projected_amount: float, fund_advance_outstanding_before: float, net_after_advances: float, is_active: bool}
      */
-    private function formatRuleForPreview(FundRule $rule, float $projectedAmount): array
+    private function formatRuleForPreview(FundRule $rule, float $projectedAmount, float $fundAdvanceOutstandingBefore, float $netAfterAdvances): array
     {
         $destinationName = 'Unknown';
 
@@ -540,6 +617,8 @@ class MonthSummaryController extends Controller
             'destination_type' => $rule->destination_type,
             'destination_name' => $destinationName,
             'projected_amount' => $projectedAmount,
+            'fund_advance_outstanding_before' => $fundAdvanceOutstandingBefore,
+            'net_after_advances' => $netAfterAdvances,
             'is_active' => $rule->is_active,
         ];
     }
