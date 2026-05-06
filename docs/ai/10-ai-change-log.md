@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-06 — Add dog icon option to category icon picker
+
+- Files touched: `resources/js/components/IconPicker.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Category icon picker now includes a dog emoji (`🐶`) option under the Other icon group.
+
 ## 2026-05-06 — Fix month-summary fund movements leaking prior closeout month
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `app/Services/MonthCloseoutService.php`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
