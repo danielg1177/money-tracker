@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-06 — Transactions month dropdown now includes next two months
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Month quick-select now starts two months ahead of the current month and continues in descending order, so users can preselect upcoming months as well as current/past months without losing correct cross-year ordering.
+
 ## 2026-05-06 — Fix Transactions month dropdown order across new year
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

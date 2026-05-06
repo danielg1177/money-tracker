@@ -478,8 +478,9 @@ const quickSelectMonths = computed(() => {
   const months = [];
   const cursor = new Date();
   cursor.setDate(1);
+  cursor.setMonth(cursor.getMonth() + 2);
 
-  for (let i = 0; i < 24; i += 1) {
+  for (let i = 0; i < 26; i += 1) {
     const year = cursor.getFullYear();
     const monthIndex = cursor.getMonth();
     const monthNumber = monthIndex + 1;
