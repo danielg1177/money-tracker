@@ -89,7 +89,7 @@ routes/web.php
 | Fund | Personal: `user_id` + `family_id` null. Family-shared: `family_id` set (still has `user_id` creator). `GET /funds` returns personal funds (`whereNull('family_id')` on the user’s relation) plus all funds for the user’s `family_id`, each with `scope` so family rows are not listed twice for the creator |
 | FundRule | Per `user_id` + `fund_id` |
 | FundMovement | Per `fund_id` + `user_id`; types include `initial_value` (fund start), `allocation`, `borrow`, `repayment`, `closeout_allocation`, `advance_settlement` (advance fund payout at close) |
-| Debt | Per `family_id`; links `debtor_id` ↔ `creditor_id` (or `fund_id` for fund borrows); may have linked payment transactions; the debt's original amount and creation date are appended to payment history as an `initial_value` entry |
+| Debt | Per `family_id`; links `debtor_id` ↔ `creditor_id` (or `fund_id` for fund borrows); may have linked payment transactions; supports optional closeout interest (`interest_enabled`, `interest_rate`, `interest_last_applied_at`, `loan_received_date`) that accrues at hard-close month-end using daily-rate logic and in-month payment dates; the debt's original amount and creation date are appended to payment history as an `initial_value` entry |
 
 **Advance fund settlement:** When a month is hard-closed, `MonthCloseoutService::applyFundAdvances()` sums all expense transactions with `advance_fund_id` set (per fund, per user, per month) and decrements the fund balance by the total. A `FundMovement` of type `'advance_settlement'` is created to track this. This happens regardless of whether the user has closeout rules or income for that month.
 
@@ -103,5 +103,6 @@ routes/web.php
 ## Testing environment
 
 - PHPUnit with `RefreshDatabase` trait; test DB values are sourced from environment (`.env.testing` / process env), not hardcoded in `phpunit.xml`
+- Repository includes a dedicated `.env.testing` with `DB_CONNECTION=sqlite` and `DB_DATABASE=:memory:` so test runs do not target the local app MySQL database by default
 - MySQL instance also present at `.local/mysql/` for manual testing (`money_tracker_test` database)
 - No browser/E2E tests

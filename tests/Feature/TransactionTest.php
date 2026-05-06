@@ -53,11 +53,13 @@ class TransactionTest extends TestCase
             'amount' => 300.00,
             'description' => 'Loan disbursement',
             'type' => 'income',
-            'transaction_date' => now()->toDateString(),
+            'transaction_date' => '2026-02-20',
             'income_debt_mode' => 'new',
             'income_new_is_interfamily' => false,
             'income_new_creditor_name' => 'Bank of Example',
             'income_new_description' => 'Starter loan',
+            'income_new_interest_enabled' => true,
+            'income_new_interest_rate' => 10.5,
         ])->assertStatus(201);
 
         $transactionId = (int) $response->json('id');
@@ -78,6 +80,9 @@ class TransactionTest extends TestCase
             'amount' => 300.00,
             'balance' => 300.00,
             'description' => 'Starter loan',
+            'interest_enabled' => true,
+            'interest_rate' => 10.50,
+            'loan_received_date' => '2026-02-20',
         ]);
     }
 

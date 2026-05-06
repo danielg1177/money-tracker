@@ -43,6 +43,9 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_05_05_201653_add_advance_fund_id_to_transactions_table` | Nullable `advance_fund_id` FK on `transactions` → `funds.id` (`nullOnDelete`) |
 | `2026_05_05_212303_ensure_categories_are_income_xor_expense` | Data repair: normalizes `categories` so each row is income-only or expense-only (not both / not neither) |
 | `2026_05_05_214052_add_mirror_transaction_id_to_transactions_table` | Nullable `mirror_transaction_id` self-FK linking paired debt-payment expense ↔ creditor income rows |
+| `2026_05_06_133500_add_interest_fields_to_debts_table` | Adds `interest_enabled`, `interest_rate`, `interest_last_applied_at` to `debts` |
+| `2026_05_06_134200_add_loan_received_date_to_debts_table` | Adds nullable `loan_received_date` to `debts` |
+| `2026_05_06_140000_add_interest_accruals_to_debts_table` | Adds nullable `interest_accruals` JSON to `debts` |
 | `2026_05_06_154936_add_bank_balance_to_users_table` | Adds `bank_balance_enabled` (bool), `bank_balance` (decimal nullable), `bank_balance_set_at` (date nullable) to `users` |
 | `2026_05_06_154936_add_completion_to_closeout_title_savings_table` | Adds `is_completed` (bool) and `completed_at` (timestamp nullable) to `closeout_title_savings` |
 
@@ -165,6 +168,11 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `is_family_debt` | boolean | false = personal debt; true = visible to all family members |
 | `creditor_name` | varchar(255) nullable | name for external creditors (e.g., "Bank of America"); used when `creditor_id` is null |
 | `is_pending_closeout` | boolean | true during month hard-close split processing |
+| `interest_enabled` | boolean | default false; whether month hard-close should accrue interest for this debt |
+| `interest_rate` | decimal(5,2) nullable | annual APR percentage (e.g., `12.50`) used for monthly accrual at hard-close |
+| `interest_last_applied_at` | date nullable | last closeout month-end date that interest was applied through |
+| `loan_received_date` | date nullable | optional business start date for interest accrual calculations |
+| `interest_accruals` | json nullable | interest timeline entries: `[{year, month, amount, applied_at, period_start, period_end}]` |
 | `timestamps` | | |
 
 ### `fund_movements`

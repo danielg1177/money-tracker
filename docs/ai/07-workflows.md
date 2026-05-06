@@ -213,6 +213,7 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
    - `hardClose()` validates all members soft-closed (trivially true for 1 member)
    - Processes the single user's closeout rules (fund allocations, title savings, debt paydowns)
    - Consolidates any pending split debts (none in single-member family)
+   - Applies debt interest for eligible family debts through the closed month-end date (not `now()`), using daily accrual and reducing interest after in-month payments
    - Creates `MonthHardClose` record
 8. Returns JSON with:
    - `message`: "Month closed successfully" (if auto-hard-closed) or "Month soft-closed successfully"
@@ -250,13 +251,15 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
      "category_id": 1,
      "income_debt_mode": "new",
      "income_new_is_interfamily": false,
-     "income_new_creditor_name": "Bank of Example"
+    "income_new_creditor_name": "Bank of Example",
+    "income_new_interest_enabled": true,
+    "income_new_interest_rate": 12.5
    }
    ```
 4. `StoreTransactionRequest` still strips expense-only fields (`is_split`, `split_data`, `advance_fund_id`, `debt_id`) for income, then validates income debt mode
 5. `TransactionService::createTransaction` runs in `DB::transaction`:
    - `existing`: locks debt and increments both `amount` and `balance`
-   - `new`: creates debt with `amount=income amount`, `balance=income amount`
+   - `new`: creates debt with `amount=income amount`, `balance=income amount`, and `loan_received_date=transaction_date`
    - stores resulting debt id on `transactions.debt_id`
 6. Transaction remains a regular `income` row (`is_debt_payment=false`)
 7. At month hard-close, this row is still treated as normal gross income for closeout rules

@@ -230,6 +230,41 @@
             class="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
           />
         </div>
+
+        <div class="space-y-2 rounded-lg border border-gray-700 bg-gray-900/30 p-3">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-medium text-gray-300">Apply monthly interest at closeout</label>
+            <button
+              type="button"
+              @click="form.income_new_interest_enabled = !form.income_new_interest_enabled"
+              :class="[
+                'relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200',
+                form.income_new_interest_enabled ? 'bg-amber-600' : 'bg-gray-600'
+              ]"
+            >
+              <span
+                :class="[
+                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200',
+                  form.income_new_interest_enabled ? 'translate-x-4' : 'translate-x-0'
+                ]"
+              />
+            </button>
+          </div>
+
+          <div v-if="form.income_new_interest_enabled">
+            <label class="mb-1 block text-xs font-medium text-gray-400">Annual Interest Rate (APR %)</label>
+            <input
+              v-model.number="form.income_new_interest_rate"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              class="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white placeholder-gray-500 focus:border-amber-500 focus:outline-none"
+              placeholder="e.g. 12.50"
+            />
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -426,6 +461,8 @@ const form = ref({
   income_new_creditor_id: null,
   income_new_creditor_name: '',
   income_new_description: '',
+  income_new_interest_enabled: false,
+  income_new_interest_rate: 0,
 });
 
 const payableDebts = computed(() => {
@@ -539,6 +576,8 @@ watch(
         income_new_creditor_id: null,
         income_new_creditor_name: '',
         income_new_description: '',
+        income_new_interest_enabled: false,
+        income_new_interest_rate: 0,
       };
     } else {
       resetForm();
@@ -584,6 +623,8 @@ watch(() => form.value.type, (newType) => {
   form.value.income_new_creditor_id = null;
   form.value.income_new_creditor_name = '';
   form.value.income_new_description = '';
+  form.value.income_new_interest_enabled = false;
+  form.value.income_new_interest_rate = 0;
 });
 
 watch(() => form.value.income_debt_mode, (mode) => {
@@ -606,6 +647,8 @@ watch(() => form.value.income_debt_mode, (mode) => {
     form.value.income_new_creditor_id = null;
     form.value.income_new_creditor_name = '';
     form.value.income_new_description = '';
+    form.value.income_new_interest_enabled = false;
+    form.value.income_new_interest_rate = 0;
   }
 });
 
@@ -641,6 +684,8 @@ function resetForm() {
     income_new_creditor_id: null,
     income_new_creditor_name: '',
     income_new_description: '',
+    income_new_interest_enabled: false,
+    income_new_interest_rate: 0,
   };
   formError.value = null;
 }
@@ -698,6 +743,13 @@ async function handleSubmit() {
         formError.value = 'Enter the creditor name for the new debt';
         return;
       }
+      if (form.value.income_new_interest_enabled) {
+        const interestRate = Number(form.value.income_new_interest_rate);
+        if (!Number.isFinite(interestRate) || interestRate < 0 || interestRate > 100) {
+          formError.value = 'Interest rate must be between 0 and 100';
+          return;
+        }
+      }
     }
   }
 
@@ -737,6 +789,12 @@ async function handleSubmit() {
             income_new_description:
               form.value.income_debt_mode === 'new' && form.value.income_new_description?.trim()
                 ? form.value.income_new_description
+                : null,
+            income_new_interest_enabled:
+              form.value.income_debt_mode === 'new' ? Boolean(form.value.income_new_interest_enabled) : false,
+            income_new_interest_rate:
+              form.value.income_debt_mode === 'new' && form.value.income_new_interest_enabled
+                ? form.value.income_new_interest_rate
                 : null,
           }
         : {}),

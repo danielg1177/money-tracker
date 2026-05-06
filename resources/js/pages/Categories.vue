@@ -484,6 +484,7 @@ async function handleSubmit() {
       await post('/categories', payload);
     }
 
+    window.dispatchEvent(new CustomEvent('categories-changed'));
     await fetchCategories();
     closeModal();
   } catch (err) {
@@ -504,6 +505,7 @@ async function confirmDelete() {
 
   try {
     await apiDelete(`/categories/${deleteConfirm.value.id}`);
+    window.dispatchEvent(new CustomEvent('categories-changed'));
     await fetchCategories();
     deleteConfirm.value = null;
   } catch (err) {

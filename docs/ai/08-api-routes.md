@@ -80,8 +80,8 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 |---|---|---|---|
 | GET | `/debts` | `DebtController::index` | Returns `{owed: [...], owing: [...], family_debts: [...]}` |
 | GET | `/split-debt-summary` | `DebtController::splitDebtSummary` | Query: `year`, `month` (1–12). JSON: pending closeout split debts grouped by counterpart; each nested `transaction` includes `category` and, when applicable, `debt` with `creditor`, `debtor`, `fund` for debt-payment rows |
-| POST | `/debts` | `DebtController::store` | `{is_family_debt?, is_interfamily?, creditor_id?, creditor_name?, amount, description?}` |
-| PUT | `/debts/{debt}` | `DebtController::update` | Updates debt fields |
+| POST | `/debts` | `DebtController::store` | `{is_family_debt?, is_interfamily?, creditor_id?, creditor_name?, amount, description?, interest_enabled?, interest_rate?, loan_received_date?}` |
+| PUT | `/debts/{debt}` | `DebtController::update` | Updates debt fields (`description`, `creditor_name`, `interest_enabled`, `interest_rate`, `loan_received_date`) |
 | POST | `/debts/pay` | `DebtController::payDebt` | `{debt_id, amount, description?, split_with_user_id?, split_percentage?}` |
 | GET | `/debts/{debt}/payments` | `DebtController::paymentHistory` | Debtor, creditor, or `can_manage_family`; JSON array of payment rows (creditor sees income rows, others see expense rows) |
 | DELETE | `/debts/{debt}` | `DebtController::destroy` | Only debtor or `can_manage_family` user can delete |
@@ -95,7 +95,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | POST | `/closeout/status` | `MonthCloseoutController::status` | Body: `{year, month}`; JSON: `{soft_closes, hard_close, all_soft_closed, family_user_count}` |
 | POST | `/closeout/soft-close` | `MonthCloseoutController::softClose` | `{year, month}`; auto-hard-closes if family has only one member; returns `{message, data (soft_close), hard_close?, auto_hard_closed?}` |
 | POST | `/closeout/undo-soft-close` | `MonthCloseoutController::undoSoftClose` | `{year, month}`; undoes soft close (must have no hard close) |
-| POST | `/closeout/hard-close` | `MonthCloseoutController::hardClose` | `{year, month}`; requires `can_manage_family`; processes all members' closeout rules |
+| POST | `/closeout/hard-close` | `MonthCloseoutController::hardClose` | `{year, month}`; requires `can_manage_family`; processes all members' closeout rules, consolidates pending split debts, and applies eligible debt interest through the closed month-end date (daily accrual with in-month payment impact) |
 | GET | `/closeout/closed-months` | `MonthCloseoutController::closedMonths` | JSON: array of hard-closed months for family as `{year, month}` |
 
 ### Family members
@@ -187,7 +187,9 @@ For `type=expense`, optional **`debt_id`** (existing `debts.id` for the payer’
   "income_new_is_interfamily": false,
   "income_new_creditor_id": null,
   "income_new_creditor_name": null,
-  "income_new_description": null
+  "income_new_description": null,
+  "income_new_interest_enabled": false,
+  "income_new_interest_rate": null
 }
 ```
 

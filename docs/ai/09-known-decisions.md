@@ -29,6 +29,9 @@ When closeout rules allocate to a debt, the generated debt-payment transaction d
 - **today** if the hard-close month is the same month/year as the current date
 - **month-end** (`endOfMonth`) for any non-current closeout month (including past months)
 
+### Debt interest accrues at closed month-end (not closeout run time)
+For debts with `interest_enabled=true` and a configured `interest_rate`, hard-close applies interest using daily accrual (`APR / 365`) bounded by the closed month. In-month debt payments reduce interest from the payment date onward. `interest_last_applied_at` is set to the **closed month's last day**, so accrual timing remains tied to the closed month even if users close early/late in real time.
+
 ### Fund rules are not applied on income save
 `TransactionService::createTransaction` and `updateTransaction` do **not** call `FundService::processIncome`. Fund rules (`FundRule`) are applied during **month hard-close** (`MonthCloseoutService`), not when posting income. `tests/Feature/FundAllocationTest.php` still expects per-income allocation and **fails** until those tests are updated or `processIncome` is wired back in deliberately.
 

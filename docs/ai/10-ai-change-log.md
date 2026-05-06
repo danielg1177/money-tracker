@@ -11,6 +11,36 @@ Format:
 
 ---
 
+## 2026-05-06 — Fix Transactions month dropdown order across new year
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Transactions month quick-select now renders as a single descending month timeline (latest to oldest) instead of separate current-year/prior-year blocks, so month ordering remains correct around year boundaries (e.g., Jan follows Dec in the expected chronological sequence).
+
+## 2026-05-06 — Fix transaction month-list refresh, live category options, and isolate test DB
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/components/AppNav.vue`, `resources/js/pages/Categories.vue`, `.env.testing`, `docs/ai/01-architecture.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Transactions page now refetches the active filter after create events (including global FAB events), so transactions dated in other months no longer appear in the current month until refresh. Category create/update/delete now broadcasts `categories-changed`, and `AppNav` listens/reloads FAB dependencies so new categories appear immediately in transaction category options. Added repository `.env.testing` using in-memory SQLite so PHPUnit/`RefreshDatabase` does not wipe local MySQL app data by default.
+
+## 2026-05-06 — Monthly debt interest applied at family hard-close month-end
+
+- Files touched: `database/migrations/2026_05_06_133500_add_interest_fields_to_debts_table.php`, `app/Models/Debt.php`, `app/Services/MonthCloseoutService.php`, `app/Http/Controllers/DebtController.php`, `resources/js/pages/Debts.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Debts now support optional interest configuration (`interest_enabled`, `interest_rate`). During `POST /closeout/hard-close`, the service applies one monthly interest accrual to all eligible debts in the family and records `interest_last_applied_at` as the closed month’s last day, so accrual timing is tied to the month being closed (not the day closeout is run). Debts UI now allows enabling/editing APR on create/edit and displays APR on debt cards.
+
+## 2026-05-06 — Add loan received date + daily closeout interest accrual with payment-date impact
+
+- Files touched: `database/migrations/2026_05_06_134200_add_loan_received_date_to_debts_table.php`, `app/Models/Debt.php`, `app/Services/MonthCloseoutService.php`, `app/Http/Controllers/DebtController.php`, `resources/js/pages/Debts.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Debts now support optional `loan_received_date`. Closeout debt interest now uses daily accrual (`APR / 365`) across the closed month window (rather than flat APR/12), and uses debt-payment expense transaction dates to reduce accrual after payments made mid-month. This keeps month-close interest closer to standard lender behavior while still applying accrual through the closed month-end date regardless of when users run closeout.
+
+## 2026-05-06 — Interest accrual now appears in debt history and no longer changes principal
+
+- Files touched: `database/migrations/2026_05_06_140000_add_interest_accruals_to_debts_table.php`, `app/Models/Debt.php`, `app/Services/MonthCloseoutService.php`, `app/Http/Controllers/DebtController.php`, `resources/js/pages/Debts.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Hard-close interest accrual now increases only `debts.balance`; `debts.amount` remains the original principal. Each accrual is appended to `debts.interest_accruals`, and `GET /debts/{debt}/payments` now includes `type='interest_accrual'` entries so the Debts History modal shows monthly interest events in the timeline.
+
+## 2026-05-06 — Income transaction “New Debt” supports debt settings
+
+- Files touched: `resources/js/components/TransactionForm.vue`, `app/Http/Requests/StoreTransactionRequest.php`, `app/Services/TransactionService.php`, `tests/Feature/TransactionTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: The income form path (`income_debt_mode='new'`) now accepts debt settings directly when creating a debt from income: `income_new_interest_enabled` and `income_new_interest_rate`. `loan_received_date` for this path is automatically derived from `transaction_date` instead of being manually entered.
+
 ## 2026-05-06 — Income transactions can create or expand debt
 
 - Files touched: `app/Http/Requests/StoreTransactionRequest.php`, `app/Services/TransactionService.php`, `resources/js/components/TransactionForm.vue`, `tests/Feature/TransactionTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

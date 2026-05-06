@@ -222,7 +222,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
 import { useApi } from '../composables/useApi';
@@ -265,7 +265,7 @@ async function handleTransactionCreated(transaction) {
   window.dispatchEvent(new CustomEvent('transaction-created', { detail: transaction }));
 }
 
-onMounted(async () => {
+async function loadFormDependencies() {
   try {
     const [catData, usersData, fundsData, debtsData] = await Promise.all([
       get('/categories'),
@@ -280,5 +280,18 @@ onMounted(async () => {
   } catch (err) {
     console.error('Failed to fetch data:', err);
   }
+}
+
+function handleCategoriesChanged() {
+  void loadFormDependencies();
+}
+
+onMounted(async () => {
+  await loadFormDependencies();
+  window.addEventListener('categories-changed', handleCategoriesChanged);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('categories-changed', handleCategoriesChanged);
 });
 </script>

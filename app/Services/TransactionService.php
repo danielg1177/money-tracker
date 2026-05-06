@@ -315,6 +315,11 @@ class TransactionService
             'balance' => $amount,
             'description' => $data['income_new_description'] ?? ($data['description'] ?? null),
             'is_family_debt' => (bool) ($data['income_new_is_family_debt'] ?? false),
+            'interest_enabled' => (bool) ($data['income_new_interest_enabled'] ?? false),
+            'interest_rate' => ! empty($data['income_new_interest_enabled'])
+                ? (float) ($data['income_new_interest_rate'] ?? 0)
+                : null,
+            'loan_received_date' => $data['transaction_date'],
             'is_pending_closeout' => false,
         ]);
     }

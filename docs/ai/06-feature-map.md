@@ -122,6 +122,8 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 
 **What it does:** Track money owed between family members. Debts are created automatically from split transactions. They can also be created manually. Payments reduce the `balance` field.
 
+**Monthly interest at closeout:** Debts can opt into interest with `interest_enabled` + `interest_rate` (APR) and optional `loan_received_date`. During hard-close, `MonthCloseoutService` applies interest to eligible debts across the family using a daily-rate model (`APR / 365`) over the closed month, factoring in in-month debt-payment expense transactions so mid-month payments reduce subsequent accrual. `interest_last_applied_at` is stamped to the closed month-end date regardless of when closeout is run. Interest increases `balance` only (not original `amount`) and writes a history entry into `interest_accruals`.
+
 **Split debts & hard-close:** When a split transaction is created, temporary `is_pending_closeout=true` debts are created. These are hidden from the Debts page (GET /debts filters them out). On hard-close, `MonthCloseoutService::consolidatePendingSplitDebts` includes pending rows whose linked transaction is in the closed month **or** whose `transaction_id` is null (orphans left when a split transaction was deleted under the old `nullOnDelete` FK). Those rows are **netted per person-pair** (if A owes B $10 and B owes A $5, only one $5 debt remains from B to A). Netting results are consolidated into single running debts per pair—either updating an existing confirmed debt or creating a new one. All included pending split rows are then deleted. Deleting a split transaction now cascades to remove its linked split-debt rows (`debts.transaction_id` → `cascadeOnDelete`).
 
 **Payment guard:** `DebtService::payDebt` rejects attempts to pay `is_pending_closeout=true` debts, directing users to wait for the month's hard-close.
@@ -129,7 +131,7 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 || Layer | Files |
 ||---|---|
 || Backend | `DebtController` (index, store, payDebt, `paymentHistory`), `DebtController::splitDebtSummary` |
-|| Service | `app/Services/DebtService.php`, `app/Services/MonthCloseoutService.php::consolidatePendingSplitDebts` |
+|| Service | `app/Services/DebtService.php`, `app/Services/MonthCloseoutService.php::consolidatePendingSplitDebts`, `app/Services/MonthCloseoutService.php::applyMonthlyDebtInterest` |
 || Model | `app/Models/Debt.php` |
 || Request | `app/Http/Requests/PayDebtRequest.php` |
 || Frontend | `resources/js/pages/Debts.vue` |

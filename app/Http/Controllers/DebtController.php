@@ -76,6 +76,9 @@ class DebtController extends Controller
             'creditor_name' => 'nullable|string|max:255',
             'amount' => 'required|numeric|min:0.01',
             'description' => 'nullable|string',
+            'interest_enabled' => 'nullable|boolean',
+            'interest_rate' => 'nullable|numeric|min:0|max:100',
+            'loan_received_date' => 'nullable|date',
         ]);
 
         if ($request->boolean('is_interfamily')) {
@@ -102,6 +105,10 @@ class DebtController extends Controller
             'description' => $request->description,
             'is_family_debt' => $request->boolean('is_family_debt'),
             'is_pending_closeout' => false,
+            'interest_enabled' => $request->boolean('interest_enabled'),
+            'interest_rate' => $request->boolean('interest_enabled') ? $request->input('interest_rate', 0) : null,
+            'interest_last_applied_at' => null,
+            'loan_received_date' => $request->input('loan_received_date'),
         ]);
 
         return response()->json($debt->load('debtor', 'creditor'));
@@ -124,7 +131,19 @@ class DebtController extends Controller
         $validated = $request->validate([
             'description' => 'nullable|string|max:1000',
             'creditor_name' => 'nullable|string|max:255',
+            'interest_enabled' => 'nullable|boolean',
+            'interest_rate' => 'nullable|numeric|min:0|max:100',
+            'loan_received_date' => 'nullable|date',
         ]);
+
+        if (array_key_exists('interest_enabled', $validated)) {
+            if (! $validated['interest_enabled']) {
+                $validated['interest_rate'] = null;
+            } elseif (! array_key_exists('interest_rate', $validated)) {
+                $validated['interest_rate'] = $debt->interest_rate ?? 0;
+            }
+        }
+
         $debt->update($validated);
 
         return response()->json($debt->load('debtor', 'creditor'));
@@ -200,20 +219,45 @@ class DebtController extends Controller
                         'name' => $payment->paidByUser->name,
                     ] : null,
                 ];
-            })
-            ->push([
-                'id' => null,
-                'amount' => $debt->amount,
-                'description' => 'Initial Value Set At',
-                'transaction_date' => $debt->created_at->toDateString(),
-                'type' => 'initial_value',
-                'created_at' => $debt->created_at,
-                'paid_by_user_id' => null,
-                'is_closeout_initiated' => false,
-                'paid_by_user' => null,
-            ]);
+            });
 
-        return response()->json($payments->values());
+        $interestAccrualEntries = collect($debt->interest_accruals ?? [])
+            ->map(function (array $accrual) {
+                return [
+                    'id' => null,
+                    'amount' => (float) ($accrual['amount'] ?? 0),
+                    'description' => 'Monthly Interest Accrued',
+                    'transaction_date' => $accrual['applied_at'] ?? null,
+                    'type' => 'interest_accrual',
+                    'created_at' => $accrual['applied_at'] ?? null,
+                    'paid_by_user_id' => null,
+                    'is_closeout_initiated' => true,
+                    'paid_by_user' => null,
+                ];
+            })
+            ->filter(fn (array $entry): bool => ! empty($entry['transaction_date']));
+
+        $initialValueEntry = [
+            'id' => null,
+            'amount' => $debt->amount,
+            'description' => 'Initial Value Set At',
+            'transaction_date' => $debt->created_at->toDateString(),
+            'type' => 'initial_value',
+            'created_at' => $debt->created_at,
+            'paid_by_user_id' => null,
+            'is_closeout_initiated' => false,
+            'paid_by_user' => null,
+        ];
+
+        $timeline = $payments
+            ->concat($interestAccrualEntries)
+            ->sortByDesc(function (array $entry) {
+                return sprintf('%s|%s', (string) $entry['transaction_date'], (string) $entry['created_at']);
+            })
+            ->values()
+            ->push($initialValueEntry);
+
+        return response()->json($timeline->values());
     }
 
     /**

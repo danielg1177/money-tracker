@@ -57,12 +57,15 @@
 - Relations: `belongsTo(Fund)`, `belongsTo(User)`, `belongsTo(Transaction)`
 
 ### Debt (`app/Models/Debt.php`)
-- Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable FK → transactions, `cascadeOnDelete` for split-linked rows), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `is_pending_closeout` (bool — true during month hard-close split processing; pending debts are excluded from `GET /debts` and cannot be manually paid), `creditor_name` (nullable string for external creditors), `contributions` (JSON array nullable)
+- Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable FK → transactions, `cascadeOnDelete` for split-linked rows), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `is_pending_closeout` (bool — true during month hard-close split processing; pending debts are excluded from `GET /debts` and cannot be manually paid), `creditor_name` (nullable string for external creditors), `contributions` (JSON array nullable), `interest_enabled` (bool), `interest_rate` (APR decimal), `interest_last_applied_at` (date nullable), `loan_received_date` (date nullable), `interest_accruals` (JSON array nullable)
 - `creditor_id` is null when the debt is to a fund (borrow scenario) or to an external party
 - `creditor_name` stores plain text creditor names (e.g., "Bank of America") when `creditor_id` is null and `is_family_debt=false`
 - `is_family_debt` controls visibility: false = personal debt (debtor + creditor only); true = visible to all family members
 - `balance` decrements as payments are made; a debt with `balance = 0` is fully paid
 - `contributions` records closeout contributions as `[{month, year, amount}]` tuples, used by the debt history modal to show "Closeout Additions" separate from manual payments
+- Interest accrues only during month hard-close when `interest_enabled=true`, `interest_rate` is set, and `balance > 0`
+- Interest accrual uses a daily-rate model (`APR / 365`) over the closed month window, reducing accrual after any in-month payment (`transactions.type='expense'`, `is_debt_payment=true`) and respecting `loan_received_date`
+- Interest increases `balance` only (principal `amount` remains the original loan value) and appends a ledger entry to `interest_accruals`
 - Relations: `belongsTo(Family)`, `belongsTo(User, 'debtor_id')`, `belongsTo(User, 'creditor_id')`, `belongsTo(Fund)`, `belongsTo(Transaction)`
 
 ### CloseoutTitleSaving (`app/Models/CloseoutTitleSaving.php`)
@@ -100,10 +103,12 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
   - **Personal to external parties:** `creditor_name` provided, `creditor_id` null, `is_interfamily=false`
   - **In-family:** `creditor_id` provided, user is a different family member, `is_interfamily=true`
   - **Family-shared:** `is_family_debt=true`, visible to all family members
-- `update(Request, Debt)` — updates `description` and `creditor_name`; only debtor or `can_manage_family` user may update; rejects pending closeout debts
+- `store(Request)` also accepts optional loan/interest fields (`interest_enabled`, `interest_rate`, `loan_received_date`)
+- `update(Request, Debt)` — updates `description`, `creditor_name`, and optional loan/interest settings (`interest_enabled`, `interest_rate`, `loan_received_date`); only debtor or `can_manage_family` user may update; rejects pending closeout debts
 - `destroy(Debt)` — hard delete (`$debt->delete()`); only debtor or `can_manage_family` user can delete; cannot delete pending closeout debts
 - `payDebt(PayDebtRequest)` — delegates to `DebtService::payDebt`
 - `paymentHistory(Debt)` — role-based filtering: creditors see **income** rows with their `user_id`; all others (debtor, family manager) see **expense** rows; appends a synthetic `initial_value` entry showing the debt's original amount and creation date; debtor/creditor/`can_manage_family` required to access
+- `paymentHistory(Debt)` also appends `interest_accrual` entries from `debt.interest_accruals` so debt history includes interest events
 - `splitDebtSummary(Request)` — `GET /split-debt-summary?year=&month=`; returns pending split debts for the current user's family grouped by counterpart user with `you_owe`, `they_owe`, and nested `transactions`
 
 ### CategoryController
@@ -138,7 +143,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `status(Request)` — `POST /closeout/status`; accepts `{year, month}`; returns `{soft_closes, hard_close, all_soft_closed, family_user_count}` via `MonthCloseoutService::getMonthStatus`
 - `softClose(Request)` — `POST /closeout/soft-close`; creates a `MonthSoftClose` record; auto-triggers `hardClose` for single-member families; returns `{message, data, hard_close?, auto_hard_closed?}`
 - `undoSoftClose(Request)` — `POST /closeout/undo-soft-close`; removes the user's soft-close record (only if no hard close exists)
-- `hardClose(Request)` — `POST /closeout/hard-close`; requires `can:manage_family`; runs `MonthCloseoutService::hardClose` (processes all members' closeout rules, consolidates split debts, creates `MonthHardClose`)
+- `hardClose(Request)` — `POST /closeout/hard-close`; requires `can:manage_family`; runs `MonthCloseoutService::hardClose` (processes all members' closeout rules, consolidates split debts, applies monthly debt interest through the closed month-end date, creates `MonthHardClose`)
 - `closedMonths(Request)` — `GET /closeout/closed-months`; returns array of `{year, month}` hard-closed months for the auth user's family
 
 ### MonthSummaryController
@@ -155,7 +160,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `createTransaction(array, User): Transaction` — wraps everything in `DB::transaction`; for `type=income`, forces `is_split=false`, clears `split_data` and `advance_fund_id`, and optionally links debt via `income_debt_mode`:
   - `none`: regular income
   - `existing`: increments selected debt `amount` + `balance` by the income amount and links `transactions.debt_id`
-  - `new`: creates a new debt from the same amount (external or interfamily) and links `transactions.debt_id`
+  - `new`: creates a new debt from the same amount (external or interfamily) and links `transactions.debt_id`; supports optional new-debt settings (`income_new_interest_enabled`, `income_new_interest_rate`) and sets `loan_received_date` from the income transaction date
   For **expense + `debt_id`**, runs `createDebtRepaymentExpense()` (categorized payer expense, mirrored creditor income when applicable, decrement balance, `mirror_transaction_id` linkage) instead of ordinary split plumbing; validates split percentages when splits are present; creates splits + debts only for ordinary expense splits; does **not** call `FundService::processIncome`
 - `updateTransaction(Transaction, array): Transaction` — **rejects rows with `is_debt_payment` set** (`InvalidArgumentException` → 422); otherwise rolls back any existing income-debt linkage, reapplies linkage from the updated payload, and then recreates splits/debts for ordinary split expenses
 - `deleteTransaction(Transaction): void` — used by `TransactionController::destroy`; reverses mirrored debt-payment pairs (+ debt balance increment) or deletes splits/linked debts for normal rows

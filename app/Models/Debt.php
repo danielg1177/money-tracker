@@ -23,6 +23,11 @@ class Debt extends Model
         'is_family_debt',
         'creditor_name',
         'contributions',
+        'interest_enabled',
+        'interest_rate',
+        'interest_last_applied_at',
+        'loan_received_date',
+        'interest_accruals',
     ];
 
     protected $casts = [
@@ -31,6 +36,11 @@ class Debt extends Model
         'is_pending_closeout' => 'bool',
         'is_family_debt' => 'bool',
         'contributions' => 'array',
+        'interest_enabled' => 'bool',
+        'interest_rate' => 'decimal:2',
+        'interest_last_applied_at' => 'date',
+        'loan_received_date' => 'date',
+        'interest_accruals' => 'array',
     ];
 
     public function family(): BelongsTo

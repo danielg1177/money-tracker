@@ -74,15 +74,7 @@
         >
           <optgroup label="Quick Select">
             <option
-              v-for="month in currentYearMonths"
-              :key="month.value"
-              :value="month.value"
-              :class="{ 'text-gray-500': isMonthClosed(month.value.split('-')[0], month.value.split('-')[1]) }"
-            >
-              {{ month.label }}
-            </option>
-            <option
-              v-for="month in priorYearMonths"
+              v-for="month in quickSelectMonths"
               :key="month.value"
               :value="month.value"
               :class="{ 'text-gray-500': isMonthClosed(month.value.split('-')[0], month.value.split('-')[1]) }"
@@ -477,39 +469,25 @@ function navigateToMonthSummary() {
 }
 
 function handleTransactionCreatedFromFab(event) {
-  transactions.value.unshift(event.detail);
+  void reloadCurrentFilterData();
 }
 
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-const currentYearMonths = computed(() => {
-  const today = new Date();
-  const currentYear = today.getFullYear();
-  const currentMonth = today.getMonth();
+const quickSelectMonths = computed(() => {
   const months = [];
+  const cursor = new Date();
+  cursor.setDate(1);
 
-  for (let i = 0; i <= currentMonth; i++) {
-    const monthStr = String(i + 1).padStart(2, '0');
+  for (let i = 0; i < 24; i += 1) {
+    const year = cursor.getFullYear();
+    const monthIndex = cursor.getMonth();
+    const monthNumber = monthIndex + 1;
     months.push({
-      label: `${monthNames[i]} ${currentYear}`,
-      value: `${currentYear}-${monthStr}`,
+      label: `${monthNames[monthIndex]} ${year}`,
+      value: `${year}-${String(monthNumber).padStart(2, '0')}`,
     });
-  }
-
-  return months;
-});
-
-const priorYearMonths = computed(() => {
-  const today = new Date();
-  const priorYear = today.getFullYear() - 1;
-  const months = [];
-
-  for (let i = 0; i < 12; i++) {
-    const monthStr = String(i + 1).padStart(2, '0');
-    months.push({
-      label: `${monthNames[i]} ${priorYear}`,
-      value: `${priorYear}-${monthStr}`,
-    });
+    cursor.setMonth(cursor.getMonth() - 1);
   }
 
   return months;
@@ -892,7 +870,7 @@ function getTransactionById(id) {
 }
 
 async function handleTransactionCreated(transaction) {
-  transactions.value.unshift(transaction);
+  await reloadCurrentFilterData();
   showForm.value = false;
 }
 
@@ -903,6 +881,21 @@ async function handleTransactionUpdated(transaction) {
   }
   showForm.value = false;
   editingTransactionId.value = null;
+}
+
+async function reloadCurrentFilterData() {
+  if (selectedMonthFilter.value && selectedMonthFilter.value !== 'custom') {
+    const [startDate, endDate] = getMonthDateRange(selectedMonthFilter.value);
+    await fetchData(startDate, endDate);
+    return;
+  }
+
+  if (customStartDate.value && customEndDate.value) {
+    await fetchData(customStartDate.value, customEndDate.value);
+    return;
+  }
+
+  await fetchData();
 }
 
 async function handleDeleteConfirm(transactionId) {

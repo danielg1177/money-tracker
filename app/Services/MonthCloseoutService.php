@@ -190,6 +190,7 @@ class MonthCloseoutService
             }
 
             $this->consolidatePendingSplitDebts($family, $year, $month);
+            $this->applyMonthlyDebtInterest($family, $year, $month);
 
             return MonthHardClose::query()->create([
                 'family_id' => $family->id,
@@ -535,5 +536,121 @@ class MonthCloseoutService
 
         $pendingDebtIds = $pendingDebts->pluck('id');
         Debt::query()->whereIn('id', $pendingDebtIds)->delete();
+    }
+
+    /**
+     * Apply one month of interest to eligible family debts at closeout month-end.
+     *
+     * Interest is accrued through the closed month's last day regardless of when
+     * users soft-close or hard-close in real time.
+     *
+     * @private
+     */
+    private function applyMonthlyDebtInterest(Family $family, int $year, int $month): void
+    {
+        $monthStart = Carbon::create($year, $month, 1)->startOfDay();
+        $monthEnd = Carbon::create($year, $month, 1)->endOfMonth()->startOfDay();
+        $monthEndString = $monthEnd->toDateString();
+
+        Debt::query()
+            ->where('family_id', $family->id)
+            ->where('is_pending_closeout', false)
+            ->where('interest_enabled', true)
+            ->where('balance', '>', 0)
+            ->whereNotNull('interest_rate')
+            ->where(function ($query) use ($monthEndString): void {
+                $query->whereNull('interest_last_applied_at')
+                    ->orWhere('interest_last_applied_at', '<', $monthEndString);
+            })
+            ->lockForUpdate()
+            ->get()
+            ->each(function (Debt $debt) use ($year, $month, $monthStart, $monthEnd, $monthEndString): void {
+                $periodStart = $monthStart->copy();
+                $loanReceivedDate = $debt->loan_received_date
+                    ? Carbon::parse($debt->loan_received_date)->startOfDay()
+                    : Carbon::parse($debt->created_at)->startOfDay();
+
+                if ($loanReceivedDate->greaterThan($periodStart)) {
+                    $periodStart = $loanReceivedDate->copy();
+                }
+
+                if ($debt->interest_last_applied_at) {
+                    $nextInterestDate = Carbon::parse($debt->interest_last_applied_at)->addDay()->startOfDay();
+                    if ($nextInterestDate->greaterThan($periodStart)) {
+                        $periodStart = $nextInterestDate->copy();
+                    }
+                }
+
+                if ($periodStart->greaterThan($monthEnd)) {
+                    $debt->update([
+                        'interest_last_applied_at' => $monthEndString,
+                    ]);
+
+                    return;
+                }
+
+                $paymentsByDate = Transaction::query()
+                    ->where('debt_id', $debt->id)
+                    ->where('type', 'expense')
+                    ->where('is_debt_payment', true)
+                    ->whereDate('transaction_date', '>=', $periodStart->toDateString())
+                    ->whereDate('transaction_date', '<=', $monthEnd->toDateString())
+                    ->selectRaw('DATE(transaction_date) as payment_date, SUM(amount) as payment_total')
+                    ->groupByRaw('DATE(transaction_date)')
+                    ->orderBy('payment_date')
+                    ->get();
+
+                $totalPayments = round((float) $paymentsByDate->sum('payment_total'), 2);
+                $runningBalance = round((float) $debt->balance + $totalPayments, 2);
+                $dailyRate = ((float) $debt->interest_rate / 100) / 365;
+                $interestAmount = 0.0;
+                $cursorDate = $periodStart->copy();
+
+                foreach ($paymentsByDate as $payment) {
+                    $paymentDate = Carbon::parse($payment->payment_date)->startOfDay();
+                    if ($paymentDate->lt($cursorDate)) {
+                        continue;
+                    }
+
+                    $days = $cursorDate->diffInDays($paymentDate);
+                    if ($days > 0 && $runningBalance > 0) {
+                        $interestAmount += $runningBalance * $dailyRate * $days;
+                    }
+
+                    $runningBalance = round(max(0, $runningBalance - (float) $payment->payment_total), 2);
+                    $cursorDate = $paymentDate->copy();
+                }
+
+                $endExclusive = $monthEnd->copy()->addDay();
+                $remainingDays = $cursorDate->diffInDays($endExclusive);
+                if ($remainingDays > 0 && $runningBalance > 0) {
+                    $interestAmount += $runningBalance * $dailyRate * $remainingDays;
+                }
+
+                $interestAmount = round($interestAmount, 2);
+
+                if ($interestAmount <= 0) {
+                    $debt->update([
+                        'interest_last_applied_at' => $monthEndString,
+                    ]);
+
+                    return;
+                }
+
+                $nextInterestAccruals = array_merge($debt->interest_accruals ?? [], [[
+                    'year' => $year,
+                    'month' => $month,
+                    'amount' => $interestAmount,
+                    'applied_at' => $monthEndString,
+                    'period_start' => $periodStart->toDateString(),
+                    'period_end' => $monthEndString,
+                ]]);
+
+                $debt->update([
+                    'balance' => round((float) $debt->balance + $interestAmount, 2),
+                    'interest_last_applied_at' => $monthEndString,
+                    'interest_accruals' => $nextInterestAccruals,
+                ]);
+            });
     }
 }

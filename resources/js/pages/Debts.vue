@@ -108,6 +108,12 @@
             <p v-if="debt.description" class="text-xs text-gray-500 mb-3">
               {{ debt.description }}
             </p>
+            <p v-if="debt.interest_enabled && debt.interest_rate !== null" class="text-xs text-amber-400 mb-3">
+              Interest: {{ Number(debt.interest_rate).toFixed(2) }}% APR
+            </p>
+            <p v-if="debt.loan_received_date" class="text-xs text-gray-500 mb-3">
+              Loan received: {{ new Date(debt.loan_received_date).toLocaleDateString('en-US') }}
+            </p>
 
             <!-- Pay / Settled + History + Edit -->
             <div class="flex gap-2">
@@ -208,6 +214,12 @@
             <!-- Description -->
             <p v-if="debt.description" class="text-xs text-gray-500 mb-3">
               {{ debt.description }}
+            </p>
+            <p v-if="debt.interest_enabled && debt.interest_rate !== null" class="text-xs text-amber-400 mb-3">
+              Interest: {{ Number(debt.interest_rate).toFixed(2) }}% APR
+            </p>
+            <p v-if="debt.loan_received_date" class="text-xs text-gray-500 mb-3">
+              Loan received: {{ new Date(debt.loan_received_date).toLocaleDateString('en-US') }}
             </p>
 
             <!-- Pay / Settled + History + Edit -->
@@ -383,6 +395,48 @@
               class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 resize-none"
               rows="3"
             />
+
+            <div class="space-y-3 rounded-lg border border-gray-700 bg-gray-800/40 p-3">
+              <div class="flex items-center justify-between">
+                <label class="text-sm font-medium text-gray-300">Apply monthly interest at closeout</label>
+                <button
+                  type="button"
+                  @click="addDebtForm.interest_enabled = !addDebtForm.interest_enabled"
+                  :class="[
+                    'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200',
+                    addDebtForm.interest_enabled ? 'bg-amber-600' : 'bg-gray-600'
+                  ]"
+                >
+                  <span
+                    :class="[
+                      'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200',
+                      addDebtForm.interest_enabled ? 'translate-x-5' : 'translate-x-0'
+                    ]"
+                  />
+                </button>
+              </div>
+              <div v-if="addDebtForm.interest_enabled">
+                <label class="block text-sm font-medium text-gray-300 mb-2">Annual Interest Rate (APR %)</label>
+                <input
+                  v-model.number="addDebtForm.interest_rate"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-amber-500"
+                  placeholder="e.g. 12.50"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-2">Loan Received Date (optional)</label>
+              <input
+                v-model="addDebtForm.loan_received_date"
+                type="date"
+                class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
 
             <!-- Error -->
             <div v-if="addDebtError" class="p-3 bg-red-900/20 border border-red-700/50 rounded-lg">
@@ -605,12 +659,14 @@
               <div v-if="debtPayments.length > 0" class="space-y-2" :class="{ 'mt-4': historyDebt.contributions && historyDebt.contributions.length > 0 }">
                 <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Payments</p>
                 <div
-                  v-for="payment in debtPayments"
-                  :key="payment.id"
+                  v-for="(payment, index) in debtPayments"
+                  :key="payment.id ?? `${payment.type}-${payment.transaction_date}-${index}`"
                   :class="[
                     'bg-gray-800 border rounded-lg p-3',
                     payment.type === 'initial_value'
                       ? 'border-blue-700/50 bg-blue-900/20'
+                      : payment.type === 'interest_accrual'
+                        ? 'border-amber-700/50 bg-amber-900/20'
                       : 'border-gray-700'
                   ]"
                 >
@@ -623,6 +679,12 @@
                           class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/30 text-blue-300 border border-blue-700/50"
                         >
                           Initial Value Set At
+                        </span>
+                        <span
+                          v-else-if="payment.type === 'interest_accrual'"
+                          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-900/30 text-amber-300 border border-amber-700/50"
+                        >
+                          Monthly Interest Accrued
                         </span>
                         <!-- Regular payment description -->
                         <p v-else class="text-sm font-medium text-white">{{ payment.description || 'Debt payment' }}</p>
@@ -647,10 +709,12 @@
                       :class="
                         payment.type === 'initial_value'
                           ? 'text-blue-400'
+                          : payment.type === 'interest_accrual'
+                            ? 'text-amber-400'
                           : (payment.type === 'income' ? 'text-green-400' : 'text-red-400')
                       "
                     >
-                      {{ payment.type === 'income' ? '+' : '' }}{{ formatCurrency(payment.amount) }}
+                      {{ payment.type === 'income' || payment.type === 'interest_accrual' ? '+' : '' }}{{ formatCurrency(payment.amount) }}
                     </p>
                   </div>
                 </div>
@@ -703,6 +767,46 @@
                 placeholder="Description (optional)"
                 class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 resize-none"
                 rows="3"
+              />
+            </div>
+            <div class="space-y-3 rounded-lg border border-gray-700 bg-gray-800/40 p-3">
+              <div class="flex items-center justify-between">
+                <label class="text-sm font-medium text-gray-300">Apply monthly interest at closeout</label>
+                <button
+                  type="button"
+                  @click="editDebtForm.interest_enabled = !editDebtForm.interest_enabled"
+                  :class="[
+                    'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200',
+                    editDebtForm.interest_enabled ? 'bg-amber-600' : 'bg-gray-600'
+                  ]"
+                >
+                  <span
+                    :class="[
+                      'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200',
+                      editDebtForm.interest_enabled ? 'translate-x-5' : 'translate-x-0'
+                    ]"
+                  />
+                </button>
+              </div>
+              <div v-if="editDebtForm.interest_enabled">
+                <label class="block text-sm font-medium text-gray-300 mb-2">Annual Interest Rate (APR %)</label>
+                <input
+                  v-model.number="editDebtForm.interest_rate"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-amber-500"
+                  placeholder="e.g. 12.50"
+                />
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-2">Loan Received Date (optional)</label>
+              <input
+                v-model="editDebtForm.loan_received_date"
+                type="date"
+                class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
               />
             </div>
             <div v-if="editDebtError" class="p-3 bg-red-900/20 border border-red-700/50 rounded-lg">
@@ -758,7 +862,13 @@ const debtPayments = ref([]);
 const historyLoading = ref(false);
 const showEditDebtModal = ref(false);
 const editingDebt = ref(null);
-const editDebtForm = ref({ description: '', creditor_name: '' });
+const editDebtForm = ref({
+  description: '',
+  creditor_name: '',
+  interest_enabled: false,
+  interest_rate: 0,
+  loan_received_date: '',
+});
 const editDebtLoading = ref(false);
 const editDebtError = ref(null);
 
@@ -774,6 +884,9 @@ const addDebtForm = ref({
   creditor_name: '',
   amount: null,
   description: '',
+  interest_enabled: false,
+  interest_rate: 0,
+  loan_received_date: '',
 });
 
 const payForm = ref({
@@ -828,11 +941,22 @@ function isAddDebtFormValid() {
   if (!addDebtForm.value.amount || addDebtForm.value.amount <= 0) {
     return false;
   }
+
   if (addDebtForm.value.is_interfamily) {
-    return !!addDebtForm.value.creditor_id;
-  } else {
-    return !!addDebtForm.value.creditor_name;
+    if (!addDebtForm.value.creditor_id) {
+      return false;
+    }
+  } else if (!addDebtForm.value.creditor_name) {
+    return false;
   }
+
+  if (addDebtForm.value.interest_enabled) {
+    const rate = Number(addDebtForm.value.interest_rate);
+
+    return Number.isFinite(rate) && rate >= 0 && rate <= 100;
+  }
+
+  return true;
 }
 
 function openPayModal(debt) {
@@ -899,6 +1023,9 @@ async function submitAddDebt() {
       is_interfamily: addDebtForm.value.is_interfamily,
       amount: addDebtForm.value.amount,
       description: addDebtForm.value.description,
+      interest_enabled: addDebtForm.value.interest_enabled,
+      interest_rate: addDebtForm.value.interest_enabled ? addDebtForm.value.interest_rate : null,
+      loan_received_date: addDebtForm.value.loan_received_date || null,
     };
 
     if (addDebtForm.value.is_interfamily) {
@@ -916,6 +1043,9 @@ async function submitAddDebt() {
       creditor_name: '',
       amount: null,
       description: '',
+      interest_enabled: false,
+      interest_rate: 0,
+      loan_received_date: '',
     };
     await fetchDebts();
   } catch (err) {
@@ -954,6 +1084,9 @@ function openEditDebtModal(debt) {
   editDebtForm.value = {
     description: debt.description || '',
     creditor_name: debt.creditor_name || '',
+    interest_enabled: !!debt.interest_enabled,
+    interest_rate: debt.interest_rate !== null ? Number(debt.interest_rate) : 0,
+    loan_received_date: debt.loan_received_date || '',
   };
   editDebtError.value = null;
   showEditDebtModal.value = true;
@@ -967,6 +1100,9 @@ async function submitEditDebt() {
     await put(`/debts/${editingDebt.value.id}`, {
       description: editDebtForm.value.description,
       creditor_name: editDebtForm.value.creditor_name,
+      interest_enabled: editDebtForm.value.interest_enabled,
+      interest_rate: editDebtForm.value.interest_enabled ? editDebtForm.value.interest_rate : null,
+      loan_received_date: editDebtForm.value.loan_received_date || null,
     });
     showEditDebtModal.value = false;
     await fetchDebts();

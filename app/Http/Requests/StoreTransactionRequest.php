@@ -36,6 +36,8 @@ class StoreTransactionRequest extends FormRequest
                 'income_new_creditor_id' => null,
                 'income_new_creditor_name' => null,
                 'income_new_description' => null,
+                'income_new_interest_enabled' => false,
+                'income_new_interest_rate' => null,
             ]);
         }
 
@@ -53,6 +55,8 @@ class StoreTransactionRequest extends FormRequest
                 'income_new_is_interfamily' => false,
                 'income_new_creditor_id' => null,
                 'income_new_creditor_name' => null,
+                'income_new_interest_enabled' => false,
+                'income_new_interest_rate' => null,
             ]);
         }
 
@@ -63,6 +67,8 @@ class StoreTransactionRequest extends FormRequest
                 'income_new_creditor_id' => null,
                 'income_new_creditor_name' => null,
                 'income_new_description' => null,
+                'income_new_interest_enabled' => false,
+                'income_new_interest_rate' => null,
             ]);
         }
     }
@@ -189,6 +195,13 @@ class StoreTransactionRequest extends FormRequest
             if (! $this->filled('income_new_creditor_name')) {
                 $v->errors()->add('income_new_creditor_name', 'Creditor name is required when not selecting a family member.');
             }
+
+            if ($this->boolean('income_new_interest_enabled')) {
+                $interestRate = $this->input('income_new_interest_rate');
+                if (! is_numeric($interestRate) || (float) $interestRate < 0 || (float) $interestRate > 100) {
+                    $v->errors()->add('income_new_interest_rate', 'Interest rate must be between 0 and 100.');
+                }
+            }
         });
     }
 
@@ -219,6 +232,8 @@ class StoreTransactionRequest extends FormRequest
             'income_new_creditor_id' => ['nullable', 'integer', 'exists:users,id'],
             'income_new_creditor_name' => ['nullable', 'string', 'max:255'],
             'income_new_description' => ['nullable', 'string'],
+            'income_new_interest_enabled' => ['nullable', 'boolean'],
+            'income_new_interest_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ];
     }
 
