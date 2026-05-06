@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-06 — Align fund allocation tests with closeout behavior
+
+- Files touched: `tests/Feature/FundAllocationTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `FundAllocationTest` no longer expects immediate `FundRule` allocation when creating income transactions. The two income-path tests now assert no fund balance changes or `fund_movements` rows are created at transaction create time, matching current behavior where allocation happens at month hard-close.
+
 ## 2026-05-06 — Bank account balance tracking
 
 - Files touched: `database/migrations/..._add_bank_balance_to_users_table.php`, `database/migrations/..._add_completion_to_closeout_title_savings_table.php`, `app/Models/User.php`, `app/Models/CloseoutTitleSaving.php`, `app/Http/Requests/UpdateBankBalanceRequest.php`, `app/Http/Controllers/BankBalanceController.php`, `app/Http/Controllers/MonthSummaryController.php`, `routes/web.php`, `resources/js/pages/Dashboard.vue`, `resources/js/pages/MonthSummary.vue`
@@ -681,6 +686,35 @@ Format:
   - Constructor is now empty and removed per project rules (no empty public zero-param constructors)
   - Split debts now created with `is_pending_closeout => true` flag in both `createTransaction()` and `updateTransaction()` methods
   - All existing transaction tests pass (6 tests, 11 assertions)
+
+## 2026-05-06 — Financial integrity test suite (5 complex multi-month tests)
+- Files touched: `tests/Feature/FinancialIntegrityTest.php` (new)
+- Added `FinancialIntegrityTest` with 5 end-to-end scenario tests covering all major features
+  across realistic multi-month time spans with real-world dollar amounts (107 assertions total):
+  1. **Split expense → pending debt → hard-close → debt payment with bank balance accuracy**:
+     Two-member family; Alice earns salary, pays a 50/50 split dinner, Bob cannot pay the
+     pending debt before closeout, hard-close consolidates it, Bob pays in February; Alice's
+     computed bank balance matches the exact transaction sum at every checkpoint.
+  2. **Single-member fund allocation, advance settlement, and title savings bank balance**:
+     Sarah earns $5,000, spends on medical (advance-tagged) and groceries, soft-closes
+     (auto hard-close); Emergency Savings receives 10% rule allocation then is decremented
+     by advance settlement; a title saving is created but only reduces the bank balance once
+     marked complete — verifying fund allocations do NOT create phantom income/expense.
+  3. **Three-member family split netting accumulates across two month closeouts**:
+     Alice, Bob, and Carol each pay shared bills across February and March; the netting
+     algorithm correctly combines opposing pending debts per person-pair; Carol's confirmed
+     debt grows from $90 to $165 across two closes; Alice pays her net $10 to Bob.
+  4. **Fund borrow and repayment bank balance integrity**:
+     John borrows $500 from Emergency Fund (income +$500, fund −$500), spends $300,
+     repays $200 (expense −$200, fund +$200); final bank balance returns exactly to
+     the original anchor — no drift at any intermediate step.
+  5. **Complete two-month household simulation (all major features)**:
+     Sarah and Mike; Emergency Savings with advance-tagged groceries category; closeout
+     rules for fund allocation and title saving; split expenses across electricity and
+     internet bills; hard-close nets the split debts; Mike pays Sarah the $8 net debt
+     in April; Sarah marks title saving complete; final computed balance $11,338 matches
+     real-world arithmetic: $5,000 + $7,000 earned + $8 received − $370 spent − $300 transferred.
+- Behavioral impact: Tests only — no production code changed. All 5 tests pass (107 assertions).
 
 ## 2026-05-03 — Month closeout system foundation (migrations & models)
 - Files touched: 

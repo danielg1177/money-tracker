@@ -47,7 +47,7 @@
 
 ### FundRule (`app/Models/FundRule.php`)
 - Fields: `user_id`, `fund_id`, `name`, `order` (int), `allocation_type` (`percentage`|`fixed`), `amount` (decimal:2), `allocation_base` (`gross_income`|`net_income`|`remaining`), `is_active` (bool)
-- Rules are processed in `order` ASC when income arrives; inactive rules are skipped
+- Rules are processed in `order` ASC during month hard-close processing; inactive rules are skipped
 - `net_income` base is tracked but **not independently reduced** by deductions — it equals `gross` unless manually managed (Needs verification: whether net differs from gross in current implementation)
 - Relations: `belongsTo(User)`, `belongsTo(Fund)`
 

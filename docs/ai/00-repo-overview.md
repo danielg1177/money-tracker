@@ -6,7 +6,7 @@
 
 - Record income and expense transactions shared across a family group
 - Split costs between family members (auto-generating inter-member debt records)
-- Manage personal savings "funds" with automatic allocation rules triggered on income, including optional starting balances
+- Manage personal savings "funds" with closeout-driven allocation rules and optional starting balances
 - Borrow from personal funds and track repayment
 - Mark expense transactions as advancing against (settling at month close against) a specific fund
 - Track debts owed between family members and record payments, including the initial value of the debt in history

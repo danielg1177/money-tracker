@@ -13,7 +13,7 @@ class FundAllocationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_income_triggers_fund_rule_allocation(): void
+    public function test_income_does_not_trigger_immediate_fund_rule_allocation(): void
     {
         $family = Family::factory()->create();
         $user = User::factory()->create(['family_id' => $family->id]);
@@ -39,17 +39,11 @@ class FundAllocationTest extends TestCase
         ])->assertStatus(201);
 
         $fund->refresh();
-        $this->assertEquals(100.00, $fund->balance);
-
-        $this->assertDatabaseHas('fund_movements', [
-            'fund_id' => $fund->id,
-            'user_id' => $user->id,
-            'type' => 'allocation',
-            'amount' => 100.00,
-        ]);
+        $this->assertEquals(0.00, $fund->balance);
+        $this->assertDatabaseCount('fund_movements', 0);
     }
 
-    public function test_remaining_base_respects_prior_allocations(): void
+    public function test_multiple_rules_do_not_allocate_on_income_creation(): void
     {
         $family = Family::factory()->create();
         $user = User::factory()->create(['family_id' => $family->id]);
@@ -89,8 +83,9 @@ class FundAllocationTest extends TestCase
         $fundA->refresh();
         $fundB->refresh();
 
-        $this->assertEquals(100.00, $fundA->balance);
-        $this->assertEquals(450.00, $fundB->balance);
+        $this->assertEquals(0.00, $fundA->balance);
+        $this->assertEquals(0.00, $fundB->balance);
+        $this->assertDatabaseCount('fund_movements', 0);
     }
 
     public function test_borrow_from_fund_creates_debt_and_reduces_balance(): void
