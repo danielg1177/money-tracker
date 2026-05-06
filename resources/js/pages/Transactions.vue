@@ -26,8 +26,8 @@
     </div>
 
     <!-- Filter Bar -->
-    <div class="bg-gray-900 border-b border-gray-800 px-4 py-3 space-y-3">
-      <div class="flex items-stretch gap-2">
+    <div class="bg-gray-900 border-b border-gray-800 px-4 py-3 space-y-3 min-w-0 max-w-full overflow-x-hidden">
+      <div class="flex min-w-0 items-stretch gap-2">
         <div
           v-if="currentMonthYear && selectedMonthFilter !== 'custom'"
           class="shrink-0 flex w-11 items-center justify-center rounded-lg border bg-gray-800"
@@ -96,27 +96,31 @@
         </button>
       </div>
 
-      <!-- Custom Date Range Inputs -->
-      <div v-if="selectedMonthFilter === 'custom'" class="flex gap-2 items-end">
-        <div class="flex-1">
+      <!-- Custom Date Range Inputs (stack on narrow screens so native date inputs do not overflow) -->
+      <div
+        v-if="selectedMonthFilter === 'custom'"
+        class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:gap-2"
+      >
+        <div class="min-w-0 w-full flex-1 sm:min-w-0">
           <label class="block text-xs text-gray-400 mb-1">From</label>
           <input
             v-model="customStartDate"
             type="date"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-blue-500"
+            class="w-full min-w-0 max-w-full bg-gray-800 border border-gray-700 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-blue-500"
           />
         </div>
-        <div class="flex-1">
+        <div class="min-w-0 w-full flex-1 sm:min-w-0">
           <label class="block text-xs text-gray-400 mb-1">To</label>
           <input
             v-model="customEndDate"
             type="date"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-blue-500"
+            class="w-full min-w-0 max-w-full bg-gray-800 border border-gray-700 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-blue-500"
           />
         </div>
         <button
+          type="button"
           @click="applyCustomRange"
-          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg font-medium transition-colors"
+          class="w-full shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg font-medium transition-colors sm:w-auto"
         >
           Apply
         </button>
@@ -340,8 +344,8 @@
           @click="showForm = false"
         />
         <!-- Modal -->
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[90vh] overflow-y-auto">
-          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
+          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex min-w-0 items-center justify-between">
             <h2 class="text-xl font-bold text-white">{{ editingTransactionId ? 'Edit Transaction' : 'New Transaction' }}</h2>
             <button
               @click="handleFormClose"
@@ -353,7 +357,7 @@
             </button>
           </div>
 
-          <div class="p-4">
+          <div class="p-4 min-w-0 max-w-full">
             <TransactionForm
               v-if="showForm"
               :categories="categories"

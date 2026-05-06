@@ -22,6 +22,26 @@
         max-width: 100%;
         overflow-x: clip;
     }
+
+    /*
+     * Native date/datetime controls use a large intrinsic min-width on iOS Safari; without
+     * min-width: 0 + max-width they can overflow narrow viewports and flex rows.
+     */
+    input[type='date'],
+    input[type='datetime-local'],
+    input[type='month'],
+    input[type='time'] {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+    }
+
+    input[type='date']::-webkit-datetime-edit-fields-wrapper,
+    input[type='datetime-local']::-webkit-datetime-edit-fields-wrapper {
+        max-width: 100%;
+    }
 }
 
 /*

@@ -1,5 +1,5 @@
 <template>
-  <form @submit.prevent="handleSubmit" class="space-y-6 pb-4">
+  <form @submit.prevent="handleSubmit" class="min-w-0 max-w-full space-y-6 pb-4">
     <div
       v-if="isDebtPaymentIncomeEditBlocked"
       class="rounded-lg border border-amber-700/50 bg-amber-900/20 p-3 text-sm text-amber-200"
@@ -100,8 +100,8 @@
       />
     </div>
 
-    <!-- Date -->
-    <div>
+    <!-- Date (min-w-0: native date control has wide intrinsic width on iOS) -->
+    <div class="min-w-0 max-w-full">
       <label for="date" class="block text-sm font-medium text-gray-300 mb-2">
         Date
       </label>
@@ -111,7 +111,7 @@
         type="date"
         required
         :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
-        class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
+        class="w-full min-w-0 max-w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
       />
     </div>
 

@@ -269,8 +269,8 @@
     >
       <div v-if="showAddDebtModal" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/50" @click="showAddDebtModal = false" />
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
-          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex min-w-0 items-center justify-between">
             <h2 class="text-xl font-bold text-white">Add Debt</h2>
             <button @click="showAddDebtModal = false" class="text-gray-400 hover:text-white">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -278,7 +278,7 @@
               </svg>
             </button>
           </div>
-          <div class="p-4 space-y-4">
+          <div class="p-4 space-y-4 min-w-0 max-w-full">
             <!-- Debt Type Toggle -->
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-2">Debt Type</label>
@@ -431,12 +431,12 @@
               </div>
             </div>
 
-            <div>
+            <div class="min-w-0 max-w-full">
               <label class="block text-sm font-medium text-gray-300 mb-2">Loan Received Date (optional)</label>
               <input
                 v-model="addDebtForm.loan_received_date"
                 type="date"
-                class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                class="w-full min-w-0 max-w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
               />
             </div>
 
@@ -477,8 +477,8 @@
     >
       <div v-if="showPayModal && selectedDebt" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/50" @click="showPayModal = false" />
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
-          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex min-w-0 items-center justify-between">
             <h2 class="text-xl font-bold text-white">
               Pay: {{ selectedDebt.creditor?.name || selectedDebt.creditor_name }}
             </h2>
@@ -488,7 +488,7 @@
               </svg>
             </button>
           </div>
-          <div class="p-4 space-y-4">
+          <div class="p-4 space-y-4 min-w-0 max-w-full">
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-2">Amount Remaining</label>
               <p class="text-2xl font-bold text-red-400">{{ formatCurrency(selectedDebt.balance) }}</p>
@@ -521,12 +521,12 @@
               rows="3"
             />
 
-            <div>
+            <div class="min-w-0 max-w-full">
               <label class="block text-sm font-medium text-gray-300 mb-2">Payment Date</label>
               <input
                 v-model="payForm.transaction_date"
                 type="date"
-                class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                class="w-full min-w-0 max-w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
               />
             </div>
 
@@ -615,8 +615,8 @@
     >
       <div v-if="showHistoryModal && historyDebt" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/50" @click="showHistoryModal = false" />
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
-          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex min-w-0 items-center justify-between">
             <h2 class="text-xl font-bold text-white">
               Payment History
             </h2>
@@ -626,7 +626,7 @@
               </svg>
             </button>
           </div>
-          <div class="p-4 space-y-3">
+          <div class="p-4 space-y-3 min-w-0 max-w-full">
             <!-- Debt summary line -->
             <p class="text-sm text-gray-400">
               <span class="text-white font-medium">{{ formatCurrency(historyDebt.amount) }}</span> original,
@@ -762,8 +762,8 @@
     >
       <div v-if="showEditDebtModal && editingDebt" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/50" @click="showEditDebtModal = false" />
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
-          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex min-w-0 items-center justify-between">
             <h2 class="text-xl font-bold text-white">Edit Debt</h2>
             <button @click="showEditDebtModal = false" class="text-gray-400 hover:text-white">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -771,7 +771,7 @@
               </svg>
             </button>
           </div>
-          <div class="p-4 space-y-4">
+          <div class="p-4 space-y-4 min-w-0 max-w-full">
             <div v-if="!editingDebt.creditor_id">
               <label class="block text-sm font-medium text-gray-300 mb-2">Owed to (name)</label>
               <input
@@ -828,12 +828,12 @@
                 />
               </div>
             </div>
-            <div>
+            <div class="min-w-0 max-w-full">
               <label class="block text-sm font-medium text-gray-300 mb-2">Loan Received Date (optional)</label>
               <input
                 v-model="editDebtForm.loan_received_date"
                 type="date"
-                class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                class="w-full min-w-0 max-w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
               />
             </div>
             <div v-if="editDebtError" class="p-3 bg-red-900/20 border border-red-700/50 rounded-lg">

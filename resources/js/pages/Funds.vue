@@ -188,7 +188,7 @@
     >
       <div v-if="showNewFundForm" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/50" @click="showNewFundForm = false" />
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
             <h2 class="text-xl font-bold text-white">New Fund</h2>
             <button @click="showNewFundForm = false" class="text-gray-400 hover:text-white">
@@ -266,7 +266,7 @@
     >
       <div v-if="showEditFundModal && editingFund" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/50" @click="showEditFundModal = false" />
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
             <h2 class="text-xl font-bold text-white">Edit Fund</h2>
             <button @click="showEditFundModal = false" class="text-gray-400 hover:text-white">
@@ -319,7 +319,7 @@
     >
       <div v-if="showEditRuleModal && editingRule" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/50" @click="showEditRuleModal = false" />
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
             <h2 class="text-xl font-bold text-white">Edit Rule</h2>
             <button @click="showEditRuleModal = false" class="text-gray-400 hover:text-white">
@@ -407,7 +407,7 @@
     >
       <div v-if="showBorrowModal && selectedFund" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/50" @click="showBorrowModal = false" />
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
             <h2 class="text-xl font-bold text-white">Borrow from {{ selectedFund.name }}</h2>
             <button @click="showBorrowModal = false" class="text-gray-400 hover:text-white">
@@ -472,7 +472,7 @@
     >
       <div v-if="showFundHistoryModal && selectedFundForHistory" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/50" @click="showFundHistoryModal = false" />
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
             <div>
               <h2 class="text-xl font-bold text-white">{{ selectedFundForHistory.name }}</h2>

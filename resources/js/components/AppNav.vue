@@ -94,8 +94,8 @@
           @click="handleTransactionFormClose"
         />
         <!-- Modal -->
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto">
-          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between min-w-0">
             <h2 class="text-xl font-bold text-white">New Transaction</h2>
             <button
               @click="handleTransactionFormClose"
@@ -107,7 +107,7 @@
             </button>
           </div>
 
-          <div class="p-4">
+          <div class="p-4 min-w-0 max-w-full">
             <TransactionForm
               v-if="showTransactionForm"
               :categories="categories"
@@ -133,9 +133,9 @@
     >
       <div v-if="showUserMenu" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/50" @click="showUserMenu = false" />
-        <div class="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-2xl overflow-hidden">
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl overflow-hidden">
           <!-- Header -->
-          <div class="border-b border-gray-800 px-4 py-4 flex items-center justify-between">
+          <div class="border-b border-gray-800 px-4 py-4 flex min-w-0 items-center justify-between">
             <div>
               <p class="text-xs text-gray-500">Signed in as</p>
               <p class="text-base font-semibold text-white">{{ user?.name }}</p>

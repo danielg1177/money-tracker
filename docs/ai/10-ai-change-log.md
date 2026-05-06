@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-06 — Fix native date inputs overflowing viewport on mobile
+
+- Files touched: `resources/css/app.css`, `resources/js/components/TransactionForm.vue`, `resources/js/components/AppNav.vue`, `resources/js/pages/Transactions.vue`, `resources/js/pages/Debts.vue`, `resources/js/pages/Funds.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`input[type=date]`** (and related types) are constrained globally; transaction / debt / fund bottom sheets clip horizontal overflow; **Transactions** custom date range stacks vertically on narrow screens. Prevents the transaction **date** field from widening past the device width on iPhone.
+
 ## 2026-05-06 — Mobile numeric fields use inputmode for digit-first keypads
 
 - Files touched: `resources/js/support/mobileNumericInputAttrs.js` (new), `resources/js/components/TransactionForm.vue`, `resources/js/components/SplitEditor.vue`, `resources/js/components/App.vue`, `resources/js/pages/Dashboard.vue`, `resources/js/pages/CloseoutRules.vue`, `resources/js/pages/Funds.vue`, `resources/js/pages/Debts.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
