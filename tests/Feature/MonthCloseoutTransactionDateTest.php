@@ -906,6 +906,351 @@ class MonthCloseoutTransactionDateTest extends TestCase
         $this->assertCount(0, data_get($maySummary->json(), 'fund_movements.by_fund', []));
     }
 
+    public function test_preview_gross_percentage_rules_stop_after_remaining_is_exhausted(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 11, 20, 12, 0, 0));
+
+        $family = Family::factory()->create();
+        $alice = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'head_of_household',
+        ]);
+        $bob = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'member',
+        ]);
+
+        $fundA = Fund::factory()->create(['user_id' => $alice->id, 'name' => 'Fund A', 'balance' => 0]);
+        $fundB = Fund::factory()->create(['user_id' => $alice->id, 'name' => 'Fund B', 'balance' => 0]);
+        $fundC = Fund::factory()->create(['user_id' => $alice->id, 'name' => 'Fund C', 'balance' => 0]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'type' => 'income',
+            'amount' => 1000,
+            'description' => 'Pay',
+            'transaction_date' => '2026-11-01',
+            'is_split' => false,
+        ]);
+
+        $rule1 = FundRule::query()->create([
+            'user_id' => $alice->id,
+            'fund_id' => $fundA->id,
+            'name' => '60% to A',
+            'order' => 1,
+            'allocation_type' => 'percentage',
+            'amount' => 60,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'fund',
+            'destination_id' => $fundA->id,
+            'destination_title' => null,
+        ]);
+
+        $rule2 = FundRule::query()->create([
+            'user_id' => $alice->id,
+            'fund_id' => $fundB->id,
+            'name' => '60% to B',
+            'order' => 2,
+            'allocation_type' => 'percentage',
+            'amount' => 60,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'fund',
+            'destination_id' => $fundB->id,
+            'destination_title' => null,
+        ]);
+
+        $rule3 = FundRule::query()->create([
+            'user_id' => $alice->id,
+            'fund_id' => $fundC->id,
+            'name' => '10% to C',
+            'order' => 3,
+            'allocation_type' => 'percentage',
+            'amount' => 10,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'fund',
+            'destination_id' => $fundC->id,
+            'destination_title' => null,
+        ]);
+
+        $preview = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=11')->assertOk();
+        $rules = collect($preview->json('rule_preview.rules'));
+
+        $this->assertEqualsWithDelta(600.0, (float) $rules->firstWhere('rule_id', $rule1->id)['projected_amount'], 0.01);
+        $this->assertEqualsWithDelta(600.0, (float) $rules->firstWhere('rule_id', $rule2->id)['projected_amount'], 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) $rules->firstWhere('rule_id', $rule3->id)['projected_amount'], 0.01);
+        $this->assertEqualsWithDelta(1200.0, (float) $preview->json('rule_preview.basis.gross_allocations_total'), 0.01);
+
+        $this->actingAs($alice)->postJson('/closeout/soft-close', [
+            'year' => 2026,
+            'month' => 11,
+        ])->assertOk();
+        $this->actingAs($bob)->postJson('/closeout/soft-close', [
+            'year' => 2026,
+            'month' => 11,
+        ])->assertOk();
+        $this->actingAs($alice)->postJson('/closeout/hard-close', [
+            'year' => 2026,
+            'month' => 11,
+        ])->assertOk();
+
+        $fundA->refresh();
+        $fundB->refresh();
+        $fundC->refresh();
+
+        $this->assertEqualsWithDelta(600.0, (float) $fundA->balance, 0.01);
+        $this->assertEqualsWithDelta(600.0, (float) $fundB->balance, 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) $fundC->balance, 0.01);
+    }
+
+    public function test_preview_debt_rule_projected_amount_capped_at_debt_balance(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 12, 15, 12, 0, 0));
+
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $user->id,
+            'creditor_id' => null,
+            'creditor_name' => 'Credit Card',
+            'amount' => 100,
+            'balance' => 100,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'income',
+            'amount' => 2000,
+            'description' => 'Salary',
+            'transaction_date' => '2026-12-01',
+            'is_split' => false,
+        ]);
+
+        $rule = FundRule::query()->create([
+            'user_id' => $user->id,
+            'fund_id' => null,
+            'name' => 'Aggressive card paydown',
+            'order' => 1,
+            'allocation_type' => 'fixed',
+            'amount' => 1500,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'debt',
+            'destination_id' => $debt->id,
+            'destination_title' => null,
+        ]);
+
+        $preview = $this->actingAs($user)->getJson('/month-summary?year=2026&month=12')->assertOk();
+
+        $rows = collect($preview->json('rule_preview.rules'));
+        $ruleRow = $rows->firstWhere('rule_id', $rule->id);
+
+        $this->assertNotNull($ruleRow);
+        $this->assertEqualsWithDelta(1500.0, (float) $ruleRow['projected_amount'], 0.01);
+        $this->assertEqualsWithDelta(100.0, (float) $ruleRow['net_after_advances'], 0.01);
+        $this->assertEqualsWithDelta(100.0, (float) $preview->json('rule_preview.basis.gross_allocations_total'), 0.01);
+        $this->assertEqualsWithDelta(1900.0, (float) $preview->json('rule_preview.basis.remaining_after_expenses'), 0.01);
+
+        $this->actingAs($user)->postJson('/closeout/soft-close', [
+            'year' => 2026,
+            'month' => 12,
+        ])->assertOk();
+
+        $debt->refresh();
+
+        $this->assertEqualsWithDelta(0.0, (float) $debt->balance, 0.01);
+
+        $closeoutDebtPaymentQuery = Transaction::query()
+            ->where('user_id', $user->id)
+            ->where('debt_id', $debt->id)
+            ->where('is_closeout_initiated', true)
+            ->where('is_debt_payment', true);
+
+        $this->assertSame(1, $closeoutDebtPaymentQuery->count());
+        $this->assertEqualsWithDelta(100.0, (float) $closeoutDebtPaymentQuery->sum('amount'), 0.01);
+    }
+
+    public function test_category_totals_exclude_closeout_initiated_expenses_after_hard_close(): void
+    {
+        Carbon::setTestNow(Carbon::create(2027, 2, 14, 12, 0, 0));
+
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+
+        $regularCategory = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Groceries',
+            'is_income' => false,
+            'is_expense' => true,
+        ]);
+
+        $closeoutExpenseCategory = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Closeout ledger',
+            'is_income' => false,
+            'is_expense' => true,
+        ]);
+
+        $fund = Fund::factory()->create(['user_id' => $user->id, 'family_id' => null, 'balance' => 0]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'income',
+            'amount' => 3000,
+            'description' => 'Salary',
+            'transaction_date' => '2027-02-01',
+            'is_split' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'category_id' => $regularCategory->id,
+            'type' => 'expense',
+            'amount' => 500,
+            'description' => 'Shopping',
+            'transaction_date' => '2027-02-03',
+            'is_split' => false,
+            'is_debt_payment' => false,
+            'is_closeout_initiated' => false,
+        ]);
+
+        FundRule::query()->create([
+            'user_id' => $user->id,
+            'fund_id' => $fund->id,
+            'name' => 'Save to emergency',
+            'order' => 1,
+            'allocation_type' => 'fixed',
+            'amount' => 300,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'fund',
+            'destination_id' => $fund->id,
+            'destination_title' => null,
+            'closeout_expense_category_id' => $closeoutExpenseCategory->id,
+        ]);
+
+        $this->actingAs($user)->postJson('/closeout/soft-close', [
+            'year' => 2027,
+            'month' => 2,
+        ])->assertOk();
+
+        $this->assertDatabaseHas('transactions', [
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 300,
+            'category_id' => $closeoutExpenseCategory->id,
+            'is_closeout_initiated' => true,
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/month-summary?year=2027&month=2')->assertOk();
+
+        $expenseCategorySum = collect($response->json('category_totals'))
+            ->where('type', 'expense')
+            ->sum('total');
+
+        $this->assertEqualsWithDelta(500.0, (float) $expenseCategorySum, 0.01);
+        $this->assertEqualsWithDelta(500.0, (float) $response->json('rule_preview.basis.total_expenses'), 0.01);
+    }
+
+    public function test_allocate_to_title_does_not_overwrite_rule_id_when_two_rules_share_same_title(): void
+    {
+        Carbon::setTestNow(Carbon::create(2027, 4, 15, 12, 0, 0));
+
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+
+        $categoryA = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Category A',
+            'is_income' => false,
+            'is_expense' => true,
+        ]);
+        $categoryB = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Category B',
+            'is_income' => false,
+            'is_expense' => true,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'income',
+            'amount' => 5000,
+            'description' => 'Salary',
+            'transaction_date' => '2027-04-01',
+            'is_split' => false,
+        ]);
+
+        $ruleOne = FundRule::query()->create([
+            'user_id' => $user->id,
+            'fund_id' => null,
+            'name' => 'Title rule one',
+            'order' => 1,
+            'allocation_type' => 'fixed',
+            'amount' => 100,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'title',
+            'destination_id' => null,
+            'destination_title' => 'Shared Goal',
+            'closeout_expense_category_id' => $categoryA->id,
+        ]);
+
+        $ruleTwo = FundRule::query()->create([
+            'user_id' => $user->id,
+            'fund_id' => null,
+            'name' => 'Title rule two',
+            'order' => 2,
+            'allocation_type' => 'fixed',
+            'amount' => 50,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'title',
+            'destination_id' => null,
+            'destination_title' => 'Shared Goal',
+            'closeout_expense_category_id' => $categoryB->id,
+        ]);
+
+        $this->actingAs($user)->postJson('/closeout/soft-close', [
+            'year' => 2027,
+            'month' => 4,
+        ])->assertOk();
+
+        $titleSavings = CloseoutTitleSaving::query()
+            ->where('user_id', $user->id)
+            ->where('year', 2027)
+            ->where('month', 4)
+            ->where('title', 'Shared Goal')
+            ->get();
+
+        $this->assertCount(1, $titleSavings);
+        $this->assertEqualsWithDelta(150.0, (float) $titleSavings->first()->amount, 0.01);
+        $this->assertSame($ruleOne->id, (int) $titleSavings->first()->rule_id);
+
+        $titleSavingId = $titleSavings->first()->id;
+
+        $this->actingAs($user)->postJson("/title-savings/{$titleSavingId}/complete")->assertOk();
+
+        $completionTransactionId = (int) CloseoutTitleSaving::query()->whereKey($titleSavingId)->value('completion_transaction_id');
+        $this->assertNotSame(0, $completionTransactionId);
+
+        $this->assertDatabaseHas('transactions', [
+            'id' => $completionTransactionId,
+            'user_id' => $user->id,
+            'category_id' => $categoryA->id,
+            'is_closeout_initiated' => true,
+        ]);
+    }
+
     protected function tearDown(): void
     {
         Carbon::setTestNow();

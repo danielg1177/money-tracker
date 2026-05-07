@@ -487,7 +487,11 @@ class MonthCloseoutService
         ]);
 
         $titleSaving->amount = ($titleSaving->amount ?? 0) + $amount;
-        $titleSaving->rule_id = $rule->id;
+
+        if (! $titleSaving->exists) {
+            $titleSaving->rule_id = $rule->id;
+        }
+
         $titleSaving->save();
 
         return $amount;

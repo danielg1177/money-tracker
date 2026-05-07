@@ -42,13 +42,25 @@ For rules with `allocation_base='remaining'` and `allocation_type='percentage'`,
 For debts with `interest_enabled=true` and a configured `interest_rate`, hard-close applies interest using daily accrual (`APR / 365`) bounded by the closed month. In-month debt payments reduce interest from the payment date onward. `interest_last_applied_at` is set to the **closed month's last day**, so accrual timing remains tied to the closed month even if users close early/late in real time.
 
 ### Fund rules are not applied on income save
-`TransactionService::createTransaction` and `updateTransaction` do **not** call `FundService::processIncome`. Fund rules (`FundRule`) are applied during **month hard-close** (`MonthCloseoutService`), not when posting income. `tests/Feature/FundAllocationTest.php` still expects per-income allocation and **fails** until those tests are updated or `processIncome` is wired back in deliberately.
+`TransactionService::createTransaction` and `updateTransaction` do **not** call `FundService::processIncome`. Fund rules (`FundRule`) are applied during **month hard-close** (`MonthCloseoutService`), not when posting income. `tests/Feature/FundAllocationTest.php` **passes** and documents the current contract: posting income leaves fund balances and `fund_movements` unchanged (including when multiple active rules exist, e.g. gross-base plus remaining-base); the same file also covers **`POST /funds/{id}/borrow`** (creates debt, reduces balance) and insufficient-balance borrow validation.
 
 ### Transaction updates do not re-trigger fund allocation
 `TransactionService::updateTransaction` deletes and recreates splits and debts. Changing an income transaction's amount does not retroactively adjust fund balances through the transaction path.
 
 ### `net_income` allocation base behaves like `gross_income`
-In `FundService::processIncome`, `$net` is initialized to `$gross` and never updated by any deductions. The `net_income` allocation base is a planned feature that isn't meaningfully different from `gross_income` in the current code.
+In `MonthCloseoutService::processUserCloseoutRules`, `net_income` rules are fetched in the same gross-rule query as `gross_income` rules (both use `allocation_base != 'remaining'`). Both use the same `$grossIncome` value because no net deductions are computed. `FundService::processIncome` is not invoked during month close. There is still no separate net-income basis in closeout; `net_income` is a planned distinction only.
+
+### Debt repayment income/expense asymmetry is intentional (hybrid cash-flow model)
+The app uses a deliberate hybrid model for debt transactions:
+
+- **Debt payments made** (`type=expense, is_debt_payment=true`) **are included** in `calculateExpenseTotalTowardRemainingBasis` and therefore reduce the remaining pool available to savings rules. Rationale: the cash genuinely left the user's account and is no longer available for savings allocations.
+- **Debt repayments received** (`type=income, is_debt_payment=true`) **are excluded** from `grossIncome` in `processUserCloseoutRules` and `getRulePreview`. Rationale: receiving a repayment is not new earned income — it converts an existing receivable (money already owed to the user) back into cash. Triggering savings rules on it would effectively double-allocate money that was already accounted for.
+
+This is consistent with zero-based / YNAB-style budgeting: savings rules run on **earned income only**; debt obligations (manual payments or automated via closeout rules targeting a debt) are satisfied as cash-flow expenses before the remaining savings pool is calculated.
+
+**Bank balance** tracks both sides as real cash movements (received repayments increase the balance; payments decrease it). Only the **closeout savings rule basis** treats received repayments as non-income.
+
+**UI implication:** The income category panel and the "Gross Income" figure in Projected Closeout both exclude debt repayments received. The Month Summary "Debt Repayments" section is the authoritative display for those transactions.
 
 ### Session-based auth with CSRF (not API tokens)
 Fortify provides session authentication. This means the app cannot be used as a pure API backend without significant changes. The CSRF token is embedded in the Blade shell and sent with every Axios request.

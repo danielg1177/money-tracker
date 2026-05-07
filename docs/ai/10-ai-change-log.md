@@ -11,6 +11,51 @@ Format:
 
 ---
 
+## 2026-05-06 — Month summary viewer category_totals regressions (closeout-initiated expense + borrow income)
+
+- Files touched: `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **Tests only.** Finding 4–style: **`getCategoryTotals`** keeps solo expense **`category_totals`** excluding **`is_closeout_initiated`** through single-member hard-close; **`rule_preview.basis.total_expenses`** stays aligned. Finding 5–style: **`is_borrow`** income excluded from **`category_totals`** and **`rule_preview.basis.gross_income`**. Replaced **`test_income_category_totals_exclude_borrow_transactions`** with **`test_income_category_totals_exclude_is_borrow_transactions`**.
+
+## 2026-05-06 — Month summary preview vs hard-close: debt-rule nominal projection + consistency tests
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `tests/Feature/PreviewHardCloseConsistencyTest.php`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/00-repo-overview.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`getRulePreview`** keeps **`basis.gross_allocations_total`** and **`remaining_after_expenses`** aligned with **`MonthCloseoutService::allocateToDebt`** using **capped** paydowns while exposing **nominal** rule math in **`projected_amount`** for **`destination_type=debt`** (**`net_after_advances`** = capped paydown **`MonthSummary.vue`** still shows **`net`** via **`rulePreviewNet()`**, so UI dollars stay capped). New **`tests/Feature/PreviewHardCloseConsistencyTest.php`** guards preview basis vs single-member soft→auto-hard-close parity; existing debt preview assertion in **`MonthCloseoutTransactionDateTest`** updated.
+
+## 2026-05-06 — Docs: FundAllocationTest status + net_income closeout wording
+
+- Files touched: `docs/ai/09-known-decisions.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`, `tests/Feature/TransactionTest.php`
+- Behavioral impact: **No app runtime change.** AI docs now state that `tests/Feature/FundAllocationTest.php` **passes** and summarize what it asserts (no per-income allocation; borrow scenarios). The `net_income` decision documents `MonthCloseoutService::processUserCloseoutRules` and explicitly notes `FundService::processIncome` is not used on month close. Feature map fund-rules test row updated to match. **`test_income_transaction_can_create_new_debt`** now asserts the created `Debt` via the **Eloquent model** so `.env.testing` **SQLite** (boolean `1`, datetime `loan_received_date`) does not break `assertDatabaseHas` strict matching.
+
+## 2026-05-06 — Title closeout rules: unique active destination_title + stable CloseoutTitleSaving.rule_id
+
+- Files touched: `app/Http/Controllers/FundController.php`, `app/Services/MonthCloseoutService.php`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`POST`/`PUT /closeout-rules`** reject **`destination_title`** clashes for **two active `destination_type=title`** rules owned by the same user. **`allocateToTitle`** only assigns **`rule_id`** on **new** **`CloseoutTitleSaving`** rows (belt-and-suspenders if legacy duplicates exist), so **title completion** expenses use the **first** rule’s **`closeout_expense_category_id`**.
+
+## 2026-05-06 — Month summary income category totals omit fund borrows
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`category_totals`** viewer-income query **filters `is_borrow = false`**, so **Total income** matches **`rule_preview.basis.gross_income`** (borrows remain visible via **Fund In/Out**). **Month Summary** income note references borrows alongside debt repayments.
+
+## 2026-05-06 — Month summary category totals omit closeout-initiated solo expenses
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`GET /month-summary` `category_totals`** no longer sums **`is_closeout_initiated`** **solo** viewer expenses into **Your Expenses**, so **Total expenses** matches **`rule_preview.basis.total_expenses`** aside from categorized debt repayments merged into categories (unchanged). **Month Summary** copy directs users to Fund In/Out / Debt Repayments for hard-close ledger lines.
+
+## 2026-05-06 — Month summary preview: debt rules capped at debt balance
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`getRulePreview`** caps **`destination_type=debt`** **`projected_amount`** at the debt’s **current balance** (initial snapshot from **`whereIn`** on rule destination ids, then **running preview balances** across gross and remaining rules), aligning **`gross_allocations_total`**, **`remaining_after_expenses`**, and remaining-base previews with **`MonthCloseoutService::allocateToDebt`**.
+
+## 2026-05-06 — Month summary preview: gross percentage rules halt when gross pool exhausted
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`getRulePreview`** now mirrors **`MonthCloseoutService::processUserCloseoutRules`** gross-base iteration: processing stops once **`$grossRemaining <= 0`**, eliminating bogus positive percentages after the gross pool is used up. **`rule_preview.rules`** still lists skipped gross rules with **`projected_amount` 0** so ordering matches saved **`FundRule` order**.
+
+## 2026-05-06 — Month summary: Hard Close visibility uses can_manage_family
+
+- Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`MonthSummary.vue`** `canHardClose` now checks **`currentUser.can_manage_family`** instead of **`is_admin`**, so **head_of_household** users who are not admins see **Hard Close** when all members have soft-closed and the month is not hard-closed—aligned with **`MonthCloseoutController`**.
+
 ## 2026-05-06 — Closeout: gross fund rules net of advances for remaining pool (preview + hard close)
 
 - Files touched: `app/Services/MonthCloseoutService.php`, `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
@@ -953,6 +998,15 @@ Format:
   - Split edits on debt-payment expenses now recreate split rows and pending split debts to match edited split percentages and amount.
   - Transactions list now allows opening debt-payment **expense** rows for edit; debt-payment **income** mirror rows remain non-editable.
   - Updated feature coverage to assert debt-payment updates succeed and correctly update debt balance + mirror row fields.
+
+## 2026-05-06 — Document debt repayment income/expense model and fix Month Summary income prose
+- Files touched:
+  - `docs/ai/09-known-decisions.md`
+  - `resources/js/pages/MonthSummary.vue`
+- Behavioral impact:
+  - No logic changes — documentation and UI copy only.
+  - Added a new "Debt repayment income/expense asymmetry is intentional" section to `09-known-decisions.md` explaining the hybrid cash-flow/net-worth model: debt payments made reduce the closeout remaining pool (cash left the account); debt repayments received are excluded from gross income for closeout rules (not new earned income, just recovering a receivable). Also corrected the `net_income` allocation base entry to reference the actual code path (`MonthCloseoutService`, not `FundService::processIncome`).
+  - Updated the income section note in `MonthSummary.vue` to explain *why* received repayments are excluded from gross income, not just that they are.
 
 ## 2026-05-03 — Initial AI documentation set created
 - Files touched: `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/05-auth-permissions.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`

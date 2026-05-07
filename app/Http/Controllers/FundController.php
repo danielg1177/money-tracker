@@ -9,6 +9,7 @@ use App\Models\FundRule;
 use App\Services\FundService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 class FundController extends Controller
@@ -96,26 +97,7 @@ class FundController extends Controller
 
     public function storeRule(Request $request)
     {
-        $validated = $request->validate([
-            'fund_id' => 'nullable|exists:funds,id',
-            'name' => 'required|string|max:255',
-            'order' => 'required|integer|min:1',
-            'allocation_type' => ['required', Rule::in(['percentage', 'fixed'])],
-            'amount' => 'required|numeric|min:0',
-            'allocation_base' => ['nullable', Rule::in(['gross_income', 'net_income', 'remaining'])],
-            'is_active' => 'boolean',
-            'destination_type' => ['required', Rule::in(['fund', 'debt', 'title'])],
-            'destination_id' => 'nullable|integer',
-            'destination_title' => 'nullable|string|max:255|required_if:destination_type,title',
-            'closeout_expense_category_id' => [
-                'nullable',
-                'integer',
-                Rule::exists('categories', 'id')->where(function ($query): void {
-                    $query->where('family_id', auth()->user()->family_id)
-                        ->where('is_expense', true);
-                }),
-            ],
-        ]);
+        $validated = $this->validateFundRulePayload($request);
 
         return FundRule::create($validated + ['user_id' => auth()->id()]);
     }
@@ -126,26 +108,7 @@ class FundController extends Controller
             abort(403);
         }
 
-        $validated = $request->validate([
-            'fund_id' => 'nullable|exists:funds,id',
-            'name' => 'required|string|max:255',
-            'order' => 'required|integer|min:1',
-            'allocation_type' => ['required', Rule::in(['percentage', 'fixed'])],
-            'amount' => 'required|numeric|min:0',
-            'allocation_base' => ['nullable', Rule::in(['gross_income', 'net_income', 'remaining'])],
-            'is_active' => 'boolean',
-            'destination_type' => ['required', Rule::in(['fund', 'debt', 'title'])],
-            'destination_id' => 'nullable|integer',
-            'destination_title' => 'nullable|string|max:255|required_if:destination_type,title',
-            'closeout_expense_category_id' => [
-                'nullable',
-                'integer',
-                Rule::exists('categories', 'id')->where(function ($query): void {
-                    $query->where('family_id', auth()->user()->family_id)
-                        ->where('is_expense', true);
-                }),
-            ],
-        ]);
+        $validated = $this->validateFundRulePayload($request, $fundRule);
 
         $fundRule->update($validated);
 
@@ -211,5 +174,66 @@ class FundController extends Controller
         } catch (InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fundRulePayloadRules(): array
+    {
+        return [
+            'fund_id' => 'nullable|exists:funds,id',
+            'name' => 'required|string|max:255',
+            'order' => 'required|integer|min:1',
+            'allocation_type' => ['required', Rule::in(['percentage', 'fixed'])],
+            'amount' => 'required|numeric|min:0',
+            'allocation_base' => ['nullable', Rule::in(['gross_income', 'net_income', 'remaining'])],
+            'is_active' => 'boolean',
+            'destination_type' => ['required', Rule::in(['fund', 'debt', 'title'])],
+            'destination_id' => 'nullable|integer',
+            'destination_title' => 'nullable|string|max:255|required_if:destination_type,title',
+            'closeout_expense_category_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('categories', 'id')->where(function ($query): void {
+                    $query->where('family_id', auth()->user()->family_id)
+                        ->where('is_expense', true);
+                }),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validateFundRulePayload(Request $request, ?FundRule $existingRule = null): array
+    {
+        $validated = $request->validate($this->fundRulePayloadRules());
+
+        $isActive = array_key_exists('is_active', $validated)
+            ? (bool) $validated['is_active']
+            : ($existingRule?->is_active ?? true);
+
+        if (($validated['destination_type'] ?? null) === 'title' && $isActive) {
+            $title = (string) ($validated['destination_title'] ?? '');
+
+            $query = FundRule::query()
+                ->where('user_id', auth()->id())
+                ->where('destination_type', 'title')
+                ->where('is_active', true)
+                ->where('destination_title', $title);
+
+            if ($existingRule !== null) {
+                $query->whereKeyNot($existingRule->id);
+            }
+
+            if ($query->exists()) {
+                throw ValidationException::withMessages([
+                    'destination_title' => ['Another active closeout rule already uses this title.'],
+                ]);
+            }
+        }
+
+        return $validated;
     }
 }

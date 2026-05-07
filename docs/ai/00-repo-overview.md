@@ -62,7 +62,7 @@ money-tracker/
 │   ├── web.php                # All application routes (SPA views + JSON endpoints)
 │   └── console.php            # Artisan `inspire` command only
 ├── tests/
-│   ├── Feature/               # AdminUserManagementTest, CategoryTest, CloseoutRulesApiTest, DebtRepaymentTransactionTest, ExampleTest, FundAllocationTest, FundIndexTest, MonthCloseoutTransactionDateTest, SplitDebtSummaryTest, TransactionTest
+│   ├── Feature/               # AdminUserManagementTest, CategoryTest, CloseoutRulesApiTest, DebtRepaymentTransactionTest, ExampleTest, FinancialIntegrityTest, FundAllocationTest, FundIndexTest, MonthCloseoutTransactionDateTest, MonthSummaryViewerCategoryTotalsTest, PreviewHardCloseConsistencyTest, SplitDebtSummaryTest, TransactionTest
 │   └── Unit/                  # ExampleTest stub
 ├── config/                    # Standard Laravel config files + fortify.php
 ├── Caddyfile                  # FrankenPHP/Caddy runtime config (binds to `$PORT`, serves `/app/public`)

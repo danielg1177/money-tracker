@@ -337,6 +337,8 @@ class MonthSummaryController extends Controller
 
     /**
      * Fetch category totals for the month for the authenticated user only (split expenses use viewer split rows).
+     * Viewer incomes exclude **`is_borrow`** rows (fund borrow withdrawals use **`is_borrow`** and stay out of **`rule_preview.basis.gross_income`** — see fund movement / **Fund In/Out**).
+     * Non-split viewer expenses exclude **`is_closeout_initiated`** rows (they stay out of **`rule_preview.basis.total_expenses`** and are shown via fund/debt sections instead).
      * Tracked debt repayments with a **category_id** are merged into that expense category. Repayments with **no** category appear under a synthetic **Uncategorized Debt Payments** row ({@see self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID}).
      *
      * @return array<array{category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int, type: string}>
@@ -350,6 +352,7 @@ class MonthSummaryController extends Controller
             ->where('user_id', $viewer->id)
             ->where('type', 'income')
             ->where('is_debt_payment', false)
+            ->where('is_borrow', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->with('category')
@@ -372,6 +375,7 @@ class MonthSummaryController extends Controller
             ->where('type', 'expense')
             ->where('is_split', false)
             ->where('is_debt_payment', false)
+            ->where('is_closeout_initiated', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->with('category')
@@ -679,34 +683,53 @@ class MonthSummaryController extends Controller
             ->orderBy('order')
             ->get();
 
+        $previewDebtBalances = $this->previewDebtBalancesForRules($user, $grossRules, $remainingRules);
+
         $fundAdvanceRemaining = $this->monthCloseoutService->fundAdvanceOutstandingByFundForUserMonth($user, $year, $month);
 
         $grossRemaining = $grossIncome;
         $grossAllocationsTotal = 0;
         $ruleResults = [];
 
-        foreach ($grossRules as $rule) {
+        $grossRuleList = $grossRules->values()->all();
+        foreach ($grossRuleList as $grossRuleIndex => $rule) {
             if ($rule->allocation_type === 'percentage') {
-                $projectedAmount = round($grossIncome * $rule->amount / 100, 2);
+                $nominalGrossAllocation = round($grossIncome * $rule->amount / 100, 2);
             } else {
-                $projectedAmount = min((float) $rule->amount, $grossRemaining);
+                $nominalGrossAllocation = min((float) $rule->amount, $grossRemaining);
             }
 
-            $towardRemainingPool = $projectedAmount;
+            $appliedGrossAllocation = $this->applyDebtBalanceCapForRulePreview($rule, $nominalGrossAllocation, $previewDebtBalances);
+
+            $towardRemainingPool = $appliedGrossAllocation;
             if ($rule->destination_type === 'fund' && $rule->destination_id) {
                 $fundId = (int) $rule->destination_id;
                 if ($fundId > 0) {
                     $outstanding = (float) ($fundAdvanceRemaining[$fundId] ?? 0.0);
-                    $towardRemainingPool = max(0.0, $projectedAmount - $outstanding);
+                    $towardRemainingPool = max(0.0, $appliedGrossAllocation - $outstanding);
                 }
             }
 
-            if ($projectedAmount > 0) {
-                $grossRemaining -= $projectedAmount;
+            if ($appliedGrossAllocation > 0) {
+                $grossRemaining -= $appliedGrossAllocation;
                 $grossAllocationsTotal += $towardRemainingPool;
             }
 
-            $this->pushRulePreviewResult($ruleResults, $fundAdvanceRemaining, $rule, $projectedAmount);
+            $this->pushRulePreviewResult(
+                $ruleResults,
+                $fundAdvanceRemaining,
+                $rule,
+                $appliedGrossAllocation,
+                ($rule->destination_type === 'debt') ? $nominalGrossAllocation : null,
+            );
+
+            if ($grossRemaining <= 0) {
+                foreach (array_slice($grossRuleList, $grossRuleIndex + 1) as $remainingGrossRule) {
+                    $this->pushRulePreviewResult($ruleResults, $fundAdvanceRemaining, $remainingGrossRule, 0.0);
+                }
+
+                break;
+            }
         }
 
         $remainingBasePool = max(0, $grossIncome - $grossAllocationsTotal - $totalExpenses);
@@ -714,17 +737,25 @@ class MonthSummaryController extends Controller
 
         foreach ($remainingRules as $rule) {
             if ($rule->allocation_type === 'percentage') {
-                $projectedAmount = round($remainingBasePool * $rule->amount / 100, 2);
-                $projectedAmount = min($projectedAmount, $remainingAvailablePool);
+                $nominalRemainingAllocation = round($remainingBasePool * $rule->amount / 100, 2);
+                $nominalRemainingAllocation = min($nominalRemainingAllocation, $remainingAvailablePool);
             } else {
-                $projectedAmount = min((float) $rule->amount, $remainingAvailablePool);
+                $nominalRemainingAllocation = min((float) $rule->amount, $remainingAvailablePool);
             }
 
-            if ($projectedAmount > 0) {
-                $remainingAvailablePool -= $projectedAmount;
+            $appliedRemainingAllocation = $this->applyDebtBalanceCapForRulePreview($rule, $nominalRemainingAllocation, $previewDebtBalances);
+
+            if ($appliedRemainingAllocation > 0) {
+                $remainingAvailablePool -= $appliedRemainingAllocation;
             }
 
-            $this->pushRulePreviewResult($ruleResults, $fundAdvanceRemaining, $rule, $projectedAmount);
+            $this->pushRulePreviewResult(
+                $ruleResults,
+                $fundAdvanceRemaining,
+                $rule,
+                $appliedRemainingAllocation,
+                ($rule->destination_type === 'debt') ? $nominalRemainingAllocation : null,
+            );
         }
 
         $rawRemaining = round($grossIncome - $grossAllocationsTotal - $totalExpenses, 2);
@@ -744,26 +775,93 @@ class MonthSummaryController extends Controller
     }
 
     /**
-     * @param  array<int, float>  $fundAdvanceRemaining
+     * Snapshot of debt balances for closeout preview, decremented across gross then remaining rules
+     * so multiple rules targeting the same debt match {@see MonthCloseoutService::allocateToDebt()} order.
+     *
+     * @param  iterable<int, FundRule>  $grossRules
+     * @param  iterable<int, FundRule>  $remainingRules
+     * @return array<int, float>
      */
-    private function pushRulePreviewResult(array &$ruleResults, array &$fundAdvanceRemaining, FundRule $rule, float $projectedAmount): void
+    private function previewDebtBalancesForRules(object $user, iterable $grossRules, iterable $remainingRules): array
     {
+        $merged = collect($grossRules)->merge(collect($remainingRules));
+        $debtDestinationIds = $merged
+            ->where('destination_type', 'debt')
+            ->pluck('destination_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($debtDestinationIds === []) {
+            return [];
+        }
+
+        $debts = Debt::query()
+            ->where('family_id', $user->family_id)
+            ->whereIn('id', $debtDestinationIds)
+            ->get()
+            ->keyBy('id');
+
+        $balances = [];
+
+        foreach ($debtDestinationIds as $debtId) {
+            $debt = $debts->get($debtId);
+            $balances[$debtId] = ($debt && (float) $debt->balance > 0) ? (float) $debt->balance : 0.0;
+        }
+
+        return $balances;
+    }
+
+    /**
+     * Cap rule output at remaining preview debt balance (same principle as allocateToDebt) and decrement the preview balance.
+     *
+     * @param  array<int, float>  $previewDebtBalances
+     */
+    private function applyDebtBalanceCapForRulePreview(FundRule $rule, float $projectedAmount, array &$previewDebtBalances): float
+    {
+        if ($rule->destination_type !== 'debt' || ! $rule->destination_id) {
+            return $projectedAmount;
+        }
+
+        $debtId = (int) $rule->destination_id;
+        $available = max(0.0, $previewDebtBalances[$debtId] ?? 0.0);
+        $applied = min($projectedAmount, $available);
+        $previewDebtBalances[$debtId] = max(0.0, $available - $applied);
+
+        return $applied;
+    }
+
+    /**
+     * @param  array<int, float>  $fundAdvanceRemaining
+     * @param  ?float  $debtNominalDisplayed  When set (debt destinations), **`projected_amount`** shows the nominal rule math before the debt-balance cap; **`net_after_advances`** carries the capped amount applied to the debt, matching **`MonthCloseoutService::allocateToDebt`** ledger behavior while keeping basis totals aligned.
+     */
+    private function pushRulePreviewResult(
+        array &$ruleResults,
+        array &$fundAdvanceRemaining,
+        FundRule $rule,
+        float $allocationAmountApplied,
+        ?float $debtNominalDisplayed = null,
+    ): void {
+        $previewProjected = $debtNominalDisplayed ?? $allocationAmountApplied;
+
         $outstandingBeforeRounded = 0.0;
-        $netRounded = round($projectedAmount, 2);
+        $netRounded = round($allocationAmountApplied, 2);
 
         if ($rule->destination_type === 'fund' && $rule->destination_id) {
             $fundId = (int) $rule->destination_id;
             if ($fundId > 0) {
                 $outstandingBefore = (float) ($fundAdvanceRemaining[$fundId] ?? 0.0);
-                $netRounded = round($projectedAmount - $outstandingBefore, 2);
+                $netRounded = round($allocationAmountApplied - $outstandingBefore, 2);
                 $outstandingBeforeRounded = round($outstandingBefore, 2);
-                $fundAdvanceRemaining[$fundId] = max(0.0, $outstandingBefore - $projectedAmount);
+                $fundAdvanceRemaining[$fundId] = max(0.0, $outstandingBefore - $allocationAmountApplied);
             }
         }
 
         $ruleResults[] = $this->formatRuleForPreview(
             $rule,
-            $projectedAmount,
+            $previewProjected,
             $outstandingBeforeRounded,
             $netRounded,
         );
@@ -771,6 +869,8 @@ class MonthSummaryController extends Controller
 
     /**
      * Format a rule result for preview output.
+     *
+     * For debt destinations, projected_amount reflects nominal rule allocation (before debt-balance cap) and net_after_advances carries the capped payoff.
      *
      * @return array{rule_id: int, rule_name: string, order: int, allocation_type: string, amount: float, allocation_base: string, destination_type: string, destination_name: string, projected_amount: float, fund_advance_outstanding_before: float, net_after_advances: float, is_active: bool}
      */

@@ -5,8 +5,11 @@ namespace Tests\Feature;
 use App\Models\Category;
 use App\Models\Debt;
 use App\Models\Family;
+use App\Models\Fund;
+use App\Models\FundRule;
 use App\Models\Transaction;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -252,5 +255,164 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
         $this->assertNotNull($synthetic);
         $this->assertSame(-1, $synthetic['category_id']);
         $this->assertEqualsWithDelta(75.0, (float) $synthetic['total'], 0.001);
+    }
+
+    public function test_category_totals_solo_expense_query_excludes_closeout_initiated_rows(): void
+    {
+        Carbon::setTestNow(Carbon::create(2028, 5, 14, 12, 0, 0));
+
+        try {
+            $family = Family::factory()->create();
+            $user = User::factory()->create(['family_id' => $family->id]);
+
+            $salaryCategory = Category::factory()->create([
+                'family_id' => $family->id,
+                'name' => 'Salary',
+                'is_income' => true,
+                'is_expense' => false,
+            ]);
+
+            $regularExpenseCategory = Category::factory()->create([
+                'family_id' => $family->id,
+                'name' => 'Weekly spend',
+                'is_expense' => true,
+                'is_income' => false,
+            ]);
+
+            $closeoutExpenseCategory = Category::factory()->create([
+                'family_id' => $family->id,
+                'name' => 'Closeout ledger',
+                'is_expense' => true,
+                'is_income' => false,
+            ]);
+
+            Transaction::query()->create([
+                'family_id' => $family->id,
+                'user_id' => $user->id,
+                'category_id' => $salaryCategory->id,
+                'type' => 'income',
+                'amount' => 3000,
+                'description' => 'Pay',
+                'transaction_date' => '2028-05-02',
+                'is_split' => false,
+                'is_debt_payment' => false,
+                'is_borrow' => false,
+            ]);
+
+            Transaction::query()->create([
+                'family_id' => $family->id,
+                'user_id' => $user->id,
+                'category_id' => $regularExpenseCategory->id,
+                'type' => 'expense',
+                'amount' => 500,
+                'description' => 'Groceries',
+                'transaction_date' => '2028-05-06',
+                'is_split' => false,
+                'is_debt_payment' => false,
+                'is_closeout_initiated' => false,
+            ]);
+
+            $fundA = Fund::factory()->create([
+                'user_id' => $user->id,
+                'family_id' => null,
+                'balance' => 0,
+            ]);
+
+            FundRule::query()->create([
+                'user_id' => $user->id,
+                'fund_id' => $fundA->id,
+                'name' => 'Emergency top-up',
+                'order' => 1,
+                'allocation_type' => 'fixed',
+                'amount' => 300,
+                'allocation_base' => 'gross_income',
+                'is_active' => true,
+                'destination_type' => 'fund',
+                'destination_id' => $fundA->id,
+                'destination_title' => null,
+                'closeout_expense_category_id' => $closeoutExpenseCategory->id,
+            ]);
+
+            $assertExpenseBasis = function () use ($user): void {
+                $response = $this->actingAs($user)->getJson('/month-summary?year=2028&month=5')->assertOk();
+                $expenseSum = collect($response->json('category_totals'))
+                    ->where('type', 'expense')
+                    ->sum('total');
+                $this->assertEqualsWithDelta(500.0, (float) $expenseSum, 0.01);
+                $this->assertEqualsWithDelta(500.0, (float) $response->json('rule_preview.basis.total_expenses'), 0.01);
+            };
+
+            $assertExpenseBasis();
+
+            $closeResponse = $this->actingAs($user)->postJson('/closeout/soft-close', [
+                'year' => 2028,
+                'month' => 5,
+            ])->assertOk();
+            $this->assertTrue($closeResponse->json('auto_hard_closed'));
+
+            $this->assertDatabaseHas('transactions', [
+                'user_id' => $user->id,
+                'type' => 'expense',
+                'amount' => 300,
+                'category_id' => $closeoutExpenseCategory->id,
+                'is_closeout_initiated' => true,
+            ]);
+
+            $assertExpenseBasis();
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_income_category_totals_exclude_is_borrow_transactions(): void
+    {
+        Carbon::setTestNow(Carbon::create(2028, 6, 12, 12, 0, 0));
+
+        try {
+            $family = Family::factory()->create();
+            $user = User::factory()->create(['family_id' => $family->id]);
+
+            $salaryCategory = Category::factory()->create([
+                'family_id' => $family->id,
+                'name' => 'Salary',
+                'is_income' => true,
+                'is_expense' => false,
+            ]);
+
+            Transaction::query()->create([
+                'family_id' => $family->id,
+                'user_id' => $user->id,
+                'category_id' => $salaryCategory->id,
+                'type' => 'income',
+                'amount' => 4000,
+                'description' => 'Paycheck',
+                'transaction_date' => '2028-06-04',
+                'is_split' => false,
+                'is_debt_payment' => false,
+                'is_borrow' => false,
+            ]);
+
+            $fund = Fund::factory()->create([
+                'user_id' => $user->id,
+                'family_id' => null,
+                'balance' => 2000,
+            ]);
+
+            $this->actingAs($user)->postJson("/funds/{$fund->id}/borrow", [
+                'amount' => 600,
+                'description' => 'Short-term liquidity',
+            ])->assertCreated();
+
+            $summary = $this->actingAs($user)->getJson('/month-summary?year=2028&month=6')->assertOk();
+
+            $incomeSum = collect($summary->json('category_totals'))
+                ->where('type', 'income')
+                ->sum('total');
+
+            $this->assertEqualsWithDelta(4000.0, (float) $incomeSum, 0.01);
+            $this->assertEqualsWithDelta(4000.0, (float) $summary->json('rule_preview.basis.gross_income'), 0.01);
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 }

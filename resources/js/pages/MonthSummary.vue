@@ -116,7 +116,7 @@ const canUndoSoftClose = computed(() => {
 });
 
 const canHardClose = computed(() => {
-  return !isHardClosed.value && allSoftClosed.value && currentUser.value?.is_admin;
+  return !isHardClosed.value && allSoftClosed.value && currentUser.value?.can_manage_family;
 });
 
 // Closeout functions
@@ -394,7 +394,7 @@ function movementTypeLabel(type) {
         <p class="text-xs text-gray-500 mb-3">
           Debt repayments you pay use the transaction’s category when set; otherwise they appear under
           <span class="text-gray-300">Uncategorized Debt Payments</span>
-          (same amounts feed <span class="text-gray-300">Projected closeout → Expenses</span>). Hard-close-generated ledger lines stay out of that expense basis but may still appear under their category above.
+          (same amounts feed <span class="text-gray-300">Projected closeout → Expenses</span>). Hard-close-generated ledger entries (fund transfers, debt payments) are excluded here; they appear in Fund In/Out and Debt Repayments below.
         </p>
 
         <div v-if="sortedExpenseCategories.length === 0" class="text-sm text-gray-500">
@@ -442,8 +442,8 @@ function movementTypeLabel(type) {
       <div class="px-4 mt-6">
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Your Income</h2>
         <p class="text-xs text-gray-500 mb-3">
-          Category totals exclude <span class="text-sky-300/95">repayment someone paid toward a tracked debt owed to you</span>.
-          Those appear under Debt repayments below and are excluded from gross income when closeout rules run.
+          Category totals exclude repayments received on tracked debts (shown under <span class="text-gray-300">Debt repayments</span>)
+          and fund borrow withdrawals (shown under <span class="text-gray-300">Fund In/Out</span>). Both are excluded from <span class="text-gray-300">Gross Income</span> when closeout rules run.
         </p>
 
         <div v-if="sortedIncomeCategories.length === 0" class="text-sm text-gray-500">

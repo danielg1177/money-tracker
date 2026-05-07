@@ -72,18 +72,16 @@ class TransactionTest extends TestCase
             'debt_id' => $debtId,
         ]);
 
-        $this->assertDatabaseHas('debts', [
-            'id' => $debtId,
-            'family_id' => $family->id,
-            'debtor_id' => $user->id,
-            'creditor_name' => 'Bank of Example',
-            'amount' => 300.00,
-            'balance' => 300.00,
-            'description' => 'Starter loan',
-            'interest_enabled' => true,
-            'interest_rate' => 10.50,
-            'loan_received_date' => '2026-02-20',
-        ]);
+        $debt = Debt::query()->findOrFail($debtId);
+        $this->assertSame($family->id, $debt->family_id);
+        $this->assertSame($user->id, $debt->debtor_id);
+        $this->assertSame('Bank of Example', $debt->creditor_name);
+        $this->assertEqualsWithDelta(300.00, (float) $debt->amount, 0.01);
+        $this->assertEqualsWithDelta(300.00, (float) $debt->balance, 0.01);
+        $this->assertSame('Starter loan', $debt->description);
+        $this->assertTrue($debt->interest_enabled);
+        $this->assertEqualsWithDelta(10.5, (float) $debt->interest_rate, 0.01);
+        $this->assertSame('2026-02-20', $debt->loan_received_date->format('Y-m-d'));
     }
 
     public function test_income_transaction_can_add_to_existing_debt(): void
