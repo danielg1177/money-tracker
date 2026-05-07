@@ -666,11 +666,13 @@ function movementTypeLabel(type) {
             </ul>
             <p class="mt-2 text-xs text-gray-500 leading-relaxed">
               <span class="text-gray-300">Remaining</span>
-              uses gross income, minus allocations from rules on
+              uses gross income, minus the
+              <span class="text-gray-300">Gross-base rules</span>
+              figure above (rules on
               <span class="text-gray-300">gross</span>
               /
               <span class="text-gray-300">net income</span>
-              bases (not “remaining” rules), minus this expense total.
+              bases; fund destinations net out month advances tagged to that fund so advance expenses are not double-counted), minus this expense total.
             </p>
           </div>
 

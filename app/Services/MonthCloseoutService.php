@@ -179,6 +179,26 @@ class MonthCloseoutService
     }
 
     /**
+     * Month advance-tagged expense totals per fund for the user (same basis as rule-preview advance netting).
+     *
+     * @return array<int, float>
+     */
+    public function fundAdvanceOutstandingByFundForUserMonth(User $user, int $year, int $month): array
+    {
+        return Transaction::query()
+            ->where('user_id', $user->id)
+            ->where('type', 'expense')
+            ->whereNotNull('advance_fund_id')
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->selectRaw('advance_fund_id, SUM(amount) as total_advanced')
+            ->groupBy('advance_fund_id')
+            ->get()
+            ->mapWithKeys(fn ($row) => [(int) $row->advance_fund_id => (float) $row->total_advanced])
+            ->all();
+    }
+
+    /**
      * @see expenseTotalTowardRemainingBasis()
      */
     private function calculateExpenseTotalTowardRemainingBasis(User $user, int $year, int $month): float
@@ -281,6 +301,8 @@ class MonthCloseoutService
                 ->orderBy('order')
                 ->get();
 
+            $fundAdvanceRemaining = $this->fundAdvanceOutstandingByFundForUserMonth($user, $year, $month);
+
             $grossRemaining = $grossIncome;
             $grossAllocationsTotal = 0;
 
@@ -297,7 +319,18 @@ class MonthCloseoutService
 
                 $actualAllocated = $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
                 $grossRemaining -= $actualAllocated;
-                $grossAllocationsTotal += $actualAllocated;
+
+                $towardRemainingPool = $actualAllocated;
+                if ($rule->destination_type === 'fund' && $rule->destination_id) {
+                    $fundId = (int) $rule->destination_id;
+                    if ($fundId > 0) {
+                        $outstanding = (float) ($fundAdvanceRemaining[$fundId] ?? 0.0);
+                        $towardRemainingPool = max(0.0, $actualAllocated - $outstanding);
+                        $fundAdvanceRemaining[$fundId] = max(0.0, $outstanding - $actualAllocated);
+                    }
+                }
+
+                $grossAllocationsTotal += $towardRemainingPool;
 
                 if ($grossRemaining <= 0) {
                     break;

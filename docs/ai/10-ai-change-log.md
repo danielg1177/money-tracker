@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-06 — Closeout: gross fund rules net of advances for remaining pool (preview + hard close)
+
+- Files touched: `app/Services/MonthCloseoutService.php`, `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`GET /month-summary` `rule_preview.basis.gross_allocations_total`** and **`remaining_after_expenses`** now treat **gross/net-base rules** whose destination is a **fund** like **`net_after_advances`** for the **remaining** equation—month **advance_fund_id** expenses already in **`total_expenses`** no longer stack with the full nominal gross allocation. **Hard close** uses the same netting when computing the **remaining** rule pool. **`MonthCloseoutService::fundAdvanceOutstandingByFundForUserMonth`** is the shared source for advance totals; **`MonthSummaryController`** delegates to it. Nominal rule amounts and ledger allocations from closeout are unchanged.
+
 ## 2026-05-06 — Month summary: debt repayments by category + Uncategorized Debt Payments
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

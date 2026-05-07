@@ -737,6 +737,57 @@ class MonthCloseoutTransactionDateTest extends TestCase
         $this->assertEqualsWithDelta(100.00, (float) $titleRow['projected_amount'], 0.01);
         $this->assertEqualsWithDelta(0.00, (float) $titleRow['fund_advance_outstanding_before'], 0.01);
         $this->assertEqualsWithDelta(100.00, (float) $titleRow['net_after_advances'], 0.01);
+
+        $this->assertEqualsWithDelta(450.00, (float) $response->json('rule_preview.basis.gross_allocations_total'), 0.01);
+        $this->assertEqualsWithDelta(6300.00, (float) $response->json('rule_preview.basis.remaining_after_expenses'), 0.01);
+    }
+
+    public function test_month_summary_preview_gross_fund_rule_basis_net_of_advances_avoids_double_count_with_expenses(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $fund = Fund::factory()->create(['user_id' => $user->id, 'balance' => 0]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'income',
+            'amount' => 5000,
+            'description' => 'Salary',
+            'transaction_date' => '2026-10-01',
+            'is_split' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 400,
+            'description' => 'Advance spend',
+            'transaction_date' => '2026-10-05',
+            'is_split' => false,
+            'is_debt_payment' => false,
+            'advance_fund_id' => $fund->id,
+        ]);
+
+        FundRule::query()->create([
+            'user_id' => $user->id,
+            'fund_id' => $fund->id,
+            'name' => 'Monthly fund rule',
+            'order' => 1,
+            'allocation_type' => 'fixed',
+            'amount' => 800,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'fund',
+            'destination_id' => $fund->id,
+            'destination_title' => null,
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/month-summary?year=2026&month=10')->assertOk();
+
+        $this->assertEqualsWithDelta(400.00, (float) $response->json('rule_preview.basis.gross_allocations_total'), 0.01);
+        $this->assertEqualsWithDelta(4200.00, (float) $response->json('rule_preview.basis.remaining_after_expenses'), 0.01);
     }
 
     public function test_month_summary_preview_fund_rule_net_can_go_negative_and_second_rule_uses_remaining_advances(): void

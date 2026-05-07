@@ -32,6 +32,9 @@ When closeout rules allocate to a debt, the generated debt-payment transaction d
 ### Closeout-generated movement rows are informational and excluded from closeout basis math
 Hard-close now creates closeout-tagged expense rows (`transactions.is_closeout_initiated=true`) for fund/debt allocations, and title-completion creates a similar row when marked done. `MonthCloseoutService` excludes these rows from expense-basis calculations during closeout so they cannot recursively alter same-run allocations.
 
+### Gross-base fund rules net month advances for the “remaining” pool (preview + hard close)
+When computing **remaining-after-gross** input for **`allocation_base='remaining'`** rules (and **`GET /month-summary` `rule_preview.basis`**), **gross/net-base** rules whose **`destination_type`** is **`fund`** contribute only **`max(0, nominal_allocation − advance expenses tagged to that fund before the rule in rule order)`** toward the amount subtracted from gross income alongside **`total_expenses`**. Advance-tagged expenses are already in **`total_expenses`**; this avoids double-counting the overlap. Debt and title destinations do not use advance netting. Nominal closeout allocations to funds (ledger movements) are unchanged.
+
 ### Remaining-base percentage closeout rules use a shared basis
 For rules with `allocation_base='remaining'` and `allocation_type='percentage'`, each rule calculates from the same remaining-after-expenses basis (after gross/fixed deductions), not from a progressively reduced percentage base. Fixed remaining rules still consume the available pool in rule order.
 

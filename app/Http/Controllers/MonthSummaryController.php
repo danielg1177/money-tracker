@@ -679,7 +679,7 @@ class MonthSummaryController extends Controller
             ->orderBy('order')
             ->get();
 
-        $fundAdvanceRemaining = $this->fundAdvanceOutstandingByFundForUserMonth($user, $year, $month);
+        $fundAdvanceRemaining = $this->monthCloseoutService->fundAdvanceOutstandingByFundForUserMonth($user, $year, $month);
 
         $grossRemaining = $grossIncome;
         $grossAllocationsTotal = 0;
@@ -692,9 +692,18 @@ class MonthSummaryController extends Controller
                 $projectedAmount = min((float) $rule->amount, $grossRemaining);
             }
 
+            $towardRemainingPool = $projectedAmount;
+            if ($rule->destination_type === 'fund' && $rule->destination_id) {
+                $fundId = (int) $rule->destination_id;
+                if ($fundId > 0) {
+                    $outstanding = (float) ($fundAdvanceRemaining[$fundId] ?? 0.0);
+                    $towardRemainingPool = max(0.0, $projectedAmount - $outstanding);
+                }
+            }
+
             if ($projectedAmount > 0) {
                 $grossRemaining -= $projectedAmount;
-                $grossAllocationsTotal += $projectedAmount;
+                $grossAllocationsTotal += $towardRemainingPool;
             }
 
             $this->pushRulePreviewResult($ruleResults, $fundAdvanceRemaining, $rule, $projectedAmount);
@@ -732,26 +741,6 @@ class MonthSummaryController extends Controller
             ],
             'rules' => $ruleResults,
         ];
-    }
-
-    /**
-     * Sum of month's advance-tag expenses per fund (`advance_fund_id`) for pool consumption in rule-order.
-     *
-     * @return array<int, float>
-     */
-    private function fundAdvanceOutstandingByFundForUserMonth(object $user, int $year, int $month): array
-    {
-        return Transaction::query()
-            ->where('user_id', $user->id)
-            ->where('type', 'expense')
-            ->whereNotNull('advance_fund_id')
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
-            ->selectRaw('advance_fund_id, SUM(amount) as total_advanced')
-            ->groupBy('advance_fund_id')
-            ->get()
-            ->mapWithKeys(fn ($row) => [(int) $row->advance_fund_id => (float) $row->total_advanced])
-            ->all();
     }
 
     /**
