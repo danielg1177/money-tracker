@@ -258,6 +258,99 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
         $this->assertEqualsWithDelta(75.0, (float) $synthetic['total'], 0.001);
     }
 
+    public function test_month_summary_category_transactions_include_viewer_rows_for_each_category_bucket(): void
+    {
+        $family = Family::factory()->create();
+        $alice = User::factory()->create(['family_id' => $family->id]);
+        $bob = User::factory()->create(['family_id' => $family->id]);
+
+        $incomeCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Salary',
+            'is_income' => true,
+            'is_expense' => false,
+        ]);
+
+        $expenseCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Dining',
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => $incomeCat->id,
+            'type' => 'income',
+            'amount' => 4200,
+            'description' => 'Paycheck',
+            'transaction_date' => '2026-10-02',
+            'is_split' => false,
+        ]);
+
+        $this->actingAs($alice)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 100,
+            'category_id' => $expenseCat->id,
+            'transaction_date' => '2026-10-08',
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $alice->id, 'share_percentage' => 60],
+                ['user_id' => $bob->id, 'share_percentage' => 40],
+            ],
+        ])->assertCreated();
+
+        $summary = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=10')->assertOk();
+
+        $incomeRows = collect($summary->json('category_transactions.income_'.$incomeCat->id));
+        $expenseRows = collect($summary->json('category_transactions.expense_'.$expenseCat->id));
+
+        $this->assertCount(1, $incomeRows);
+        $this->assertEqualsWithDelta(4200.0, (float) $incomeRows->first()['amount'], 0.001);
+
+        $this->assertCount(1, $expenseRows);
+        $this->assertEqualsWithDelta(60.0, (float) $expenseRows->first()['amount'], 0.001);
+    }
+
+    public function test_month_summary_category_transactions_include_synthetic_uncategorized_debt_payment_bucket(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 200.00,
+            'balance' => 200.00,
+            'is_pending_closeout' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $debtor->id,
+            'category_id' => null,
+            'type' => 'expense',
+            'amount' => 75,
+            'description' => 'Uncategorized debt pay',
+            'transaction_date' => '2026-11-10',
+            'is_split' => false,
+            'is_debt_payment' => true,
+            'debt_id' => $debt->id,
+            'is_closeout_initiated' => false,
+        ]);
+
+        $summary = $this->actingAs($debtor)->getJson('/month-summary?year=2026&month=11')->assertOk();
+
+        $syntheticRows = collect($summary->json('category_transactions.expense_-1'));
+
+        $this->assertCount(1, $syntheticRows);
+        $this->assertEqualsWithDelta(75.0, (float) $syntheticRows->first()['amount'], 0.001);
+        $this->assertSame('Uncategorized debt pay', $syntheticRows->first()['description']);
+    }
+
     public function test_category_totals_solo_expense_query_excludes_closeout_initiated_rows(): void
     {
         Carbon::setTestNow(Carbon::create(2028, 5, 14, 12, 0, 0));

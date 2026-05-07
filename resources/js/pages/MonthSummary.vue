@@ -200,6 +200,8 @@ const TOP_CATEGORY_ROWS = 4;
 
 const showAllExpenseCategories = ref(false);
 const showAllIncomeCategories = ref(false);
+const selectedCategory = ref(null);
+const isCategoryTransactionsModalOpen = ref(false);
 
 function sortCategoriesByTotalDesc(rows) {
   return [...rows].sort((a, b) => Number(b.total) - Number(a.total));
@@ -275,6 +277,32 @@ const grossAllocationsTotal = computed(() => Number(rulePreviewBasis.value?.gros
 const showGrossAllocationsInPreview = computed(() => grossAllocationsTotal.value > 0.005);
 
 const expenseCloseoutBasisLines = computed(() => summary.value?.rule_preview?.expense_closeout_basis?.lines ?? []);
+
+function categoryTransactionsKey(category) {
+  const categoryIdKey = category?.category_id === null || category?.category_id === undefined
+    ? 'null'
+    : String(category.category_id);
+
+  return `${category?.type}_${categoryIdKey}`;
+}
+
+function openCategoryTransactions(category) {
+  selectedCategory.value = category;
+  isCategoryTransactionsModalOpen.value = true;
+}
+
+function closeCategoryTransactionsModal() {
+  isCategoryTransactionsModalOpen.value = false;
+}
+
+const selectedCategoryTransactions = computed(() => {
+  if (!selectedCategory.value) {
+    return [];
+  }
+
+  const key = categoryTransactionsKey(selectedCategory.value);
+  return summary.value?.category_transactions?.[key] ?? [];
+});
 
 function movementTypeLabel(type) {
   const labels = {
@@ -402,10 +430,12 @@ function movementTypeLabel(type) {
         </div>
 
         <div v-else class="space-y-2">
-          <div
+          <button
             v-for="cat in displayedExpenseCategories"
             :key="`${cat.type}-${cat.category_id}`"
-            class="flex items-center justify-between px-3 py-2 bg-gray-800 rounded-lg border border-gray-700"
+            type="button"
+            class="w-full text-left flex items-center justify-between px-3 py-2 bg-gray-800 rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors min-h-11"
+            @click="openCategoryTransactions(cat)"
           >
             <div class="flex items-center gap-2 min-w-0">
               <span v-if="cat.category_icon" class="text-sm shrink-0">
@@ -416,7 +446,7 @@ function movementTypeLabel(type) {
             <span class="text-sm font-medium shrink-0 text-red-400">
               −{{ formatCurrency(cat.total) }}
             </span>
-          </div>
+          </button>
 
           <button
             v-if="hiddenExpenseCategoryCount > 0"
@@ -451,10 +481,12 @@ function movementTypeLabel(type) {
         </div>
 
         <div v-else class="space-y-2">
-          <div
+          <button
             v-for="cat in displayedIncomeCategories"
             :key="`${cat.type}-${cat.category_id}`"
-            class="flex items-center justify-between px-3 py-2 bg-gray-800 rounded-lg border border-gray-700"
+            type="button"
+            class="w-full text-left flex items-center justify-between px-3 py-2 bg-gray-800 rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors min-h-11"
+            @click="openCategoryTransactions(cat)"
           >
             <div class="flex items-center gap-2 min-w-0">
               <span v-if="cat.category_icon" class="text-sm shrink-0">
@@ -465,7 +497,7 @@ function movementTypeLabel(type) {
             <span class="text-sm font-medium shrink-0 text-green-400">
               +{{ formatCurrency(cat.total) }}
             </span>
-          </div>
+          </button>
 
           <button
             v-if="hiddenIncomeCategoryCount > 0"
@@ -806,6 +838,62 @@ function movementTypeLabel(type) {
           </div>
         </div>
       </div>
+
+      <Teleport to="body">
+        <div
+          v-if="isCategoryTransactionsModalOpen"
+          class="fixed inset-0 z-50 bg-black/70"
+          @click.self="closeCategoryTransactionsModal"
+        >
+          <div class="fixed inset-x-0 bottom-0 max-h-[82vh] overflow-hidden rounded-t-2xl border-t border-gray-700 bg-gray-900">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+              <div class="min-w-0">
+                <h3 class="text-sm font-semibold text-gray-100 truncate">
+                  {{ selectedCategory?.category_name }}
+                </h3>
+                <p class="text-xs text-gray-400">
+                  {{ monthLabel.replace(' Summary', '') }} transactions
+                </p>
+              </div>
+              <button
+                type="button"
+                class="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+                @click="closeCategoryTransactionsModal"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div class="overflow-y-auto px-4 py-3 space-y-2 max-h-[calc(82vh-4rem)]">
+              <div v-if="selectedCategoryTransactions.length === 0" class="text-sm text-gray-500 py-8 text-center">
+                No transactions found for this category in this month.
+              </div>
+
+              <div
+                v-else
+                v-for="row in selectedCategoryTransactions"
+                :key="`cat-row-${row.id}-${row.transaction_date}-${row.amount}`"
+                class="flex items-center justify-between gap-3 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5"
+              >
+                <div class="min-w-0">
+                  <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
+                  <p class="text-sm text-gray-200 truncate">
+                    {{ row.description || 'No description' }}
+                  </p>
+                </div>
+                <span
+                  class="text-sm font-medium shrink-0 tabular-nums"
+                  :class="selectedCategory?.type === 'expense' ? 'text-red-400' : 'text-green-400'"
+                >
+                  {{ selectedCategory?.type === 'expense' ? '−' : '+' }}{{ formatCurrency(row.amount) }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Teleport>
     </div>
   </div>
 </template>

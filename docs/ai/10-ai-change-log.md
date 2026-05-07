@@ -1016,3 +1016,14 @@ Format:
 ## 2026-05-03 — Initial AI documentation set created
 - Files touched: `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/05-auth-permissions.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
 - Behavioral impact: Documentation only — no code changes made
+
+## 2026-05-06 — Month Summary category rows open transaction detail modal
+- Files touched:
+  - Backend: `app/Http/Controllers/MonthSummaryController.php`
+  - Frontend: `resources/js/pages/MonthSummary.vue`
+  - Tests: `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`
+  - Docs: `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - `GET /month-summary` now returns `category_transactions` grouped by category bucket key (`{type}_{categoryId}`), including synthetic uncategorized debt-repayment bucket (`expense_-1`) and viewer split-share amounts.
+  - On `MonthSummary.vue`, tapping an expense or income category opens a mobile bottom-sheet modal listing all contributing month transactions for that category.
+  - Added feature-test coverage to verify category-transaction payload behavior for standard category buckets, split-share rows, and synthetic uncategorized debt-payment rows.
