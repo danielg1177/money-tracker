@@ -73,7 +73,7 @@ routes/web.php
 - `SplitCalculator` — pure static utility for percentage validation and amount distribution
 
 **Read-only controllers:**
-- `MonthSummaryController::show` — returns comprehensive month overview (close status, category totals, member balances, rule preview) without modifying data
+- `MonthSummaryController::show` — returns comprehensive month overview (close status, category totals including a synthetic **Debt payments** aggregate, member balances, rule preview) without modifying data; **`rule_preview.basis.total_expenses`** aligns with **`MonthCloseoutService::expenseTotalTowardRemainingBasis`** (tracked repayments included in the expense basis)
 
 ## Data scoping summary
 

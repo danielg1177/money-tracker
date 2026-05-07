@@ -196,14 +196,58 @@ async function handleIncompleteTitleSaving(id) {
   }
 }
 
-// Separate expenses and income categories
-const expenseCategories = computed(() => {
-  return (summary.value?.category_totals || []).filter(cat => cat.type === 'expense');
+const TOP_CATEGORY_ROWS = 4;
+
+const showAllExpenseCategories = ref(false);
+const showAllIncomeCategories = ref(false);
+
+function sortCategoriesByTotalDesc(rows) {
+  return [...rows].sort((a, b) => Number(b.total) - Number(a.total));
+}
+
+const sortedExpenseCategories = computed(() => {
+  const rows = (summary.value?.category_totals || []).filter(cat => cat.type === 'expense');
+  return sortCategoriesByTotalDesc(rows);
 });
 
-const incomeCategories = computed(() => {
-  return (summary.value?.category_totals || []).filter(cat => cat.type === 'income');
+const sortedIncomeCategories = computed(() => {
+  const rows = (summary.value?.category_totals || []).filter(cat => cat.type === 'income');
+  return sortCategoriesByTotalDesc(rows);
 });
+
+const displayedExpenseCategories = computed(() => {
+  const list = sortedExpenseCategories.value;
+  if (showAllExpenseCategories.value || list.length <= TOP_CATEGORY_ROWS) {
+    return list;
+  }
+  return list.slice(0, TOP_CATEGORY_ROWS);
+});
+
+const displayedIncomeCategories = computed(() => {
+  const list = sortedIncomeCategories.value;
+  if (showAllIncomeCategories.value || list.length <= TOP_CATEGORY_ROWS) {
+    return list;
+  }
+  return list.slice(0, TOP_CATEGORY_ROWS);
+});
+
+const hiddenExpenseCategoryCount = computed(() => {
+  const n = sortedExpenseCategories.value.length;
+  return n > TOP_CATEGORY_ROWS ? n - TOP_CATEGORY_ROWS : 0;
+});
+
+const hiddenIncomeCategoryCount = computed(() => {
+  const n = sortedIncomeCategories.value.length;
+  return n > TOP_CATEGORY_ROWS ? n - TOP_CATEGORY_ROWS : 0;
+});
+
+const expenseCategoriesTotal = computed(() =>
+  sortedExpenseCategories.value.reduce((sum, cat) => sum + Number(cat.total || 0), 0),
+);
+
+const incomeCategoriesTotal = computed(() =>
+  sortedIncomeCategories.value.reduce((sum, cat) => sum + Number(cat.total || 0), 0),
+);
 
 const fundMovementGroups = computed(() => {
   return summary.value?.fund_movements?.by_fund || [];
@@ -329,15 +373,18 @@ function movementTypeLabel(type) {
     <div v-else-if="summary">
       <!-- Section 1a: Expenses (viewer-scoped; split rows use your share) -->
       <div class="px-4 mt-6">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Your Expenses</h2>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Your Expenses</h2>
+        <p class="text-xs text-gray-500 mb-3">
+          Tracked repayments toward debts roll up under <span class="text-gray-300">Debt payments</span> (same amounts feed <span class="text-gray-300">Projected closeout → Expenses</span>). Hard-close-generated ledger lines stay out of that expense basis but may still appear under their category above.
+        </p>
 
-        <div v-if="expenseCategories.length === 0" class="text-sm text-gray-500">
+        <div v-if="sortedExpenseCategories.length === 0" class="text-sm text-gray-500">
           No expenses for you this month
         </div>
 
         <div v-else class="space-y-2">
           <div
-            v-for="cat in expenseCategories"
+            v-for="cat in displayedExpenseCategories"
             :key="`${cat.type}-${cat.category_id}`"
             class="flex items-center justify-between px-3 py-2 bg-gray-800 rounded-lg border border-gray-700"
           >
@@ -351,6 +398,24 @@ function movementTypeLabel(type) {
               −{{ formatCurrency(cat.total) }}
             </span>
           </div>
+
+          <button
+            v-if="hiddenExpenseCategoryCount > 0"
+            type="button"
+            class="w-full min-h-11 py-2.5 px-3 text-sm font-medium text-blue-300 bg-gray-800/80 hover:bg-gray-800 border border-gray-700 rounded-lg transition-colors"
+            @click="showAllExpenseCategories = !showAllExpenseCategories"
+          >
+            {{ showAllExpenseCategories ? 'Show top categories only' : `Show ${hiddenExpenseCategoryCount} more` }}
+          </button>
+
+          <div
+            class="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-900/80 rounded-lg border border-gray-600"
+          >
+            <span class="text-sm font-semibold text-gray-200">Total expenses</span>
+            <span class="text-sm font-semibold shrink-0 text-red-400 tabular-nums">
+              −{{ formatCurrency(expenseCategoriesTotal) }}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -362,13 +427,13 @@ function movementTypeLabel(type) {
           Those appear under Debt repayments below and are excluded from gross income when closeout rules run.
         </p>
 
-        <div v-if="incomeCategories.length === 0" class="text-sm text-gray-500">
+        <div v-if="sortedIncomeCategories.length === 0" class="text-sm text-gray-500">
           No income for you this month
         </div>
 
         <div v-else class="space-y-2">
           <div
-            v-for="cat in incomeCategories"
+            v-for="cat in displayedIncomeCategories"
             :key="`${cat.type}-${cat.category_id}`"
             class="flex items-center justify-between px-3 py-2 bg-gray-800 rounded-lg border border-gray-700"
           >
@@ -380,6 +445,24 @@ function movementTypeLabel(type) {
             </div>
             <span class="text-sm font-medium shrink-0 text-green-400">
               +{{ formatCurrency(cat.total) }}
+            </span>
+          </div>
+
+          <button
+            v-if="hiddenIncomeCategoryCount > 0"
+            type="button"
+            class="w-full min-h-11 py-2.5 px-3 text-sm font-medium text-blue-300 bg-gray-800/80 hover:bg-gray-800 border border-gray-700 rounded-lg transition-colors"
+            @click="showAllIncomeCategories = !showAllIncomeCategories"
+          >
+            {{ showAllIncomeCategories ? 'Show top categories only' : `Show ${hiddenIncomeCategoryCount} more` }}
+          </button>
+
+          <div
+            class="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-900/80 rounded-lg border border-gray-600"
+          >
+            <span class="text-sm font-semibold text-gray-200">Total income</span>
+            <span class="text-sm font-semibold shrink-0 text-green-400 tabular-nums">
+              +{{ formatCurrency(incomeCategoriesTotal) }}
             </span>
           </div>
         </div>

@@ -100,19 +100,23 @@
       />
     </div>
 
-    <!-- Date (min-w-0: native date control has wide intrinsic width on iOS) -->
+    <!-- Date: clip overflow — WebKit date shadow UI can exceed box width on iPhone Safari -->
     <div class="min-w-0 max-w-full">
       <label for="date" class="block text-sm font-medium text-gray-300 mb-2">
         Date
       </label>
-      <input
-        id="date"
-        v-model="form.transaction_date"
-        type="date"
-        required
-        :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
-        class="w-full min-w-0 max-w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
-      />
+      <div
+        class="min-w-0 max-w-full overflow-hidden rounded-lg border border-gray-700 bg-gray-800 [contain:layout]"
+      >
+        <input
+          id="date"
+          v-model="form.transaction_date"
+          type="date"
+          required
+          :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
+          class="native-date-input w-full min-w-0 max-w-full border-0 bg-transparent px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500/60 disabled:opacity-50"
+        />
+      </div>
     </div>
 
     <!-- Income debt association -->

@@ -11,10 +11,25 @@ Format:
 
 ---
 
+## 2026-05-06 — Month summary: debt repayments in categories + closeout expense basis
+
+- Files touched: `app/Services/MonthCloseoutService.php`, `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`GET /month-summary` `category_totals`** adds a synthetic **Debt payments** row (`category_id=-1`) for the viewer’s tracked repayments (solo payer amount and split shares; not double-counted in other categories). **`rule_preview.basis.total_expenses`** and **hard-close remaining-base math** now count the same viewer expenses via **`MonthCloseoutService::expenseTotalTowardRemainingBasis`** (includes debt repayments; still excludes `is_closeout_initiated` and `is_borrow`; split query now applies those filters on the parent transaction). Split expense basis no longer includes stray split rows on ineligible parents. Month summary UI explains the link to projected closeout.
+
+## 2026-05-06 — Month summary: top four categories + expand + section totals
+
+- Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **Your Expenses** and **Your Income** on the month summary page now default to the **four largest** category rows (by amount), with a button to show the remainder when applicable. A **Total expenses** / **Total income** row sums **all** categories in that section. Sorting is by total descending on the client.
+
 ## 2026-05-06 — Fix native date inputs overflowing viewport on mobile
 
 - Files touched: `resources/css/app.css`, `resources/js/components/TransactionForm.vue`, `resources/js/components/AppNav.vue`, `resources/js/pages/Transactions.vue`, `resources/js/pages/Debts.vue`, `resources/js/pages/Funds.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
 - Behavioral impact: **`input[type=date]`** (and related types) are constrained globally; transaction / debt / fund bottom sheets clip horizontal overflow; **Transactions** custom date range stacks vertically on narrow screens. Prevents the transaction **date** field from widening past the device width on iPhone.
+
+## 2026-05-06 — Safari iPhone: stronger native date width (WebKit fill-available + no 16px on date)
+
+- Files touched: `resources/css/app.css`, `resources/js/components/TransactionForm.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Touch Safari **≤640px** uses **`-webkit-fill-available`** width for date/time/month inputs; **mobile `font-size: 16px` no longer applies** to those types (was widening WebKit’s picker). **`::-webkit-datetime-edit`** subtree gets flex shrink rules. **`TransactionForm`** date sits in an **`overflow-hidden` + `contain:layout`** bordered wrapper with a borderless input. May cause slight focus-zoom on date fields on iOS vs other fields; tradeoff favors no horizontal scroll.
 
 ## 2026-05-06 — Mobile numeric fields use inputmode for digit-first keypads
 

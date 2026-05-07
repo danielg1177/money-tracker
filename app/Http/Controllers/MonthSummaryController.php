@@ -17,6 +17,12 @@ use Illuminate\Http\Request;
 
 class MonthSummaryController extends Controller
 {
+    /**
+     * Sentinel category id for the synthetic "Debt payments" aggregate in {@see getCategoryTotals()}.
+     * Not a real {@see Category} id.
+     */
+    private const SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID = -1;
+
     public function __construct(private MonthCloseoutService $monthCloseoutService) {}
 
     public function show(Request $request): JsonResponse
@@ -63,7 +69,8 @@ class MonthSummaryController extends Controller
     }
 
     /**
-     * Debt repayment activity for the viewer in this month (excluded from category totals and closeout gross income).
+     * Debt repayment activity for the viewer in this month (also summarized under category_totals as **Debt payments**;
+     * amounts count toward closeout expense basis; excluded from closeout **gross** income).
      * Split debt-payment expenses list each participant's portion (split row amount), not only the payer's transaction total.
      *
      * @return array{
@@ -330,7 +337,7 @@ class MonthSummaryController extends Controller
 
     /**
      * Fetch category totals for the month for the authenticated user only (split expenses use viewer split rows).
-     * Excludes debt payments.
+     * Tracked debt repayments appear as a synthetic **Debt payments** row ({@see self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID}), not under the transaction's category.
      *
      * @return array<array{category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int, type: string}>
      */
@@ -409,6 +416,8 @@ class MonthSummaryController extends Controller
             );
         }
 
+        $this->appendSyntheticDebtPaymentsCategory($grouped, $viewer, $year, $month);
+
         $result = array_values($grouped);
 
         usort($result, function ($a, $b) {
@@ -440,6 +449,74 @@ class MonthSummaryController extends Controller
         }
         $grouped[$key]['total'] += $amount;
         $grouped[$key]['transaction_count'] += $countDelta;
+    }
+
+    /**
+     * @param  array<string, array{type: string, category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int}>  $grouped
+     */
+    private function appendSyntheticDebtPaymentsCategory(array &$grouped, User $viewer, int $year, int $month): void
+    {
+        $soloDebtTotal = (float) Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('user_id', $viewer->id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_debt_payment', true)
+            ->where('is_closeout_initiated', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->sum('amount');
+
+        $soloDebtCount = (int) Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('user_id', $viewer->id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_debt_payment', true)
+            ->where('is_closeout_initiated', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->count();
+
+        $splitDebtTotal = (float) TransactionSplit::query()
+            ->where('user_id', $viewer->id)
+            ->whereHas('transaction', fn ($q) => $q
+                ->where('family_id', $viewer->family_id)
+                ->where('type', 'expense')
+                ->where('is_split', true)
+                ->where('is_debt_payment', true)
+                ->where('is_closeout_initiated', false)
+                ->whereYear('transaction_date', $year)
+                ->whereMonth('transaction_date', $month))
+            ->sum('amount');
+
+        $splitDebtCount = (int) TransactionSplit::query()
+            ->where('user_id', $viewer->id)
+            ->whereHas('transaction', fn ($q) => $q
+                ->where('family_id', $viewer->family_id)
+                ->where('type', 'expense')
+                ->where('is_split', true)
+                ->where('is_debt_payment', true)
+                ->where('is_closeout_initiated', false)
+                ->whereYear('transaction_date', $year)
+                ->whereMonth('transaction_date', $month))
+            ->count();
+
+        $total = $soloDebtTotal + $splitDebtTotal;
+        $count = $soloDebtCount + $splitDebtCount;
+
+        if (abs($total) < 0.005 && $count === 0) {
+            return;
+        }
+
+        $grouped['expense_synthetic_debt_payments'] = [
+            'type' => 'expense',
+            'category_id' => self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID,
+            'category_name' => 'Debt payments',
+            'category_icon' => null,
+            'total' => round($total, 2),
+            'transaction_count' => $count,
+        ];
     }
 
     /**
@@ -524,27 +601,7 @@ class MonthSummaryController extends Controller
             ];
         }
 
-        $soloExpenses = Transaction::query()
-            ->where('user_id', $user->id)
-            ->where('type', 'expense')
-            ->where('is_split', false)
-            ->where('is_debt_payment', false)
-            ->where('is_closeout_initiated', false)
-            ->where('is_borrow', false)
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
-            ->sum('amount');
-
-        $splitExpenses = TransactionSplit::query()
-            ->where('user_id', $user->id)
-            ->whereHas('transaction', fn ($q) => $q
-                ->whereYear('transaction_date', $year)
-                ->whereMonth('transaction_date', $month)
-                ->where('type', 'expense')
-            )
-            ->sum('amount');
-
-        $totalExpenses = (float) $soloExpenses + (float) $splitExpenses;
+        $totalExpenses = $this->monthCloseoutService->expenseTotalTowardRemainingBasis($user, $year, $month);
 
         $grossRules = FundRule::query()
             ->where('user_id', $user->id)

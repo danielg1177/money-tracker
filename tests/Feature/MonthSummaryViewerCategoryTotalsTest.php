@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\Debt;
 use App\Models\Family;
 use App\Models\Transaction;
 use App\Models\User;
@@ -119,5 +120,85 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
 
         $this->assertNotNull($aliceRow);
         $this->assertEqualsWithDelta(60.0, (float) $aliceRow['total'], 0.001);
+    }
+
+    public function test_month_summary_includes_debt_payments_as_synthetic_category_and_in_rule_preview_expenses(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+
+        $incomeCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Salary',
+            'is_income' => true,
+            'is_expense' => false,
+        ]);
+        $expenseCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Misc',
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 500.00,
+            'balance' => 500.00,
+            'is_pending_closeout' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $debtor->id,
+            'category_id' => $incomeCat->id,
+            'type' => 'income',
+            'amount' => 5000,
+            'description' => 'Pay',
+            'transaction_date' => '2026-08-01',
+            'is_split' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $debtor->id,
+            'category_id' => $expenseCat->id,
+            'type' => 'expense',
+            'amount' => 800,
+            'description' => 'Other spend',
+            'transaction_date' => '2026-08-05',
+            'is_split' => false,
+            'is_debt_payment' => false,
+        ]);
+
+        $this->actingAs($debtor)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 150,
+            'category_id' => $expenseCat->id,
+            'transaction_date' => '2026-08-10',
+            'is_split' => false,
+            'description' => 'Debt pay',
+            'debt_id' => $debt->id,
+        ])->assertCreated();
+
+        $summary = $this->actingAs($debtor)->getJson('/month-summary?year=2026&month=8')->assertOk();
+
+        $debtPaymentsRow = collect($summary->json('category_totals'))
+            ->firstWhere('category_name', 'Debt payments');
+
+        $this->assertNotNull($debtPaymentsRow);
+        $this->assertSame(-1, $debtPaymentsRow['category_id']);
+        $this->assertEqualsWithDelta(150.0, (float) $debtPaymentsRow['total'], 0.001);
+
+        $miscRow = collect($summary->json('category_totals'))
+            ->where('type', 'expense')
+            ->firstWhere('category_id', $expenseCat->id);
+
+        $this->assertNotNull($miscRow);
+        $this->assertEqualsWithDelta(800.0, (float) $miscRow['total'], 0.001);
+
+        $this->assertEqualsWithDelta(950.0, (float) $summary->json('rule_preview.basis.total_expenses'), 0.001);
     }
 }

@@ -38,9 +38,25 @@
         box-sizing: border-box;
     }
 
+    input[type='date']::-webkit-datetime-edit,
+    input[type='datetime-local']::-webkit-datetime-edit {
+        display: flex;
+        min-width: 0;
+        max-width: 100%;
+        flex: 1 1 0;
+        padding: 0;
+    }
+
     input[type='date']::-webkit-datetime-edit-fields-wrapper,
     input[type='datetime-local']::-webkit-datetime-edit-fields-wrapper {
+        min-width: 0;
         max-width: 100%;
+    }
+
+    input[type='date']::-webkit-date-and-time-value,
+    input[type='datetime-local']::-webkit-date-and-time-value {
+        text-align: start;
+        min-width: 0;
     }
 }
 
@@ -49,7 +65,11 @@
  * Keep ≥16px on narrow viewports only so desktop typography can stay tighter.
  */
 @media (max-width: 640px) {
-    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='submit']):not([type='button']),
+    /*
+     * Exclude native date/time pickers: forcing 16px here widens WebKit's date control and
+     * can re-trigger horizontal overflow on iPhone Safari.
+     */
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='submit']):not([type='button']):not([type='date']):not([type='datetime-local']):not([type='month']):not([type='time']),
     select,
     textarea {
         font-size: 16px !important;
@@ -68,4 +88,21 @@ button, a, [role="button"], label[for], select, input[type="checkbox"], input[ty
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+/*
+ * Unlayered: WebKit date pickers can ignore plain width:100% inside padded sheets; on narrow
+ * touch Safari, -webkit-fill-available matches the usable content width below padding.
+ */
+@media (max-width: 640px) {
+    @supports (-webkit-touch-callout: none) {
+        input[type='date'],
+        input[type='datetime-local'],
+        input[type='month'],
+        input[type='time'] {
+            width: -webkit-fill-available;
+            max-width: -webkit-fill-available;
+            min-width: 0;
+        }
+    }
 }

@@ -168,6 +168,52 @@ class MonthCloseoutService
     }
 
     /**
+     * Sum of the viewer's expenses that reduce remaining-after-expenses during closeout and in month-summary rule preview.
+     *
+     * Includes tracked debt repayments (solo payer amount and split shares). Excludes closeout-generated
+     * expense rows and borrow transactions so hard-close math stays stable.
+     */
+    public function expenseTotalTowardRemainingBasis(User $user, int $year, int $month): float
+    {
+        return $this->calculateExpenseTotalTowardRemainingBasis($user, $year, $month);
+    }
+
+    /**
+     * @see expenseTotalTowardRemainingBasis()
+     */
+    private function calculateExpenseTotalTowardRemainingBasis(User $user, int $year, int $month): float
+    {
+        if (! $user->family_id) {
+            return 0.0;
+        }
+
+        $solo = (float) Transaction::query()
+            ->where('family_id', $user->family_id)
+            ->where('user_id', $user->id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_closeout_initiated', false)
+            ->where('is_borrow', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->sum('amount');
+
+        $split = (float) TransactionSplit::query()
+            ->where('user_id', $user->id)
+            ->whereHas('transaction', function ($q) use ($user, $year, $month): void {
+                $q->where('family_id', $user->family_id)
+                    ->whereYear('transaction_date', $year)
+                    ->whereMonth('transaction_date', $month)
+                    ->where('type', 'expense')
+                    ->where('is_closeout_initiated', false)
+                    ->where('is_borrow', false);
+            })
+            ->sum('amount');
+
+        return $solo + $split;
+    }
+
+    /**
      * Hard-close a month for a family.
      *
      * This processes all user closeout rules and confirms pending split debts.
@@ -258,27 +304,7 @@ class MonthCloseoutService
                 }
             }
 
-            $soloExpenses = Transaction::query()
-                ->where('user_id', $user->id)
-                ->where('type', 'expense')
-                ->where('is_split', false)
-                ->where('is_debt_payment', false)
-                ->where('is_closeout_initiated', false)
-                ->where('is_borrow', false)
-                ->whereYear('transaction_date', $year)
-                ->whereMonth('transaction_date', $month)
-                ->sum('amount');
-
-            $splitExpenses = TransactionSplit::query()
-                ->where('user_id', $user->id)
-                ->whereHas('transaction', function ($q) use ($year, $month) {
-                    $q->whereYear('transaction_date', $year)
-                        ->whereMonth('transaction_date', $month)
-                        ->where('type', 'expense');
-                })
-                ->sum('amount');
-
-            $totalExpenses = $soloExpenses + $splitExpenses;
+            $totalExpenses = $this->calculateExpenseTotalTowardRemainingBasis($user, $year, $month);
 
             $remainingBasePool = $grossIncome - $grossAllocationsTotal - $totalExpenses;
             $remainingAvailablePool = $remainingBasePool;
