@@ -16,7 +16,7 @@
 ## Entry point
 
 `resources/js/app.js` creates the Vue app, installs Vue Router, and mounts `AppShell.vue` into `<div id="app">` (in `resources/views/app.blade.php`).
-It also registers a global Axios response interceptor that treats `401`/`419` responses as session expiry, clears `localStorage.user`, and hard-redirects to `/login`.
+It sets `window.history.scrollRestoration = 'manual'` (when supported) to prevent mobile browsers from restoring mid-page offsets on reload/back-forward cache restores, and registers a global Axios response interceptor that treats `401`/`419` responses as session expiry, clears `localStorage.user`, and hard-redirects to `/login`.
 
 ## Component tree
 
@@ -52,6 +52,8 @@ History mode (`createWebHistory`). Route definitions:
 | `/admin/users` | `admin/Users.vue` | `requiresAuth` + `adminOnly` |
 | `/admin/families` | `admin/Families.vue` | `requiresAuth` + `adminOnly` |
 | `/admin/categories` | `admin/Categories.vue` | `requiresAuth` + `adminOnly` |
+
+`scrollBehavior` always returns `{ top: 0, left: 0 }`, so each route navigation starts at the top of the page rather than restoring a previous scroll offset.
 
 **Navigation guard** (`beforeEach`): reads `user` from localStorage, normalizes via `normalizeAuthUser`. Redirects unauthenticated to `/login`, authenticated guests to `/dashboard`, non-admins away from `adminOnly` routes.
 

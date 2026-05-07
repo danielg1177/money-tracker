@@ -6,6 +6,10 @@ import AppShell from './AppShell.vue';
 
 let isHandlingSessionTimeout = false;
 
+if ('scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'manual';
+}
+
 window.axios.interceptors.response.use(
   (response) => {
     return response;

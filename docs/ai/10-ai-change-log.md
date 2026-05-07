@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-07 — Force top-of-page on SPA load/navigation (mobile scroll restore fix)
+
+- Files touched: `resources/js/app.js`, `resources/js/router/index.js`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: The SPA now disables browser scroll restoration (`history.scrollRestoration = 'manual'`) and Vue Router always scrolls to `{ top: 0, left: 0 }` on route navigation, so users start from the top of each page instead of landing partially scrolled down on mobile.
+
 ## 2026-05-06 — Split balances (month): Transactions + month-summary IOU math
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `resources/js/pages/Transactions.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
