@@ -148,6 +148,44 @@
       </p>
     </div>
 
+    <div
+      v-if="
+        !loading &&
+        !error &&
+        currentUser?.family_id &&
+        selectedMonthFilter !== 'custom' &&
+        monthSplitBalances.length > 0
+      "
+      class="mx-4 mt-3 rounded-xl border border-gray-700 bg-gray-800 p-3 min-w-0 max-w-full"
+    >
+      <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Split balances (this month)</h2>
+      <p class="mt-1 text-[10px] text-gray-500 leading-snug">
+        From shared expenses in this calendar month only. Repayments toward tracked debts and closeout ledger lines are excluded.
+      </p>
+      <div class="mt-3 space-y-2">
+        <div
+          v-for="balance in monthSplitBalances"
+          :key="'split-bal-' + balance.user_id"
+          class="flex items-center justify-between gap-2 rounded-lg border border-gray-700 bg-gray-900/40 px-3 py-2"
+        >
+          <span class="text-sm text-gray-300 min-w-0 pr-2">
+            <template v-if="balance.direction === 'they_owe_you'">
+              {{ balance.user_name }} owes you
+            </template>
+            <template v-else>
+              You owe {{ balance.user_name }}
+            </template>
+          </span>
+          <span
+            :class="balance.direction === 'they_owe_you' ? 'text-green-400' : 'text-red-400'"
+            class="text-sm font-medium shrink-0 tabular-nums"
+          >
+            {{ formatCurrency(balance.net_amount) }}
+          </span>
+        </div>
+      </div>
+    </div>
+
     <!-- Loading State -->
     <div v-if="loading" class="flex items-center justify-center py-12">
       <div class="text-center">
@@ -469,6 +507,8 @@ const closeoutStatus = ref(null);
 const closedMonths = ref([]);
 const currentUser = ref(null);
 const splitDetailModalTransaction = ref(null);
+/** Split IOUs from `GET /month-summary` (`member_balances`) for the selected calendar month only. */
+const monthSplitBalances = ref([]);
 
 function navigateToMonthSummary() {
   if (selectedMonthFilter.value && selectedMonthFilter.value !== 'custom') {
@@ -627,8 +667,29 @@ async function fetchData(startDate = null, endDate = null) {
         console.error('Failed to fetch closeout status:', err);
       }
     }
+
+    await fetchMonthSplitBalances();
   } catch (err) {
     console.error('Failed to fetch data:', err);
+  }
+}
+
+async function fetchMonthSplitBalances() {
+  if (!currentUser.value?.family_id || !selectedMonthFilter.value || selectedMonthFilter.value === 'custom') {
+    monthSplitBalances.value = [];
+
+    return;
+  }
+
+  const [year, month] = selectedMonthFilter.value.split('-').map(Number);
+
+  try {
+    const summary = await get(`/month-summary?year=${year}&month=${month}`);
+    const rows = summary?.member_balances;
+    monthSplitBalances.value = Array.isArray(rows) ? rows : [];
+  } catch (err) {
+    console.error('Failed to fetch month split balances:', err);
+    monthSplitBalances.value = [];
   }
 }
 
@@ -643,6 +704,7 @@ async function fetchClosedMonths() {
 
 function handleMonthFilterChange() {
   if (selectedMonthFilter.value === 'custom') {
+    monthSplitBalances.value = [];
     const today = new Date();
     customStartDate.value = today.toISOString().split('T')[0];
     customEndDate.value = today.toISOString().split('T')[0];

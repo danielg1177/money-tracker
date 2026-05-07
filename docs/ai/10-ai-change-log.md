@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-06 — Split balances (month): Transactions + month-summary IOU math
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `resources/js/pages/Transactions.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`member_balances`** now counts only **split bill** expenses in the selected month (**excludes `is_debt_payment` and `is_closeout_initiated`**, matching viewer **`category_totals`** split-share rules). **Month Summary** renames/clarifies **Split balances (this month)** and surfaces it earlier (after income, before repayments). **Transactions** loads **`GET /month-summary`** during calendar-month loads and shows the same **`member_balances`** card only when rows exist (**Custom Range** clearing included).
+
 ## 2026-05-06 — Month summary viewer category_totals regressions (closeout-initiated expense + borrow income)
 
 - Files touched: `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`

@@ -487,6 +487,37 @@ function movementTypeLabel(type) {
         </div>
       </div>
 
+      <!-- Split IOUs from shared expenses this month only (omit users with zero net after netting) -->
+      <div v-if="summary.member_balances.length > 0" class="px-4 mt-6">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Split balances (this month)</h2>
+        <p class="text-xs text-gray-500 mb-3">
+          From shared expense transactions dated this month (not repayments toward tracked debts or closeout ledger lines). Only members with a non-zero net for you appear.
+        </p>
+
+        <div class="space-y-2">
+          <div
+            v-for="balance in summary.member_balances"
+            :key="balance.user_id"
+            class="flex items-center justify-between px-3 py-2 bg-gray-800 rounded-lg border border-gray-700"
+          >
+            <span class="text-sm text-gray-300 min-w-0 pr-2">
+              <span v-if="balance.direction === 'they_owe_you'">
+                {{ balance.user_name }} owes you
+              </span>
+              <span v-else>
+                You owe {{ balance.user_name }}
+              </span>
+            </span>
+            <span
+              :class="balance.direction === 'they_owe_you' ? 'text-green-400' : 'text-red-400'"
+              class="text-sm font-medium shrink-0 tabular-nums"
+            >
+              {{ formatCurrency(balance.net_amount) }}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <!-- Section 1c: Debt repayments -->
       <div class="px-4 mt-6">
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Debt repayments</h2>
@@ -544,35 +575,7 @@ function movementTypeLabel(type) {
         </div>
       </div>
 
-      <!-- Section 2: Family Balances -->
-      <div v-if="summary.member_balances.length > 0" class="px-4 mt-6">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Family Balances</h2>
-
-        <div class="space-y-2">
-          <div
-            v-for="balance in summary.member_balances"
-            :key="balance.user_id"
-            class="flex items-center justify-between px-3 py-2 bg-gray-800 rounded-lg border border-gray-700"
-          >
-            <span class="text-sm text-gray-300">
-              <span v-if="balance.direction === 'they_owe_you'">
-                {{ balance.user_name }} owes you
-              </span>
-              <span v-else>
-                You owe {{ balance.user_name }}
-              </span>
-            </span>
-            <span
-              :class="balance.direction === 'they_owe_you' ? 'text-green-400' : 'text-red-400'"
-              class="text-sm font-medium"
-            >
-              {{ formatCurrency(balance.net_amount) }}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Section 3: Fund In/Out -->
+      <!-- Section 2: Fund In/Out -->
       <div class="px-4 mt-6">
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Fund In/Out</h2>
 

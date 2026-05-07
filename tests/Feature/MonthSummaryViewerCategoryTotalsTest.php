@@ -8,6 +8,7 @@ use App\Models\Family;
 use App\Models\Fund;
 use App\Models\FundRule;
 use App\Models\Transaction;
+use App\Models\TransactionSplit;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -414,5 +415,175 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    public function test_month_summary_member_balances_reflect_net_split_expenses_vs_each_member(): void
+    {
+        $family = Family::factory()->create();
+        $alice = User::factory()->create(['family_id' => $family->id]);
+        $bob = User::factory()->create(['family_id' => $family->id]);
+
+        $expenseCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Dining',
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->actingAs($alice)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 100,
+            'category_id' => $expenseCat->id,
+            'transaction_date' => '2026-07-15',
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $alice->id, 'share_percentage' => 60],
+                ['user_id' => $bob->id, 'share_percentage' => 40],
+            ],
+        ])->assertCreated();
+
+        $aliceSummary = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=7')->assertOk();
+        $aliceBalances = $aliceSummary->json('member_balances');
+        $this->assertCount(1, $aliceBalances);
+        $this->assertSame($bob->id, $aliceBalances[0]['user_id']);
+        $this->assertSame('they_owe_you', $aliceBalances[0]['direction']);
+        $this->assertEqualsWithDelta(40.0, (float) $aliceBalances[0]['net_amount'], 0.02);
+
+        $bobSummary = $this->actingAs($bob)->getJson('/month-summary?year=2026&month=7')->assertOk();
+        $bobBalances = $bobSummary->json('member_balances');
+        $this->assertCount(1, $bobBalances);
+        $this->assertSame($alice->id, $bobBalances[0]['user_id']);
+        $this->assertSame('you_owe_them', $bobBalances[0]['direction']);
+        $this->assertEqualsWithDelta(40.0, (float) $bobBalances[0]['net_amount'], 0.02);
+    }
+
+    public function test_month_summary_member_balances_omit_members_when_month_net_splits_to_zero(): void
+    {
+        $family = Family::factory()->create();
+        $alice = User::factory()->create(['family_id' => $family->id]);
+        $bob = User::factory()->create(['family_id' => $family->id]);
+
+        $expenseCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Dining',
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->actingAs($alice)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 100,
+            'category_id' => $expenseCat->id,
+            'transaction_date' => '2026-07-05',
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $alice->id, 'share_percentage' => 50],
+                ['user_id' => $bob->id, 'share_percentage' => 50],
+            ],
+        ])->assertCreated();
+
+        $this->actingAs($bob)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 100,
+            'category_id' => $expenseCat->id,
+            'transaction_date' => '2026-07-20',
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $alice->id, 'share_percentage' => 50],
+                ['user_id' => $bob->id, 'share_percentage' => 50],
+            ],
+        ])->assertCreated();
+
+        $aliceSummary = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=7')->assertOk();
+
+        $this->assertSame([], $aliceSummary->json('member_balances'));
+    }
+
+    public function test_month_summary_member_balances_exclude_split_debt_payment_and_closeout_splits(): void
+    {
+        $family = Family::factory()->create();
+        $alice = User::factory()->create(['family_id' => $family->id]);
+        $bob = User::factory()->create(['family_id' => $family->id]);
+
+        $expenseCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Misc',
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $splitDebtPayment = Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => $expenseCat->id,
+            'type' => 'expense',
+            'amount' => 80,
+            'description' => 'Fixture split debt payment',
+            'transaction_date' => '2026-09-10',
+            'is_split' => true,
+            'is_debt_payment' => true,
+            'is_closeout_initiated' => false,
+        ]);
+
+        TransactionSplit::query()->create([
+            'transaction_id' => $splitDebtPayment->id,
+            'user_id' => $alice->id,
+            'share_percentage' => 50,
+            'amount' => 40,
+        ]);
+        TransactionSplit::query()->create([
+            'transaction_id' => $splitDebtPayment->id,
+            'user_id' => $bob->id,
+            'share_percentage' => 50,
+            'amount' => 40,
+        ]);
+
+        $closeoutSplit = Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $bob->id,
+            'category_id' => $expenseCat->id,
+            'type' => 'expense',
+            'amount' => 40,
+            'description' => 'Fixture closeout split',
+            'transaction_date' => '2026-09-12',
+            'is_split' => true,
+            'is_debt_payment' => false,
+            'is_closeout_initiated' => true,
+        ]);
+
+        TransactionSplit::query()->create([
+            'transaction_id' => $closeoutSplit->id,
+            'user_id' => $bob->id,
+            'share_percentage' => 50,
+            'amount' => 20,
+        ]);
+        TransactionSplit::query()->create([
+            'transaction_id' => $closeoutSplit->id,
+            'user_id' => $alice->id,
+            'share_percentage' => 50,
+            'amount' => 20,
+        ]);
+
+        $aliceSummaryOnlyExcluded = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=9')->assertOk();
+        $this->assertSame([], $aliceSummaryOnlyExcluded->json('member_balances'));
+
+        $this->actingAs($alice)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 60,
+            'category_id' => $expenseCat->id,
+            'transaction_date' => '2026-09-15',
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $alice->id, 'share_percentage' => 50],
+                ['user_id' => $bob->id, 'share_percentage' => 50],
+            ],
+        ])->assertCreated();
+
+        $aliceSummaryWithBillSplit = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=9')->assertOk();
+        $balances = $aliceSummaryWithBillSplit->json('member_balances');
+        $this->assertCount(1, $balances);
+        $this->assertSame($bob->id, $balances[0]['user_id']);
+        $this->assertSame('they_owe_you', $balances[0]['direction']);
+        $this->assertEqualsWithDelta(30.0, (float) $balances[0]['net_amount'], 0.02);
     }
 }

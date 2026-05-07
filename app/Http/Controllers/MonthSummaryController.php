@@ -568,7 +568,11 @@ class MonthSummaryController extends Controller
     }
 
     /**
-     * Calculate member balances from split transactions.
+     * Net IOUs between the authenticated user and each family member from **split shared expenses**
+     * in this calendar month (payer fronts the bill; non-payers’ shares accumulate as owed to/from the payer).
+     *
+     * Excludes split **debt repayments** and **closeout-initiated** expenses so this reflects bill-splitting
+     * only, aligned with viewer split shares in {@see getCategoryTotals()}.
      *
      * @return array<array{user_id: int, user_name: string, net_amount: float, direction: string}>
      */
@@ -578,6 +582,8 @@ class MonthSummaryController extends Controller
             ->where('family_id', $user->family_id)
             ->where('type', 'expense')
             ->where('is_split', true)
+            ->where('is_debt_payment', false)
+            ->where('is_closeout_initiated', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->with(['splits.user', 'user'])
