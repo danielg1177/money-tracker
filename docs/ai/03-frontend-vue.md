@@ -22,7 +22,7 @@ It sets `window.history.scrollRestoration = 'manual'` (when supported) to preven
 
 ```
 AppShell.vue
-├── AppNav.vue              (rendered when `useAuth().user` is set; bottom nav uses `padding-bottom: env(safe-area-inset-bottom)`; spacer height includes safe-area)
+├── AppNav.vue              (rendered when `useAuth().user` is set; main slot adds `padding-top: env(safe-area-inset-top)` and bottom nav uses `padding-bottom: env(safe-area-inset-bottom)`; spacer height includes safe-area)
 │   ├── bottom nav bar      (Dashboard, Transactions, Funds, Debts, Account button)
 │   ├── FAB button          (opens TransactionForm modal)
 │   ├── TransactionForm.vue (modal overlay, inline in AppNav)

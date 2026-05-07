@@ -16,6 +16,11 @@ Format:
 - Files touched: `resources/js/app.js`, `resources/js/router/index.js`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
 - Behavioral impact: The SPA now disables browser scroll restoration (`history.scrollRestoration = 'manual'`) and Vue Router always scrolls to `{ top: 0, left: 0 }` on route navigation, so users start from the top of each page instead of landing partially scrolled down on mobile.
 
+## 2026-05-07 — Respect top safe-area inset in authenticated app shell
+
+- Files touched: `resources/js/components/AppNav.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `AppNav` now applies `padding-top: env(safe-area-inset-top, 0px)` to the main routed-content area so page content does not render under the top header/notch region on mobile; page tops align directly beneath the visible header area.
+
 ## 2026-05-06 — Split balances (month): Transactions + month-summary IOU math
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `resources/js/pages/Transactions.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
