@@ -1027,3 +1027,14 @@ Format:
   - `GET /month-summary` now returns `category_transactions` grouped by category bucket key (`{type}_{categoryId}`), including synthetic uncategorized debt-repayment bucket (`expense_-1`) and viewer split-share amounts.
   - On `MonthSummary.vue`, tapping an expense or income category opens a mobile bottom-sheet modal listing all contributing month transactions for that category.
   - Added feature-test coverage to verify category-transaction payload behavior for standard category buckets, split-share rows, and synthetic uncategorized debt-payment rows.
+
+## 2026-05-06 — Month Summary category modal description fallback + split breakdown
+- Files touched:
+  - Backend: `app/Http/Controllers/MonthSummaryController.php`
+  - Frontend: `resources/js/pages/MonthSummary.vue`
+  - Tests: `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`
+  - Docs: `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - `category_transactions` rows now include `is_split` and `split_breakdown` (participant name, percent, amount) so the month-summary category modal can show split details.
+  - Category modal transaction rows now fall back to the category name when description is blank.
+  - Added assertions proving split category rows carry split metadata and non-split synthetic debt-payment rows return empty split breakdown arrays.

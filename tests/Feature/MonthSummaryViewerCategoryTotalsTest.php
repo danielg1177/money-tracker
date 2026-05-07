@@ -311,6 +311,12 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
 
         $this->assertCount(1, $expenseRows);
         $this->assertEqualsWithDelta(60.0, (float) $expenseRows->first()['amount'], 0.001);
+        $this->assertTrue((bool) $expenseRows->first()['is_split']);
+        $this->assertCount(2, $expenseRows->first()['split_breakdown']);
+        $this->assertSame($alice->id, $expenseRows->first()['split_breakdown'][0]['user_id']);
+        $this->assertEqualsWithDelta(60.0, (float) $expenseRows->first()['split_breakdown'][0]['amount'], 0.001);
+        $this->assertSame($bob->id, $expenseRows->first()['split_breakdown'][1]['user_id']);
+        $this->assertEqualsWithDelta(40.0, (float) $expenseRows->first()['split_breakdown'][1]['amount'], 0.001);
     }
 
     public function test_month_summary_category_transactions_include_synthetic_uncategorized_debt_payment_bucket(): void
@@ -349,6 +355,8 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
         $this->assertCount(1, $syntheticRows);
         $this->assertEqualsWithDelta(75.0, (float) $syntheticRows->first()['amount'], 0.001);
         $this->assertSame('Uncategorized debt pay', $syntheticRows->first()['description']);
+        $this->assertFalse((bool) $syntheticRows->first()['is_split']);
+        $this->assertSame([], $syntheticRows->first()['split_breakdown']);
     }
 
     public function test_category_totals_solo_expense_query_excludes_closeout_initiated_rows(): void

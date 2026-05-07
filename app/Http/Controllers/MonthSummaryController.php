@@ -574,7 +574,19 @@ class MonthSummaryController extends Controller
      * Keys follow "{type}_{categoryId}" where uncategorized is "null" and synthetic debt-payment
      * uncategorized bucket is {@see self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID}.
      *
-     * @return array<string, array<int, array{id: int, transaction_date: string, description: string|null, amount: float}>>
+     * @return array<string, array<int, array{
+     *     id: int,
+     *     transaction_date: string,
+     *     description: string|null,
+     *     amount: float,
+     *     is_split: bool,
+     *     split_breakdown: array<int, array{
+     *         user_id: int,
+     *         user_name: string,
+     *         share_percentage: float,
+     *         amount: float
+     *     }>
+     * }>>
      */
     private function getCategoryTransactions(User $viewer, int $year, int $month): array
     {
@@ -588,6 +600,7 @@ class MonthSummaryController extends Controller
             ->where('is_borrow', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
+            ->with(['splits.user'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -605,6 +618,7 @@ class MonthSummaryController extends Controller
             ->where('is_closeout_initiated', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
+            ->with(['splits.user'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -622,7 +636,7 @@ class MonthSummaryController extends Controller
                 ->where('is_debt_payment', false)
                 ->whereYear('transaction_date', $year)
                 ->whereMonth('transaction_date', $month))
-            ->with('transaction')
+            ->with(['transaction.splits.user'])
             ->get();
 
         foreach ($viewerSplitShares as $split) {
@@ -640,7 +654,19 @@ class MonthSummaryController extends Controller
     }
 
     /**
-     * @param  array<string, array<int, array{id: int, transaction_date: string, description: string|null, amount: float}>>  $grouped
+     * @param  array<string, array<int, array{
+     *     id: int,
+     *     transaction_date: string,
+     *     description: string|null,
+     *     amount: float,
+     *     is_split: bool,
+     *     split_breakdown: array<int, array{
+     *         user_id: int,
+     *         user_name: string,
+     *         share_percentage: float,
+     *         amount: float
+     *     }>
+     * }>>  $grouped
      */
     private function addCategoryTransactionRow(
         array &$grouped,
@@ -659,11 +685,25 @@ class MonthSummaryController extends Controller
                 : (string) $transaction->transaction_date,
             'description' => $transaction->description,
             'amount' => round($amount, 2),
+            'is_split' => (bool) $transaction->is_split,
+            'split_breakdown' => $transaction->is_split ? $this->serializeSplitBreakdown($transaction) : [],
         ];
     }
 
     /**
-     * @param  array<string, array<int, array{id: int, transaction_date: string, description: string|null, amount: float}>>  $grouped
+     * @param  array<string, array<int, array{
+     *     id: int,
+     *     transaction_date: string,
+     *     description: string|null,
+     *     amount: float,
+     *     is_split: bool,
+     *     split_breakdown: array<int, array{
+     *         user_id: int,
+     *         user_name: string,
+     *         share_percentage: float,
+     *         amount: float
+     *     }>
+     * }>>  $grouped
      */
     private function mergeDebtRepaymentCategoryTransactions(array &$grouped, User $viewer, int $year, int $month): void
     {
@@ -676,6 +716,7 @@ class MonthSummaryController extends Controller
             ->where('is_closeout_initiated', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
+            ->with(['splits.user'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -695,7 +736,7 @@ class MonthSummaryController extends Controller
                 ->where('is_closeout_initiated', false)
                 ->whereYear('transaction_date', $year)
                 ->whereMonth('transaction_date', $month))
-            ->with('transaction')
+            ->with(['transaction.splits.user'])
             ->get();
 
         foreach ($splitShares as $split) {
@@ -707,6 +748,23 @@ class MonthSummaryController extends Controller
             $categoryId = $tx->category_id ?? self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID;
             $this->addCategoryTransactionRow($grouped, 'expense', $categoryId, $tx, (float) $split->amount);
         }
+    }
+
+    /**
+     * @return array<int, array{user_id: int, user_name: string, share_percentage: float, amount: float}>
+     */
+    private function serializeSplitBreakdown(Transaction $transaction): array
+    {
+        return $transaction->splits
+            ->sortBy('id')
+            ->map(fn (TransactionSplit $split) => [
+                'user_id' => (int) $split->user_id,
+                'user_name' => (string) ($split->user?->name ?? 'Unknown'),
+                'share_percentage' => round((float) $split->share_percentage, 2),
+                'amount' => round((float) $split->amount, 2),
+            ])
+            ->values()
+            ->all();
     }
 
     /**

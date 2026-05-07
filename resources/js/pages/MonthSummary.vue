@@ -880,8 +880,18 @@ function movementTypeLabel(type) {
                 <div class="min-w-0">
                   <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
                   <p class="text-sm text-gray-200 truncate">
-                    {{ row.description || 'No description' }}
+                    {{ row.description || selectedCategory?.category_name || 'No description' }}
                   </p>
+                  <div v-if="row.is_split" class="mt-1">
+                    <p class="text-[11px] text-purple-300">Split transaction</p>
+                    <div
+                      v-for="splitRow in row.split_breakdown || []"
+                      :key="`split-${row.id}-${splitRow.user_id}`"
+                      class="text-[11px] text-gray-400 leading-snug"
+                    >
+                      {{ splitRow.user_name }} · {{ splitRow.share_percentage }}% · {{ formatCurrency(splitRow.amount) }}
+                    </div>
+                  </div>
                 </div>
                 <span
                   class="text-sm font-medium shrink-0 tabular-nums"
