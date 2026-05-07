@@ -122,7 +122,7 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
         $this->assertEqualsWithDelta(60.0, (float) $aliceRow['total'], 0.001);
     }
 
-    public function test_month_summary_includes_debt_payments_as_synthetic_category_and_in_rule_preview_expenses(): void
+    public function test_month_summary_merges_categorized_debt_payments_into_expense_category(): void
     {
         $family = Family::factory()->create();
         $debtor = User::factory()->create(['family_id' => $family->id]);
@@ -185,20 +185,72 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
 
         $summary = $this->actingAs($debtor)->getJson('/month-summary?year=2026&month=8')->assertOk();
 
-        $debtPaymentsRow = collect($summary->json('category_totals'))
-            ->firstWhere('category_name', 'Debt payments');
-
-        $this->assertNotNull($debtPaymentsRow);
-        $this->assertSame(-1, $debtPaymentsRow['category_id']);
-        $this->assertEqualsWithDelta(150.0, (float) $debtPaymentsRow['total'], 0.001);
+        $this->assertNull(collect($summary->json('category_totals'))->firstWhere('category_id', -1));
 
         $miscRow = collect($summary->json('category_totals'))
             ->where('type', 'expense')
             ->firstWhere('category_id', $expenseCat->id);
 
         $this->assertNotNull($miscRow);
-        $this->assertEqualsWithDelta(800.0, (float) $miscRow['total'], 0.001);
+        $this->assertEqualsWithDelta(950.0, (float) $miscRow['total'], 0.001);
 
         $this->assertEqualsWithDelta(950.0, (float) $summary->json('rule_preview.basis.total_expenses'), 0.001);
+    }
+
+    public function test_month_summary_uncategorized_debt_payments_use_synthetic_category(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+
+        $incomeCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Salary',
+            'is_income' => true,
+            'is_expense' => false,
+        ]);
+
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 200.00,
+            'balance' => 200.00,
+            'is_pending_closeout' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $debtor->id,
+            'category_id' => $incomeCat->id,
+            'type' => 'income',
+            'amount' => 3000,
+            'description' => 'Pay',
+            'transaction_date' => '2026-09-01',
+            'is_split' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $debtor->id,
+            'category_id' => null,
+            'type' => 'expense',
+            'amount' => 75,
+            'description' => 'Uncategorized debt pay',
+            'transaction_date' => '2026-09-10',
+            'is_split' => false,
+            'is_debt_payment' => true,
+            'debt_id' => $debt->id,
+            'is_closeout_initiated' => false,
+        ]);
+
+        $summary = $this->actingAs($debtor)->getJson('/month-summary?year=2026&month=9')->assertOk();
+
+        $synthetic = collect($summary->json('category_totals'))
+            ->firstWhere('category_name', 'Uncategorized Debt Payments');
+
+        $this->assertNotNull($synthetic);
+        $this->assertSame(-1, $synthetic['category_id']);
+        $this->assertEqualsWithDelta(75.0, (float) $synthetic['total'], 0.001);
     }
 }

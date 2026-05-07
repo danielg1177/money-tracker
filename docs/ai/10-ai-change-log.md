@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-05-06 — Month summary: debt repayments by category + Uncategorized Debt Payments
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`GET /month-summary` `category_totals`** merges **categorized** debt-repayment expenses into their **expense category**; only **uncategorized** repayments (solo or the viewer’s split share when the parent has no category) roll into the synthetic row, renamed **Uncategorized Debt Payments** (`category_id=-1`). Closeout expense totals are unchanged.
+
+## 2026-05-06 — Month summary: negative remaining warning + expense basis in API/UI
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`GET /month-summary` `rule_preview.basis.remaining_after_expenses`** is now **signed** (may be negative) instead of clamped at zero. New fields: **`basis.gross_allocations_total`**, **`rule_preview.expense_closeout_basis.lines`**. Month summary **Projected Closeout / Closeout Results** shows an **amber alert** when remaining is negative, explains eligible expenses, and shows **gross-base rule** deductions in the basis summary row when non-zero.
+
 ## 2026-05-06 — Month summary: debt repayments in categories + closeout expense basis
 
 - Files touched: `app/Services/MonthCloseoutService.php`, `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

@@ -18,7 +18,7 @@ use Illuminate\Http\Request;
 class MonthSummaryController extends Controller
 {
     /**
-     * Sentinel category id for the synthetic "Debt payments" aggregate in {@see getCategoryTotals()}.
+     * Sentinel category id for uncategorized tracked debt repayments in {@see getCategoryTotals()}.
      * Not a real {@see Category} id.
      */
     private const SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID = -1;
@@ -69,7 +69,7 @@ class MonthSummaryController extends Controller
     }
 
     /**
-     * Debt repayment activity for the viewer in this month (also summarized under category_totals as **Debt payments**;
+     * Debt repayment activity for the viewer in this month (categorized repayments also roll into **category_totals** under their category; uncategorized into **Uncategorized Debt Payments**;
      * amounts count toward closeout expense basis; excluded from closeout **gross** income).
      * Split debt-payment expenses list each participant's portion (split row amount), not only the payer's transaction total.
      *
@@ -337,7 +337,7 @@ class MonthSummaryController extends Controller
 
     /**
      * Fetch category totals for the month for the authenticated user only (split expenses use viewer split rows).
-     * Tracked debt repayments appear as a synthetic **Debt payments** row ({@see self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID}), not under the transaction's category.
+     * Tracked debt repayments with a **category_id** are merged into that expense category. Repayments with **no** category appear under a synthetic **Uncategorized Debt Payments** row ({@see self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID}).
      *
      * @return array<array{category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int, type: string}>
      */
@@ -416,7 +416,7 @@ class MonthSummaryController extends Controller
             );
         }
 
-        $this->appendSyntheticDebtPaymentsCategory($grouped, $viewer, $year, $month);
+        $this->mergeDebtRepaymentExpenseCategoryTotals($grouped, $viewer, $year, $month);
 
         $result = array_values($grouped);
 
@@ -452,33 +452,62 @@ class MonthSummaryController extends Controller
     }
 
     /**
+     * Merge tracked debt-repayment **expense** amounts into category totals: rows with a category join that bucket;
+     * rows without a category (solo payer or split share on uncategorized parents) roll into {@see self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID}.
+     *
      * @param  array<string, array{type: string, category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int}>  $grouped
      */
-    private function appendSyntheticDebtPaymentsCategory(array &$grouped, User $viewer, int $year, int $month): void
+    private function mergeDebtRepaymentExpenseCategoryTotals(array &$grouped, User $viewer, int $year, int $month): void
     {
-        $soloDebtTotal = (float) Transaction::query()
+        $soloCategorized = Transaction::query()
             ->where('family_id', $viewer->family_id)
             ->where('user_id', $viewer->id)
             ->where('type', 'expense')
             ->where('is_split', false)
             ->where('is_debt_payment', true)
             ->where('is_closeout_initiated', false)
+            ->whereNotNull('category_id')
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with('category')
+            ->get();
+
+        foreach ($soloCategorized as $tx) {
+            $this->addViewerCategoryAggregate(
+                $grouped,
+                'expense',
+                $tx->category_id,
+                $tx->category,
+                (float) $tx->amount,
+                1,
+            );
+        }
+
+        $soloUncategorizedTotal = (float) Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('user_id', $viewer->id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_debt_payment', true)
+            ->where('is_closeout_initiated', false)
+            ->whereNull('category_id')
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->sum('amount');
 
-        $soloDebtCount = (int) Transaction::query()
+        $soloUncategorizedCount = (int) Transaction::query()
             ->where('family_id', $viewer->family_id)
             ->where('user_id', $viewer->id)
             ->where('type', 'expense')
             ->where('is_split', false)
             ->where('is_debt_payment', true)
             ->where('is_closeout_initiated', false)
+            ->whereNull('category_id')
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->count();
 
-        $splitDebtTotal = (float) TransactionSplit::query()
+        $splitShares = TransactionSplit::query()
             ->where('user_id', $viewer->id)
             ->whereHas('transaction', fn ($q) => $q
                 ->where('family_id', $viewer->family_id)
@@ -488,34 +517,49 @@ class MonthSummaryController extends Controller
                 ->where('is_closeout_initiated', false)
                 ->whereYear('transaction_date', $year)
                 ->whereMonth('transaction_date', $month))
-            ->sum('amount');
+            ->with(['transaction.category'])
+            ->get();
 
-        $splitDebtCount = (int) TransactionSplit::query()
-            ->where('user_id', $viewer->id)
-            ->whereHas('transaction', fn ($q) => $q
-                ->where('family_id', $viewer->family_id)
-                ->where('type', 'expense')
-                ->where('is_split', true)
-                ->where('is_debt_payment', true)
-                ->where('is_closeout_initiated', false)
-                ->whereYear('transaction_date', $year)
-                ->whereMonth('transaction_date', $month))
-            ->count();
+        $splitUncategorizedTotal = 0.0;
+        $splitUncategorizedCount = 0;
 
-        $total = $soloDebtTotal + $splitDebtTotal;
-        $count = $soloDebtCount + $splitDebtCount;
+        foreach ($splitShares as $split) {
+            $tx = $split->transaction;
+            if (! $tx) {
+                continue;
+            }
 
-        if (abs($total) < 0.005 && $count === 0) {
+            $share = (float) $split->amount;
+
+            if ($tx->category_id === null) {
+                $splitUncategorizedTotal += $share;
+                $splitUncategorizedCount++;
+            } else {
+                $this->addViewerCategoryAggregate(
+                    $grouped,
+                    'expense',
+                    $tx->category_id,
+                    $tx->category,
+                    $share,
+                    1,
+                );
+            }
+        }
+
+        $syntheticTotal = $soloUncategorizedTotal + $splitUncategorizedTotal;
+        $syntheticCount = $soloUncategorizedCount + $splitUncategorizedCount;
+
+        if (abs($syntheticTotal) < 0.005 && $syntheticCount === 0) {
             return;
         }
 
         $grouped['expense_synthetic_debt_payments'] = [
             'type' => 'expense',
             'category_id' => self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID,
-            'category_name' => 'Debt payments',
+            'category_name' => 'Uncategorized Debt Payments',
             'category_icon' => null,
-            'total' => round($total, 2),
-            'transaction_count' => $count,
+            'total' => round($syntheticTotal, 2),
+            'transaction_count' => $syntheticCount,
         ];
     }
 
@@ -573,9 +617,23 @@ class MonthSummaryController extends Controller
     }
 
     /**
+     * Human-readable lines describing how {@see MonthCloseoutService::expenseTotalTowardRemainingBasis}
+     * builds the expense total used in month-summary preview and hard-close remaining math.
+     *
+     * @return list<string>
+     */
+    private function expenseCloseoutBasisLines(): array
+    {
+        return [
+            'Includes your solo expenses, your split expense shares, and repayments toward tracked debts.',
+            'Excludes fund-borrow withdrawals and expenses created by closeout (so repeat closeouts do not change the basis).',
+        ];
+    }
+
+    /**
      * Dry-run the closeout rule math for the current user (read-only).
      *
-     * @return array{basis: array, rules: array}
+     * @return array{basis: array<string, float>, expense_closeout_basis: array{lines: list<string>}, rules: array}
      */
     private function getRulePreview(object $user, int $year, int $month): array
     {
@@ -595,7 +653,11 @@ class MonthSummaryController extends Controller
                 'basis' => [
                     'gross_income' => 0.0,
                     'total_expenses' => 0.0,
+                    'gross_allocations_total' => 0.0,
                     'remaining_after_expenses' => 0.0,
+                ],
+                'expense_closeout_basis' => [
+                    'lines' => $this->expenseCloseoutBasisLines(),
                 ],
                 'rules' => [],
             ];
@@ -656,11 +718,17 @@ class MonthSummaryController extends Controller
             $this->pushRulePreviewResult($ruleResults, $fundAdvanceRemaining, $rule, $projectedAmount);
         }
 
+        $rawRemaining = round($grossIncome - $grossAllocationsTotal - $totalExpenses, 2);
+
         return [
             'basis' => [
-                'gross_income' => $grossIncome,
-                'total_expenses' => $totalExpenses,
-                'remaining_after_expenses' => max(0, $grossIncome - $grossAllocationsTotal - $totalExpenses),
+                'gross_income' => round($grossIncome, 2),
+                'total_expenses' => round($totalExpenses, 2),
+                'gross_allocations_total' => round($grossAllocationsTotal, 2),
+                'remaining_after_expenses' => $rawRemaining,
+            ],
+            'expense_closeout_basis' => [
+                'lines' => $this->expenseCloseoutBasisLines(),
             ],
             'rules' => $ruleResults,
         ];

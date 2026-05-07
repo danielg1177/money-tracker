@@ -587,6 +587,88 @@ class MonthCloseoutTransactionDateTest extends TestCase
         $this->assertEqualsWithDelta(2000.00, (float) $rules->firstWhere('rule_id', $ruleB->id)['projected_amount'], 0.01);
     }
 
+    public function test_month_summary_preview_remaining_can_be_negative_and_includes_expense_basis_meta(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'income',
+            'amount' => 1000,
+            'description' => 'Pay',
+            'transaction_date' => '2026-08-01',
+            'is_split' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 1800,
+            'description' => 'Overspend',
+            'transaction_date' => '2026-08-10',
+            'is_split' => false,
+            'is_debt_payment' => false,
+            'is_closeout_initiated' => false,
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/month-summary?year=2026&month=8')->assertOk();
+
+        $this->assertEqualsWithDelta(-800.00, (float) $response->json('rule_preview.basis.remaining_after_expenses'), 0.01);
+        $this->assertEqualsWithDelta(0.00, (float) $response->json('rule_preview.basis.gross_allocations_total'), 0.01);
+        $lines = $response->json('rule_preview.expense_closeout_basis.lines');
+        $this->assertIsArray($lines);
+        $this->assertGreaterThan(0, count($lines));
+    }
+
+    public function test_month_summary_preview_reports_gross_allocations_total(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $fund = Fund::factory()->create(['user_id' => $user->id, 'balance' => 0]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'income',
+            'amount' => 5000,
+            'description' => 'Salary',
+            'transaction_date' => '2026-09-01',
+            'is_split' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 500,
+            'description' => 'Bills',
+            'transaction_date' => '2026-09-05',
+            'is_split' => false,
+        ]);
+
+        FundRule::query()->create([
+            'user_id' => $user->id,
+            'fund_id' => $fund->id,
+            'name' => 'Tithe',
+            'order' => 1,
+            'allocation_type' => 'fixed',
+            'amount' => 1000,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'fund',
+            'destination_id' => $fund->id,
+            'destination_title' => null,
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/month-summary?year=2026&month=9')->assertOk();
+
+        $this->assertEqualsWithDelta(1000.00, (float) $response->json('rule_preview.basis.gross_allocations_total'), 0.01);
+        $this->assertEqualsWithDelta(3500.00, (float) $response->json('rule_preview.basis.remaining_after_expenses'), 0.01);
+    }
+
     public function test_month_summary_preview_fund_rule_shows_net_after_advances_tagged_to_same_fund(): void
     {
         $family = Family::factory()->create();

@@ -259,6 +259,23 @@ const debtRepaymentsPaid = computed(() => summary.value?.debt_repayments?.paid ?
 
 const titleSavings = computed(() => summary.value?.title_savings ?? []);
 
+const rulePreviewBasis = computed(() => summary.value?.rule_preview?.basis ?? null);
+
+const remainingAfterExpenses = computed(() => Number(rulePreviewBasis.value?.remaining_after_expenses ?? 0));
+
+const isNegativeRemainingAfterExpenses = computed(() => {
+  if (!summary.value?.rule_preview?.basis) {
+    return false;
+  }
+  return remainingAfterExpenses.value < -0.005;
+});
+
+const grossAllocationsTotal = computed(() => Number(rulePreviewBasis.value?.gross_allocations_total ?? 0));
+
+const showGrossAllocationsInPreview = computed(() => grossAllocationsTotal.value > 0.005);
+
+const expenseCloseoutBasisLines = computed(() => summary.value?.rule_preview?.expense_closeout_basis?.lines ?? []);
+
 function movementTypeLabel(type) {
   const labels = {
     allocation: 'Allocation',
@@ -375,7 +392,9 @@ function movementTypeLabel(type) {
       <div class="px-4 mt-6">
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Your Expenses</h2>
         <p class="text-xs text-gray-500 mb-3">
-          Tracked repayments toward debts roll up under <span class="text-gray-300">Debt payments</span> (same amounts feed <span class="text-gray-300">Projected closeout → Expenses</span>). Hard-close-generated ledger lines stay out of that expense basis but may still appear under their category above.
+          Debt repayments you pay use the transaction’s category when set; otherwise they appear under
+          <span class="text-gray-300">Uncategorized Debt Payments</span>
+          (same amounts feed <span class="text-gray-300">Projected closeout → Expenses</span>). Hard-close-generated ledger lines stay out of that expense basis but may still appear under their category above.
         </p>
 
         <div v-if="sortedExpenseCategories.length === 0" class="text-sm text-gray-500">
@@ -618,11 +637,59 @@ function movementTypeLabel(type) {
         </div>
 
         <template v-else>
+          <div
+            v-if="isNegativeRemainingAfterExpenses"
+            class="mb-4 rounded-lg border border-amber-800/70 bg-amber-950/40 px-3 py-3"
+            role="status"
+          >
+            <p class="text-sm font-medium text-amber-200">
+              Remaining is negative this month
+            </p>
+            <p class="mt-1 text-xs text-amber-100/90 leading-relaxed">
+              After gross income, gross-base closeout allocations, and eligible expenses, the amount left for
+              “remaining after expenses” rules is below zero. Rules that use that pool allocate nothing until the
+              math is positive; consider adjusting income, spending, or your closeout rules.
+            </p>
+          </div>
+
+          <div
+            v-if="expenseCloseoutBasisLines.length > 0"
+            class="mb-4 rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-3"
+          >
+            <p class="text-xs font-semibold text-gray-300 uppercase tracking-wide mb-2">
+              How expenses count here
+            </p>
+            <ul class="list-disc space-y-1.5 pl-4 text-xs text-gray-400 leading-relaxed">
+              <li v-for="(line, idx) in expenseCloseoutBasisLines" :key="'ecb-' + idx">
+                {{ line }}
+              </li>
+            </ul>
+            <p class="mt-2 text-xs text-gray-500 leading-relaxed">
+              <span class="text-gray-300">Remaining</span>
+              uses gross income, minus allocations from rules on
+              <span class="text-gray-300">gross</span>
+              /
+              <span class="text-gray-300">net income</span>
+              bases (not “remaining” rules), minus this expense total.
+            </p>
+          </div>
+
           <!-- Summary row -->
-          <div class="px-3 py-2 mb-4 text-xs text-gray-400 bg-gray-800 rounded-lg">
-            Gross Income: <span class="text-gray-200">{{ formatCurrency(summary.rule_preview.basis.gross_income) }}</span>
-            | Expenses: <span class="text-gray-200">{{ formatCurrency(summary.rule_preview.basis.total_expenses) }}</span>
-            | Remaining: <span class="text-gray-200">{{ formatCurrency(summary.rule_preview.basis.remaining_after_expenses) }}</span>
+          <div class="px-3 py-2 mb-4 text-xs text-gray-400 bg-gray-800 rounded-lg space-y-1.5">
+            <div class="flex flex-wrap items-center gap-x-1 gap-y-1">
+              <span>Gross Income: <span class="text-gray-200 tabular-nums">{{ formatCurrency(summary.rule_preview.basis.gross_income) }}</span></span>
+              <span class="text-gray-600" aria-hidden="true">|</span>
+              <span>Expenses: <span class="text-gray-200 tabular-nums">{{ formatCurrency(summary.rule_preview.basis.total_expenses) }}</span></span>
+              <template v-if="showGrossAllocationsInPreview">
+                <span class="text-gray-600" aria-hidden="true">|</span>
+                <span>Gross-base rules: <span class="text-gray-200 tabular-nums">−{{ formatCurrency(grossAllocationsTotal) }}</span></span>
+              </template>
+              <span class="text-gray-600" aria-hidden="true">|</span>
+              <span>Remaining: <span
+                class="tabular-nums font-medium"
+                :class="isNegativeRemainingAfterExpenses ? 'text-amber-300' : 'text-gray-200'"
+              >{{ formatCurrency(remainingAfterExpenses) }}</span></span>
+            </div>
           </div>
 
           <!-- Rules list -->
