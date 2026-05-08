@@ -73,7 +73,7 @@ routes/web.php
 - `SplitCalculator` — pure static utility for percentage validation and amount distribution
 
 **Read-only controllers:**
-- `MonthSummaryController::show` — returns comprehensive month overview (close status, category totals including optional synthetic **Uncategorized Debt Payments** for repayments without a category, member balances, rule preview) without modifying data; **`rule_preview.basis.total_expenses`** aligns with **`MonthCloseoutService::expenseTotalTowardRemainingBasis`** (tracked repayments included in the expense basis). **`rule_preview.basis.remaining_after_expenses`** is the **signed** post-allocation figure; **`rule_preview.expense_closeout_basis.lines`** documents the expense basis for the preview.
+- `MonthSummaryController::show` — returns comprehensive month overview (close status, category totals including optional synthetic **Uncategorized Debt Payments** for repayments without a category, member balances, rule preview) without modifying data; **`rule_preview.basis.total_expenses`** aligns with **`MonthCloseoutService::expenseTotalTowardRemainingBasis`** (tracked repayments included; non-necessity advance expenses excluded from the basis and settled via fund advances). **`rule_preview.basis.remaining_after_expenses`** is the **signed** post-allocation figure; **`rule_preview.expense_closeout_basis.lines`** documents the expense basis for the preview.
 
 ## Data scoping summary
 
@@ -81,7 +81,7 @@ routes/web.php
 |---|---|
 | Family | Global (admin creates) |
 | User | Global; assigned to one `family_id` |
-| Category | Per `family_id`; each row is **either** income **or** expense (`is_income` XOR `is_expense`, enforced in `StoreCategoryRequest`); optional `advance_fund_id` / `split_default` apply only when `is_expense` is true (defaults for **expense** transactions) |
+| Category | Per `family_id`; each row is **either** income **or** expense (`is_income` XOR `is_expense`, enforced in `StoreCategoryRequest`); optional `advance_fund_id`, `split_default`, and `is_non_necessity_default` apply only when `is_expense` is true (defaults for **expense** transactions) |
 | Transaction | Per `family_id`, owned by one `user_id`; optionally linked to `debt_id` if a debt payment; optional `advance_fund_id` marks an expense as advancing against a fund |
 | TransactionSplit | Per transaction |
 

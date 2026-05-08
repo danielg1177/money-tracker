@@ -11,6 +11,76 @@ Format:
 
 ---
 
+## 2026-05-07 — Non-necessity transaction feature
+
+- Added `is_non_necessity` (boolean) to transactions table and model
+- Added `is_non_necessity_default` (boolean) to categories table and model
+- `StoreTransactionRequest`: validates `is_non_necessity` (requires expense, `advance_fund_id`, no split, qualifying fund rule)
+- `StoreCategoryRequest`: validates `is_non_necessity_default` (same constraints)
+- `FundController::index`: now returns `has_non_necessity_rule` per fund
+- `MonthCloseoutService`: excludes `is_non_necessity=true` transactions from expense basis in `calculateExpenseTotalTowardRemainingBasis()`
+- `MonthSummaryController`: exposes `non_necessity_expenses` in `rule_preview.basis`
+- `TransactionForm.vue`: non-necessity toggle in advance fund section (conditional on fund rule)
+- `Categories.vue`: non-necessity default checkbox (conditional on fund rule)
+- `MonthSummary.vue`: "Expenses" label becomes "Necessity Expenses" when non-necessities exist; adds Total Necessities / Total Non-Necessities rows under Total expenses
+- `Transactions.vue`: adds Total Necessities / Total Non-Necessities breakdown in period totals card when applicable
+- Behavioral impact: non-necessity advances are excluded from the remaining pool calculation; the advance settlement still deducts them from the fund at closeout, so the fund receives (rule allocation − advance amount) net
+
+## 2026-05-07 — Transactions period totals: necessity vs non-necessity expense breakdown
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Transactions period totals now compute `totalNonNecessityExpenses` from viewer-counted expense rows where `is_non_necessity=true` and `is_closeout_initiated=false`. When that value is positive, the totals card shows conditional sub-rows for **Total Necessities** and **Total Non-Necessities** (violet), and the existing note line removes its own divider to avoid double top borders.
+
+## 2026-05-07 — Month summary: show non-necessity expense partition in UI totals
+
+- Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `MonthSummary.vue` now reads `rule_preview.basis.non_necessity_expenses` into computed helpers and, when positive, relabels projected-closeout **Expenses** as **Necessity Expenses**. The **Your Expenses** footer now adds conditional sub-rows for **Total Necessities** (`expenseCategoriesTotal - nonNecessityExpenses`) and **Total Non-Necessities** (violet), so the displayed category total is explicitly partitioned without changing existing total math.
+
+## 2026-05-07 — Categories: non-necessity default toggle gated by advance fund rule
+
+- Files touched: `resources/js/pages/Categories.vue`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Category create/edit now carries `is_non_necessity_default` in the local form state and submit payload, but only effectively applies it for expense categories with an `advance_fund_id`. The modal shows **Default transactions as non-necessity** only when the selected advance fund reports `has_non_necessity_rule=true`, auto-clears the flag when the fund is removed or type switches from expense, and category cards now display a **Non-Necessity Default** badge for qualifying expense categories.
+
+## 2026-05-07 — Transaction form non-necessity toggle for qualifying advance funds
+
+- Files touched: `resources/js/components/TransactionForm.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: In `TransactionForm`, expense rows with an advance fund now show a **Mark as non-necessity** toggle only when the selected fund has `has_non_necessity_rule=true`. Submit includes guarded `is_non_necessity` payload logic (expense + non-split + advance + qualifying fund). The flag auto-clears when split/debt modes or fund/type state make it ineligible, and category selection auto-applies `is_non_necessity_default` when the category and selected fund qualify.
+
+## 2026-05-07 — Add `non_necessity_expenses` to month-summary preview basis
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `getRulePreview()` now exposes `basis.non_necessity_expenses` (month sum of `is_non_necessity=true` advance expenses, non-closeout rows) while keeping `basis.total_expenses` as the necessity-only closeout basis. `expense_closeout_basis.lines` now explicitly states non-necessity advances are excluded from that total and settled against funds at closeout.
+
+## 2026-05-07 — Exclude non-necessity advances from closeout expense basis
+
+- Files touched: `app/Services/MonthCloseoutService.php`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `MonthCloseoutService::calculateExpenseTotalTowardRemainingBasis` now excludes solo expenses where `is_non_necessity=true`, so those rows no longer reduce remaining-after-expenses during closeout preview/hard-close math. Advance-tagged non-necessity rows are still deducted from fund balances by `applyFundAdvances()` at closeout.
+
+## 2026-05-07 — Persist `is_non_necessity` in TransactionService create/update payloads
+
+- Files touched: `app/Services/TransactionService.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Non-debt `TransactionService::createTransaction` and `updateTransaction` now set `transactions.is_non_necessity` from payload only when the row is an expense, has `advance_fund_id`, is not split, and the incoming flag is truthy; otherwise the stored value is `false`.
+
+## 2026-05-07 — Validate category `is_non_necessity_default` eligibility
+
+- Files touched: `app/Http/Requests/StoreCategoryRequest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Added `is_non_necessity_default` boolean normalization/validation for category create/update. The flag is auto-forced to `false` unless the category is expense-type with `advance_fund_id`. When explicitly true, validation now requires an active auth-user closeout `FundRule` targeting that fund with `destination_type='fund'`, `allocation_type='percentage'`, and `allocation_base='remaining'`; otherwise validation fails on `is_non_necessity_default`.
+
+## 2026-05-07 — Validate `is_non_necessity` eligibility in `StoreTransactionRequest`
+
+- Files touched: `app/Http/Requests/StoreTransactionRequest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Added `is_non_necessity` boolean request validation/normalization for transaction create/update. The flag is auto-forced to `false` when the transaction is not an eligible expense shape (requires expense, non-split, has `advance_fund_id`, and no `debt_id`). When explicitly true, validation now requires a matching active auth-user closeout `FundRule` targeting that advance fund with `destination_type='fund'`, `allocation_type='percentage'`, and `allocation_base='remaining'`; otherwise validation fails on `is_non_necessity`.
+
+## 2026-05-07 — Add `has_non_necessity_rule` to `GET /funds` rows
+
+- Files touched: `app/Http/Controllers/FundController.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `GET /funds` now includes `has_non_necessity_rule` on both personal and family fund rows. The flag is computed from one preloaded set of the auth user’s active remaining-percentage fund-rule destinations and is `true` when a matching rule targets that fund id.
+
+## 2026-05-07 — Add non-necessity boolean columns to categories and transactions
+
+- Files touched: `database/migrations/2026_05_08_020419_add_is_non_necessity_to_transactions_table.php`, `database/migrations/2026_05_08_020419_add_is_non_necessity_default_to_categories_table.php`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Added `transactions.is_non_necessity` and `categories.is_non_necessity_default` (both default `false`) via new migrations, and applied them with `php artisan migrate --no-interaction`. No runtime logic changes yet; these columns are now available for future transaction/category behavior.
+
 ## 2026-05-07 — Force top-of-page on SPA load/navigation (mobile scroll restore fix)
 
 - Files touched: `resources/js/app.js`, `resources/js/router/index.js`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

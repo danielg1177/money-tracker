@@ -837,6 +837,7 @@ class MonthSummaryController extends Controller
         return [
             'Includes your solo expenses, your split expense shares, and repayments toward tracked debts.',
             'Excludes fund-borrow withdrawals and expenses created by closeout (so repeat closeouts do not change the basis).',
+            'Non-necessity advance transactions are excluded from this total; they are settled directly against their target fund at closeout.',
         ];
     }
 
@@ -863,6 +864,7 @@ class MonthSummaryController extends Controller
                 'basis' => [
                     'gross_income' => 0.0,
                     'total_expenses' => 0.0,
+                    'non_necessity_expenses' => 0.0,
                     'gross_allocations_total' => 0.0,
                     'remaining_after_expenses' => 0.0,
                 ],
@@ -874,6 +876,15 @@ class MonthSummaryController extends Controller
         }
 
         $totalExpenses = $this->monthCloseoutService->expenseTotalTowardRemainingBasis($user, $year, $month);
+        $nonNecessityExpenses = (float) Transaction::query()
+            ->where('user_id', $user->id)
+            ->where('type', 'expense')
+            ->where('is_non_necessity', true)
+            ->whereNotNull('advance_fund_id')
+            ->where('is_closeout_initiated', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->sum('amount');
 
         $grossRules = FundRule::query()
             ->where('user_id', $user->id)
@@ -970,6 +981,7 @@ class MonthSummaryController extends Controller
             'basis' => [
                 'gross_income' => round($grossIncome, 2),
                 'total_expenses' => round($totalExpenses, 2),
+                'non_necessity_expenses' => round($nonNecessityExpenses, 2),
                 'gross_allocations_total' => round($grossAllocationsTotal, 2),
                 'remaining_after_expenses' => $rawRemaining,
             ],

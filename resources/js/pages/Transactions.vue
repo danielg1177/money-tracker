@@ -142,7 +142,22 @@
           <p class="font-semibold text-red-400">−{{ formatCurrency(totalExpenses) }}</p>
         </div>
       </div>
-      <p class="mt-2 border-t border-gray-700/60 pt-2 text-center text-[10px] text-gray-500 leading-snug">
+      <template v-if="hasNonNecessityExpenses">
+        <div class="mt-2 border-t border-gray-700/60 pt-2 space-y-1">
+          <div class="flex justify-between text-xs">
+            <span class="text-gray-400">Total Necessities</span>
+            <span class="text-red-400 tabular-nums">−{{ formatCurrency(totalNecessityExpenses) }}</span>
+          </div>
+          <div class="flex justify-between text-xs">
+            <span class="text-gray-400">Total Non-Necessities</span>
+            <span class="text-violet-400 tabular-nums">−{{ formatCurrency(totalNonNecessityExpenses) }}</span>
+          </div>
+        </div>
+      </template>
+      <p
+        class="text-center text-[10px] text-gray-500 leading-snug"
+        :class="hasNonNecessityExpenses ? 'mt-2' : 'mt-2 border-t border-gray-700/60 pt-2'"
+      >
         Split <span class="text-gray-400">expenses</span> use <span class="text-gray-400">your share</span> in the expense total and in each day’s expense sum.
         <span class="block mt-1 text-gray-500">Income totals exclude <span class="text-sky-300/90">debt repayments</span> received (they do not count as earned income for closeout).</span>
       </p>
@@ -788,6 +803,16 @@ const totalExpenses = computed(() => {
     .filter(tx => tx.type === 'expense')
     .reduce((sum, tx) => sum + expenseAmountForViewerTotals(tx), 0);
 });
+
+const totalNonNecessityExpenses = computed(() => {
+  return transactions.value
+    .filter(tx => tx.type === 'expense' && tx.is_non_necessity && !tx.is_closeout_initiated)
+    .reduce((sum, tx) => sum + expenseAmountForViewerTotals(tx), 0);
+});
+
+const hasNonNecessityExpenses = computed(() => totalNonNecessityExpenses.value > 0.005);
+
+const totalNecessityExpenses = computed(() => totalExpenses.value - totalNonNecessityExpenses.value);
 
 const isCurrentMonthHardClosed = computed(() => {
   return closeoutStatus.value?.hard_close != null;

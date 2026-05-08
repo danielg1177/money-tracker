@@ -172,6 +172,8 @@ class MonthCloseoutService
      *
      * Includes tracked debt repayments (solo payer amount and split shares). Excludes closeout-generated
      * expense rows and borrow transactions so hard-close math stays stable.
+     * Excludes non-necessity advance transactions (is_non_necessity = true); their deduction from fund balances
+     * is handled by applyFundAdvances() at closeout.
      */
     public function expenseTotalTowardRemainingBasis(User $user, int $year, int $month): float
     {
@@ -214,6 +216,7 @@ class MonthCloseoutService
             ->where('is_split', false)
             ->where('is_closeout_initiated', false)
             ->where('is_borrow', false)
+            ->where('is_non_necessity', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->sum('amount');

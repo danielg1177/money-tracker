@@ -55,6 +55,7 @@ class TransactionService
                 'is_split' => $data['is_split'],
                 'split_data' => $data['split_data'] ?? null,
                 'advance_fund_id' => $data['advance_fund_id'] ?? null,
+                'is_non_necessity' => ! empty($data['is_non_necessity']) && ($data['type'] ?? null) === 'expense' && empty($data['is_split']) && ! empty($data['advance_fund_id']),
                 'debt_id' => $incomeDebt?->id,
             ];
 
@@ -230,6 +231,7 @@ class TransactionService
                 'is_split' => $data['is_split'],
                 'split_data' => $data['split_data'] ?? null,
                 'advance_fund_id' => $data['advance_fund_id'] ?? null,
+                'is_non_necessity' => ! empty($data['is_non_necessity']) && ($data['type'] ?? null) === 'expense' && empty($data['is_split']) && ! empty($data['advance_fund_id']),
                 'debt_id' => $incomeDebt?->id,
             ];
 

@@ -45,6 +45,8 @@ This document maps each user-visible feature to the backend and frontend files t
 
 **Debt repayment sub-feature (expense):** Optional `debt_id` on `POST/PUT`-validated payloads supports create and update for payer-side debt-payment expenses. When set, creates/updates a categorized **expense** for the payer, mirrors an **`is_debt_payment` income** for an in-family **creditor** (with `mirror_transaction_id` linkage), and keeps `debts.balance` in sync by rolling back the old payment amount and applying the edited amount. Split is supported on these debt-payment expenses (creating/recreating `transaction_splits` and pending split debts for non-payer participants); advance fund remains disabled for debt-payment expenses. Creditor repayment income remains excluded from `MonthCloseoutService` gross income (same rule as existing `get debts`/`payDebt` flows). **`GET /month-summary`** exposes `debt_repayments.{paid,received}` for viewer-scoped repayment lines (creditor **received** lines stay out of income **category** totals). Payer-side amounts also flow into **`category_totals`** under the expense’s **category** when set, else **Uncategorized Debt Payments**: **`paid` includes any family member listed on payer-side splits**, and **`amount`** is each viewer's **split share** (`transaction_splits.amount`) for split repayments while **`received`** stays the creditor mirror **`transactions.amount`** (full cash-in to that leg).
 
+**Non-necessity sub-feature:** Expense transactions with `advance_fund_id` can be marked `is_non_necessity=true` (not allowed on splits, requires an active percentage-of-remaining fund rule targeting the advance fund). These are excluded from the expense basis in closeout math; advance settlement still deducts from the fund, so the fund's net change = rule allocation − advance amount.
+
 **Debt association sub-feature (income):** Optional `income_debt_mode` on income payloads:
 - `none`: regular income
 - `existing`: links income to a debt the user owes and increments that debt's `amount` + `balance`
@@ -65,6 +67,8 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 | Frontend | `resources/js/pages/Categories.vue`, `resources/js/components/IconPicker.vue` |
 
 **`split_default` / `advance_fund_id`:** Only honored when `is_expense` is true. Stored as JSON FK respectively; excluded when saving an income-only category. The transaction form applies these defaults only when the active transaction **type is expense**. If the category enables split (`is_split_default` with `split_default`), the form turns **split** on and fills **equal shares across the current family** (`familyUsers`); the stored `split_default` JSON documents the category for reference but does not pre-fill those percentages in the transaction form.
+
+Categories with `advance_fund_id` (expense only) can set `is_non_necessity_default=true`. Requires the same fund rule constraint as the transaction flag. When set, new transactions in that category auto-default to `is_non_necessity=true`.
 
 ---
 

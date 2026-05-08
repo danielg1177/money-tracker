@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\FundRule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -21,6 +22,11 @@ class StoreCategoryRequest extends FormRequest
                 'split_default' => null,
             ]);
         }
+
+        // Clear is_non_necessity_default if not applicable
+        if (! $this->boolean('is_expense') || ! $this->filled('advance_fund_id')) {
+            $this->merge(['is_non_necessity_default' => false]);
+        }
     }
 
     public function withValidator(Validator $validator): void
@@ -36,6 +42,30 @@ class StoreCategoryRequest extends FormRequest
                 );
             }
         });
+
+        $validator->after(function (Validator $v): void {
+            if (! $this->boolean('is_non_necessity_default')) {
+                return;
+            }
+
+            if (! $this->boolean('is_expense') || ! $this->filled('advance_fund_id')) {
+                return;
+            }
+
+            $advanceFundId = (int) $this->input('advance_fund_id');
+            $hasMatchingRule = FundRule::query()
+                ->where('user_id', auth()->id())
+                ->where('is_active', true)
+                ->where('destination_type', 'fund')
+                ->where('destination_id', $advanceFundId)
+                ->where('allocation_type', 'percentage')
+                ->where('allocation_base', 'remaining')
+                ->exists();
+
+            if (! $hasMatchingRule) {
+                $v->errors()->add('is_non_necessity_default', 'Non-necessity default requires an active percentage-of-remaining closeout rule targeting the selected advance fund.');
+            }
+        });
     }
 
     public function rules(): array
@@ -47,6 +77,7 @@ class StoreCategoryRequest extends FormRequest
             'is_income' => ['boolean'],
             'is_expense' => ['boolean'],
             'is_split_default' => ['boolean'],
+            'is_non_necessity_default' => ['boolean'],
             'split_default' => ['nullable', 'array'],
             'advance_fund_id' => ['nullable', 'exists:funds,id'],
         ];

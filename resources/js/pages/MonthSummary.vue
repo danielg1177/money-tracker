@@ -274,6 +274,10 @@ const isNegativeRemainingAfterExpenses = computed(() => {
 
 const grossAllocationsTotal = computed(() => Number(rulePreviewBasis.value?.gross_allocations_total ?? 0));
 
+const nonNecessityExpenses = computed(() => Number(rulePreviewBasis.value?.non_necessity_expenses ?? 0));
+
+const hasNonNecessityTransactions = computed(() => nonNecessityExpenses.value > 0.005);
+
 const showGrossAllocationsInPreview = computed(() => grossAllocationsTotal.value > 0.005);
 
 const expenseCloseoutBasisLines = computed(() => summary.value?.rule_preview?.expense_closeout_basis?.lines ?? []);
@@ -465,6 +469,20 @@ function movementTypeLabel(type) {
               −{{ formatCurrency(expenseCategoriesTotal) }}
             </span>
           </div>
+          <template v-if="hasNonNecessityTransactions">
+            <div class="flex items-center justify-between gap-3 px-3 py-2 bg-gray-900/50 rounded-lg border border-gray-700">
+              <span class="text-sm text-gray-300">Total Necessities</span>
+              <span class="text-sm font-medium shrink-0 text-red-400 tabular-nums">
+                −{{ formatCurrency(expenseCategoriesTotal - nonNecessityExpenses) }}
+              </span>
+            </div>
+            <div class="flex items-center justify-between gap-3 px-3 py-2 bg-gray-900/50 rounded-lg border border-gray-700">
+              <span class="text-sm text-gray-300">Total Non-Necessities</span>
+              <span class="text-sm font-medium shrink-0 text-violet-400 tabular-nums">
+                −{{ formatCurrency(nonNecessityExpenses) }}
+              </span>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -716,7 +734,7 @@ function movementTypeLabel(type) {
             <div class="flex flex-wrap items-center gap-x-1 gap-y-1">
               <span>Gross Income: <span class="text-gray-200 tabular-nums">{{ formatCurrency(summary.rule_preview.basis.gross_income) }}</span></span>
               <span class="text-gray-600" aria-hidden="true">|</span>
-              <span>Expenses: <span class="text-gray-200 tabular-nums">{{ formatCurrency(summary.rule_preview.basis.total_expenses) }}</span></span>
+              <span>{{ hasNonNecessityTransactions ? 'Necessity Expenses:' : 'Expenses:' }} <span class="text-gray-200 tabular-nums">{{ formatCurrency(summary.rule_preview.basis.total_expenses) }}</span></span>
               <template v-if="showGrossAllocationsInPreview">
                 <span class="text-gray-600" aria-hidden="true">|</span>
                 <span>Gross-base rules: <span class="text-gray-200 tabular-nums">−{{ formatCurrency(grossAllocationsTotal) }}</span></span>

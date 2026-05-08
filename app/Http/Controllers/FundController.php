@@ -19,12 +19,26 @@ class FundController extends Controller
     public function index()
     {
         $user = auth()->user();
+        $qualifyingFundIds = FundRule::query()
+            ->where('user_id', $user->id)
+            ->where('is_active', true)
+            ->where('destination_type', 'fund')
+            ->where('allocation_type', 'percentage')
+            ->where('allocation_base', 'remaining')
+            ->whereNotNull('destination_id')
+            ->pluck('destination_id')
+            ->map(fn ($id) => (int) $id)
+            ->flip()
+            ->all();
 
         $personalFunds = $user->funds()
             ->whereNull('family_id')
             ->with(['fundRules', 'movements.user'])
             ->get()
-            ->map(fn ($f) => array_merge($f->toArray(), ['scope' => 'personal']))
+            ->map(fn ($f) => array_merge($f->toArray(), [
+                'scope' => 'personal',
+                'has_non_necessity_rule' => isset($qualifyingFundIds[(int) $f->id]),
+            ]))
             ->toBase();
 
         $familyFunds = collect([]);
@@ -33,7 +47,10 @@ class FundController extends Controller
                 ->where('family_id', $user->family_id)
                 ->with(['fundRules', 'movements.user'])
                 ->get()
-                ->map(fn ($f) => array_merge($f->toArray(), ['scope' => 'family']))
+                ->map(fn ($f) => array_merge($f->toArray(), [
+                    'scope' => 'family',
+                    'has_non_necessity_rule' => isset($qualifyingFundIds[(int) $f->id]),
+                ]))
                 ->toBase();
         }
 

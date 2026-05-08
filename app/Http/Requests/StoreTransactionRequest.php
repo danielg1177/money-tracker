@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Debt;
+use App\Models\FundRule;
 use App\Models\User;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -45,6 +46,16 @@ class StoreTransactionRequest extends FormRequest
             $this->merge([
                 'advance_fund_id' => null,
             ]);
+        }
+
+        // Force is_non_necessity off if the transaction cannot qualify
+        if (
+            $this->input('type') !== 'expense'
+            || ! $this->filled('advance_fund_id')
+            || $this->boolean('is_split')
+            || $this->filled('debt_id')
+        ) {
+            $this->merge(['is_non_necessity' => false]);
         }
 
         if ($this->input('income_debt_mode') === 'existing') {
@@ -197,6 +208,36 @@ class StoreTransactionRequest extends FormRequest
                 }
             }
         });
+
+        $validator->after(function (Validator $v): void {
+            if ($this->input('type') !== 'expense') {
+                return;
+            }
+
+            if (! $this->boolean('is_non_necessity')) {
+                return;
+            }
+
+            $user = $this->user();
+            $advanceFundId = (int) $this->input('advance_fund_id');
+            $hasEligibleRule = $user !== null
+                && FundRule::query()
+                    ->where('user_id', $user->id)
+                    ->where('is_active', true)
+                    ->where('destination_type', 'fund')
+                    ->where('destination_id', $advanceFundId)
+                    ->where('allocation_type', 'percentage')
+                    ->where('allocation_base', 'remaining')
+                    ->exists();
+
+            if (
+                ! $this->filled('advance_fund_id')
+                || $this->boolean('is_split')
+                || ! $hasEligibleRule
+            ) {
+                $v->errors()->add('is_non_necessity', 'Non-necessity is only allowed for non-split expenses with an advance fund that has an active percentage-of-remaining closeout rule targeting that fund.');
+            }
+        });
     }
 
     public function rules(): array
@@ -212,6 +253,7 @@ class StoreTransactionRequest extends FormRequest
             'split_data.*.user_id' => ['required_with:split_data', 'exists:users,id'],
             'split_data.*.share_percentage' => ['required_with:split_data', 'numeric', 'min:0', 'max:100'],
             'advance_fund_id' => ['nullable', 'exists:funds,id'],
+            'is_non_necessity' => ['boolean'],
             'debt_id' => [
                 'nullable',
                 'integer',
@@ -252,6 +294,7 @@ class StoreTransactionRequest extends FormRequest
             'split_data.*.share_percentage.max' => 'Share percentage cannot exceed 100.',
             'advance_fund_id.exists' => 'The selected advance fund does not exist.',
             'debt_id.exists' => 'The selected debt is invalid.',
+            'is_non_necessity' => 'Non-necessity requires an advance fund with a matching closeout rule.',
         ];
     }
 }

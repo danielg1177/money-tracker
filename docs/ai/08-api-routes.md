@@ -58,7 +58,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
-| GET | `/funds` | `FundController::index` | Personal funds: auth user’s funds with `family_id` null. Family funds: all funds with `family_id` = user’s family. Merged with `scope` each (`personal` \| `family`); family rows are omitted from the personal query so the creator does not see duplicates. Each `movements[]` row includes nested `user` (`name`, etc.) for who recorded the movement |
+| GET | `/funds` | `FundController::index` | Personal funds: auth user’s funds with `family_id` null. Family funds: all funds with `family_id` = user’s family. Merged with `scope` each (`personal` \| `family`); family rows are omitted from the personal query so the creator does not see duplicates. Each row also includes `has_non_necessity_rule` (auth user has active `destination_type='fund'` + `allocation_type='percentage'` + `allocation_base='remaining'` rule for that fund id). Each `movements[]` row includes nested `user` (`name`, etc.) for who recorded the movement |
 | POST | `/funds` | `FundController::store` | `{name, description?, is_family_fund?}`; if `is_family_fund=true` and user has `family_id`, fund is family-scoped |
 | PUT | `/funds/{fund}` | `FundController::update` | `{name, description?}`; requires fund ownership or family membership with `can_manage_family` for editing |
 | DELETE | `/funds/{fund}` | `FundController::destroy` | Requires fund ownership (personal) or family membership with `can_manage_family` (family-scoped) |
@@ -132,7 +132,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
-| GET | `/month-summary` | `MonthSummaryController::show` | Query: `year`, `month`. Returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements, debt_repayments, title_savings}`; **`category_totals`** is **scoped to the authenticated user** (not full-family). Viewer **income** rows **exclude `is_borrow`** (fund borrow withdrawals align with **`rule_preview.basis.gross_income`**; see **`fund_movements`**). Solo **non–debt-payment** expense rows **exclude `is_closeout_initiated`** (hard-close ledger lines do not inflate **Your expenses** totals; see **`fund_movements`** / **`debt_repayments`**). Categorized **debt repayment** expenses merge into that category; uncategorized repayments aggregate to synthetic **Uncategorized Debt Payments** (`category_id=-1`). **`member_balances`**: net split-**bill** IOUs for **`is_split` expenses in that month, excluding `is_debt_payment` and `is_closeout_initiated`** (viewer split-share alignment); only non-zero nets appear. **`rule_preview.basis.total_expenses`** matches **`MonthCloseoutService::expenseTotalTowardRemainingBasis`** (includes those repayments; excludes `is_closeout_initiated` / `is_borrow` legs). **`rule_preview.basis`** also includes **`gross_allocations_total`** (amount subtracted from gross for remaining; **fund**-target gross rules net month **advances** to that fund so they are not double-counted with **`total_expenses`**) and a **signed** **`remaining_after_expenses`**. **`rule_preview.expense_closeout_basis.lines`** is a short list describing that expense basis. `title_savings` is populated only for hard-closed months and includes `{id, title, amount, is_completed, completed_at}` rows for the authenticated user. **`rule_preview.rules[]`** includes **`fund_advance_outstanding_before`** and **`net_after_advances`** for fund allocations (subtracts month's advance-tagged expenses to that fund, rule-order; **`net_after_advances` may be negative**). **`destination_type=debt`** rows expose **nominal** **`projected_amount`** and **`net_after_advances`** equal to the **capped** paydown (**`MonthSummary`** shows **`rulePreviewNet()`**, which prefers **`net_after_advances`**—users see capped dollars). **`debt_repayments.paid`** uses each viewer's split share for split debt repayments (and lists co-payers on those expenses). Requires `family_id` (403 if unset). All read-only. |
+| GET | `/month-summary` | `MonthSummaryController::show` | Query: `year`, `month`. Returns `{year, month, is_hard_closed, close_status, category_totals, member_balances, rule_preview, fund_movements, debt_repayments, title_savings}`; **`category_totals`** is **scoped to the authenticated user** (not full-family). Viewer **income** rows **exclude `is_borrow`** (fund borrow withdrawals align with **`rule_preview.basis.gross_income`**; see **`fund_movements`**). Solo **non–debt-payment** expense rows **exclude `is_closeout_initiated`** (hard-close ledger lines do not inflate **Your expenses** totals; see **`fund_movements`** / **`debt_repayments`**). Categorized **debt repayment** expenses merge into that category; uncategorized repayments aggregate to synthetic **Uncategorized Debt Payments** (`category_id=-1`). **`member_balances`**: net split-**bill** IOUs for **`is_split` expenses in that month, excluding `is_debt_payment` and `is_closeout_initiated`** (viewer split-share alignment); only non-zero nets appear. **`rule_preview.basis.total_expenses`** matches **`MonthCloseoutService::expenseTotalTowardRemainingBasis`** (includes those repayments; excludes `is_closeout_initiated` / `is_borrow` legs and non-necessity advance expenses). **`rule_preview.basis.non_necessity_expenses`** separately reports month expense totals where `is_non_necessity=true` + `advance_fund_id` set. **`rule_preview.basis`** also includes **`gross_allocations_total`** (amount subtracted from gross for remaining; **fund**-target gross rules net month **advances** to that fund so they are not double-counted with **`total_expenses`**) and a **signed** **`remaining_after_expenses`**. **`rule_preview.expense_closeout_basis.lines`** is a short list describing that expense basis. `title_savings` is populated only for hard-closed months and includes `{id, title, amount, is_completed, completed_at}` rows for the authenticated user. **`rule_preview.rules[]`** includes **`fund_advance_outstanding_before`** and **`net_after_advances`** for fund allocations (subtracts month's advance-tagged expenses to that fund, rule-order; **`net_after_advances` may be negative**). **`destination_type=debt`** rows expose **nominal** **`projected_amount`** and **`net_after_advances`** equal to the **capped** paydown (**`MonthSummary`** shows **`rulePreviewNet()`**, which prefers **`net_after_advances`**—users see capped dollars). **`debt_repayments.paid`** uses each viewer's split share for split debt repayments (and lists co-payers on those expenses). Requires `family_id` (403 if unset). All read-only. |
 
 ---
 
@@ -168,6 +168,8 @@ For `type=income`, `advance_fund_id`, `is_split`, `split_data`, and expense-side
 
 For `type=expense`, optional **`debt_id`** (existing `debts.id` for the payer’s family) records a categorized debt repayment: creates/expands the same flow as `DebtService::payDebt` for simple (non-split) payments — reduces `debts.balance`, emits mirrored **`is_debt_payment` creditor income** when `creditor_id` is set; **mutually exclusive** with split/advance (`prepareForValidation` clears those when `debt_id` is present).
 
+`is_non_necessity` is a boolean transaction flag. It is force-normalized to `false` unless the request is an **expense**, has an **`advance_fund_id`**, is **not split**, and is **not a debt payment**. When sent as `true`, validation also requires an active auth-user closeout rule targeting that same advance fund (`destination_type='fund'`, `allocation_type='percentage'`, `allocation_base='remaining'`).
+
 ```json
 {
   "type": "income|expense",
@@ -176,6 +178,7 @@ For `type=expense`, optional **`debt_id`** (existing `debts.id` for the payer’
   "category_id": 1,
   "description": "optional",
   "is_split": false,
+  "is_non_necessity": false,
   "split_data": [
     {"user_id": 1, "share_percentage": 60},
     {"user_id": 2, "share_percentage": 40}
@@ -201,12 +204,15 @@ For `type=expense`, optional **`debt_id`** (existing `debts.id` for the payer’
 ### `StoreCategoryRequest`
 When `is_expense` is false, `is_split_default`, `split_default`, and `advance_fund_id` are cleared server-side before validation.
 
+`is_non_necessity_default` is a boolean category flag. It is force-normalized to `false` unless the category is an expense and has `advance_fund_id`. When sent as `true`, validation requires an active auth-user closeout rule targeting that same advance fund (`destination_type='fund'`, `allocation_type='percentage'`, `allocation_base='remaining'`).
+
 ```json
 {
   "name": "Groceries",
   "icon": "🛒",
   "is_income": false,
   "is_expense": true,
+  "is_non_necessity_default": false,
   "is_split_default": true,
   "split_default": [{"user_id": 1, "share_percentage": 50}, {"user_id": 2, "share_percentage": 50}]
 }

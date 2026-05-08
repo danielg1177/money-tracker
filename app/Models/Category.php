@@ -20,6 +20,7 @@ class Category extends Model
         'is_split_default',
         'split_default',
         'advance_fund_id',
+        'is_non_necessity_default',
     ];
 
     protected $casts = [
@@ -28,6 +29,7 @@ class Category extends Model
         'is_split_default' => 'bool',
         'split_default' => 'array',
         'advance_fund_id' => 'integer',
+        'is_non_necessity_default' => 'bool',
     ];
 
     public function family(): BelongsTo

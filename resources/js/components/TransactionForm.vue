@@ -367,6 +367,25 @@
           {{ fund.name }} ({{ fund.scope === 'family' || fund.family_id ? 'Family' : 'Personal' }})
         </option>
       </select>
+      <div
+        v-if="form.advance_fund_id !== null && selectedFundHasNonNecessityRule"
+        @click="form.is_non_necessity = !form.is_non_necessity"
+        class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600 cursor-pointer"
+      >
+        <div>
+          <p class="text-sm font-medium text-gray-300">Mark as non-necessity</p>
+          <p class="text-xs text-gray-500 mt-0.5">Excluded from expense basis at closeout; advance settles net against the fund</p>
+        </div>
+        <div
+          class="w-10 h-6 rounded-full transition-colors relative flex-shrink-0"
+          :class="form.is_non_necessity ? 'bg-violet-600' : 'bg-gray-700'"
+        >
+          <div
+            class="absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform"
+            :class="form.is_non_necessity ? 'translate-x-5' : 'translate-x-1'"
+          />
+        </div>
+      </div>
     </div>
 
     <!-- Split Editor -->
@@ -464,6 +483,7 @@ const form = ref({
   is_split: false,
   split_data: [],
   advance_fund_id: null,
+  is_non_necessity: false,
   debt_id: null,
   income_debt_mode: 'none',
   income_existing_debt_id: null,
@@ -507,6 +527,12 @@ const filteredCategories = computed(() => {
 
 const selectedCategory = computed(() => {
   return filteredCategories.value.find(cat => cat.id === form.value.category_id);
+});
+
+const selectedFundHasNonNecessityRule = computed(() => {
+  if (form.value.advance_fund_id === null) return false;
+  const fund = props.funds.find(f => f.id === form.value.advance_fund_id);
+  return fund?.has_non_necessity_rule === true;
 });
 
 const isEditMode = computed(() => !!props.transaction);
@@ -588,6 +614,7 @@ watch(
         is_split: newTransaction.is_split,
         split_data: normalizeSplits(newTransaction.split_data || []),
         advance_fund_id: newTransaction.advance_fund_id ?? null,
+        is_non_necessity: newTransaction.is_non_necessity ?? false,
         debt_id: newTransaction.debt_id ?? null,
         income_debt_mode: newTransaction.type === 'income' && newTransaction.debt_id ? 'existing' : 'none',
         income_existing_debt_id: newTransaction.type === 'income' ? (newTransaction.debt_id ?? null) : null,
@@ -613,12 +640,17 @@ watch(payTowardDebt, (on) => {
     return;
   }
   form.value.advance_fund_id = null;
+  form.value.is_non_necessity = false;
   if (payableDebts.value.length === 1) {
     form.value.debt_id = payableDebts.value[0].id;
   }
 });
 
 watch(() => form.value.is_split, (newVal) => {
+  if (newVal) {
+    form.value.is_non_necessity = false;
+  }
+
   if (!newVal) {
     form.value.split_data = [];
 
@@ -635,6 +667,7 @@ watch(() => form.value.is_split, (newVal) => {
 watch(() => form.value.type, (newType) => {
   if (newType === 'income') {
     form.value.advance_fund_id = null;
+    form.value.is_non_necessity = false;
     form.value.is_split = false;
     form.value.split_data = [];
     payTowardDebt.value = false;
@@ -691,6 +724,18 @@ watch(() => form.value.category_id, () => {
   if (selectedCategory.value?.advance_fund_id) {
     form.value.advance_fund_id = selectedCategory.value.advance_fund_id;
   }
+  // Auto-apply non-necessity default from category, subject to fund rule check
+  if (selectedCategory.value?.is_non_necessity_default && selectedFundHasNonNecessityRule.value) {
+    form.value.is_non_necessity = true;
+  } else {
+    form.value.is_non_necessity = false;
+  }
+});
+
+watch(() => form.value.advance_fund_id, (newVal) => {
+  if (newVal === null) {
+    form.value.is_non_necessity = false;
+  }
 });
 
 watch(
@@ -718,6 +763,7 @@ function resetForm() {
     is_split: false,
     split_data: [],
     advance_fund_id: null,
+    is_non_necessity: false,
     debt_id: null,
     income_debt_mode: 'none',
     income_existing_debt_id: null,
@@ -805,6 +851,14 @@ async function handleSubmit() {
       is_split: form.value.type === 'expense' && form.value.is_split,
       advance_fund_id:
         form.value.type === 'expense' && !payTowardDebt.value ? (form.value.advance_fund_id || null) : null,
+      is_non_necessity:
+        form.value.type === 'expense' &&
+        !payTowardDebt.value &&
+        !form.value.is_split &&
+        form.value.advance_fund_id !== null &&
+        selectedFundHasNonNecessityRule.value
+          ? (form.value.is_non_necessity || false)
+          : false,
       ...(form.value.type === 'expense' && form.value.is_split
         ? { split_data: form.value.split_data }
         : {}),

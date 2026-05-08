@@ -114,6 +114,9 @@
             <span v-if="category.is_split_default && category.is_expense" class="px-2 py-1 bg-purple-900/30 text-purple-300 text-xs font-medium rounded">
               Split Default
             </span>
+            <span v-if="category.is_non_necessity_default && category.is_expense" class="px-2 py-1 bg-violet-900/30 text-violet-300 text-xs font-medium rounded">
+              Non-Necessity Default
+            </span>
           </div>
         </div>
         <div class="flex items-center shrink-0 self-start sm:self-center pt-1 sm:pt-0 border-l border-gray-700/50 pl-3 -mr-1" @click.stop>
@@ -262,6 +265,22 @@
                 </select>
                 <p class="text-xs text-gray-500 mt-1">Expense transactions in this category will default to advancing against this fund</p>
               </div>
+
+              <div
+                v-if="form.advance_fund_id && selectedAdvanceFundHasNonNecessityRule"
+                class="flex items-center gap-3"
+              >
+                <input
+                  id="is-non-necessity-default"
+                  v-model="form.is_non_necessity_default"
+                  type="checkbox"
+                  :disabled="submitting"
+                  class="w-4 h-4 bg-gray-800 border border-gray-700 rounded focus:ring-violet-500 cursor-pointer disabled:opacity-50"
+                />
+                <label for="is-non-necessity-default" class="text-sm font-medium text-gray-300 cursor-pointer">
+                  Default transactions as non-necessity
+                </label>
+              </div>
             </template>
 
             <!-- Error -->
@@ -375,6 +394,7 @@ const form = ref({
   is_split_default: false,
   split_default: [],
   advance_fund_id: null,
+  is_non_necessity_default: false,
 });
 
 const filteredCategories = computed(() => {
@@ -387,6 +407,12 @@ const filteredCategories = computed(() => {
   return [...categories.value]
     .filter(cat => cat.is_expense)
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+});
+
+const selectedAdvanceFundHasNonNecessityRule = computed(() => {
+  if (!form.value.advance_fund_id) return false;
+  const fund = funds.value.find(f => f.id === form.value.advance_fund_id);
+  return fund?.has_non_necessity_rule === true;
 });
 
 onMounted(() => {
@@ -424,9 +450,16 @@ watch(
     if (t !== 'expense') {
       form.value.is_split_default = false;
       form.value.split_default = [];
+      form.value.is_non_necessity_default = false;
     }
   }
 );
+
+watch(() => form.value.advance_fund_id, (newVal) => {
+  if (!newVal) {
+    form.value.is_non_necessity_default = false;
+  }
+});
 
 /** When split default is on and there is nothing to preserve, seed equal percentages for all family members. */
 function ensureEqualSplitDefaultsWhenEnabled() {
@@ -471,6 +504,7 @@ function resetForm() {
     is_split_default: false,
     split_default: [],
     advance_fund_id: null,
+    is_non_necessity_default: false,
   };
 }
 
@@ -492,6 +526,7 @@ function editCategory(category) {
     is_split_default: isExpense && category.is_split_default,
     split_default: isExpense ? (category.split_default || []) : [],
     advance_fund_id: isExpense ? (category.advance_fund_id || null) : null,
+    is_non_necessity_default: isExpense ? (category.is_non_necessity_default || false) : false,
   };
   showAddModal.value = true;
 }
@@ -524,6 +559,7 @@ async function handleSubmit() {
       is_split_default: isExpense && form.value.is_split_default,
       split_default: isExpense && form.value.is_split_default ? form.value.split_default : null,
       advance_fund_id: isExpense ? (form.value.advance_fund_id || null) : null,
+      is_non_necessity_default: isExpense && !!form.value.advance_fund_id ? (form.value.is_non_necessity_default || false) : false,
     };
 
     if (editingCategory.value) {

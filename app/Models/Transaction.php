@@ -23,6 +23,7 @@ class Transaction extends Model
         'split_data',
         'fund_id',
         'advance_fund_id',
+        'is_non_necessity',
         'is_borrow',
         'is_debt_payment',
         'debt_id',
@@ -39,6 +40,7 @@ class Transaction extends Model
         'is_borrow' => 'bool',
         'is_debt_payment' => 'bool',
         'is_closeout_initiated' => 'bool',
+        'is_non_necessity' => 'bool',
         'advance_fund_id' => 'integer',
     ];
 
