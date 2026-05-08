@@ -275,6 +275,7 @@ const selectedCategory = ref(null);
 const isCategoryTransactionsModalOpen = ref(false);
 const splitHistoryModalRows = ref([]);
 const splitHistoryModalTitle = ref('');
+const splitHistoryModalSource = ref('');
 const isSplitHistoryModalOpen = ref(false);
 
 function sortCategoriesByTotalDesc(rows) {
@@ -383,6 +384,7 @@ function openSplitHistoryModal(balance, source) {
   splitHistoryModalTitle.value = isFromYou
     ? `From your split transactions with ${balance?.user_name ?? 'member'}`
     : `From ${balance?.user_name ?? 'member'} split transactions`;
+  splitHistoryModalSource.value = source;
   isSplitHistoryModalOpen.value = true;
 }
 
@@ -390,23 +392,35 @@ function closeSplitHistoryModal() {
   isSplitHistoryModalOpen.value = false;
   splitHistoryModalRows.value = [];
   splitHistoryModalTitle.value = '';
+  splitHistoryModalSource.value = '';
+}
+
+function splitSourceSign(source) {
+  return source === 'from_them_created' ? -1 : 1;
 }
 
 function splitSourceSignedAmount(balance, source) {
   const rawAmount = Number(balance?.[`${source}_amount`] || 0);
-  if (!rawAmount) {
-    return 0;
-  }
-
-  if (balance?.direction === 'they_owe_you') {
-    return source === 'from_you_created' ? -rawAmount : rawAmount;
-  }
-
-  return source === 'from_you_created' ? rawAmount : -rawAmount;
+  return splitSourceSign(source) * rawAmount;
 }
 
 function splitSourceAmountClass(balance, source) {
   const signedAmount = splitSourceSignedAmount(balance, source);
+  if (signedAmount > 0.005) {
+    return 'text-green-400';
+  }
+  if (signedAmount < -0.005) {
+    return 'text-red-400';
+  }
+  return 'text-gray-200';
+}
+
+function splitHistorySignedAmount(row) {
+  return splitSourceSign(splitHistoryModalSource.value) * Number(row?.balance_amount || 0);
+}
+
+function splitHistoryAmountClass(row) {
+  const signedAmount = splitHistorySignedAmount(row);
   if (signedAmount > 0.005) {
     return 'text-green-400';
   }
@@ -1199,8 +1213,11 @@ function movementTypeLabel(type) {
                       Total {{ formatCurrency(row.total_amount) }}
                     </p>
                   </div>
-                  <span class="text-sm font-medium text-gray-200 shrink-0 tabular-nums">
-                    {{ formatCurrency(row.balance_amount) }}
+                  <span
+                    :class="splitHistoryAmountClass(row)"
+                    class="text-sm font-medium shrink-0 tabular-nums"
+                  >
+                    {{ splitHistorySignedAmount(row) > 0.005 ? '+' : '' }}{{ formatCurrency(splitHistorySignedAmount(row)) }}
                   </span>
                 </div>
               </div>

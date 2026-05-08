@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-08 — Month Summary split source sign fix
+
+- Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Split balance source rows now sign amounts by source direction instead of final net direction: transactions created by the viewer show as positive receivables, while transactions created by the counterparty show as negative payables. Split source history rows use the same signs/colors.
+
 ## 2026-05-08 — Mobile initial page top alignment
 
 - Files touched: `resources/js/app.js`, `resources/js/components/AppNav.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
