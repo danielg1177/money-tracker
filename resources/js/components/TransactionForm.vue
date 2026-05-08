@@ -484,6 +484,8 @@ const { user } = useAuth();
 const formError = ref(null);
 const payTowardDebt = ref(false);
 const selectedDateCloseoutStatus = ref(null);
+const lastAllowedTransactionDate = ref(new Date().toISOString().split('T')[0]);
+const isRevertingClosedDateSelection = ref(false);
 let closeoutStatusRequestId = 0;
 
 const form = ref({
@@ -569,6 +571,20 @@ const isInteractionBlocked = computed(() => {
   return isDebtPaymentIncomeEditBlocked.value || isSelectedDateClosed.value;
 });
 
+function isMonthClosedForUser(status) {
+  if (!status) {
+    return false;
+  }
+
+  if (status.hard_close) {
+    return true;
+  }
+
+  return status.soft_closes?.some(
+    (softClose) => Number(softClose.user_id) === Number(user.value?.id),
+  ) === true;
+}
+
 function formatCurrency(amount) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -631,12 +647,13 @@ watch(
   (newTransaction) => {
     if (newTransaction) {
       payTowardDebt.value = !!newTransaction.is_debt_payment;
+      const normalizedDate = normalizeDateForInput(newTransaction.transaction_date);
       form.value = {
         type: newTransaction.type,
         amount: parseFloat(newTransaction.amount),
         category_id: newTransaction.category_id,
         description: newTransaction.description || '',
-        transaction_date: normalizeDateForInput(newTransaction.transaction_date),
+        transaction_date: normalizedDate,
         is_split: newTransaction.is_split,
         split_data: normalizeSplits(newTransaction.split_data || []),
         advance_fund_id: newTransaction.advance_fund_id ?? null,
@@ -652,6 +669,7 @@ watch(
         income_new_interest_enabled: false,
         income_new_interest_rate: 0,
       };
+      lastAllowedTransactionDate.value = normalizedDate;
     } else {
       resetForm();
     }
@@ -661,7 +679,12 @@ watch(
 
 watch(
   () => form.value.transaction_date,
-  async (dateValue) => {
+  async (dateValue, previousDateValue) => {
+    if (isRevertingClosedDateSelection.value) {
+      isRevertingClosedDateSelection.value = false;
+      return;
+    }
+
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ''))) {
       selectedDateCloseoutStatus.value = null;
       return;
@@ -674,10 +697,21 @@ watch(
       const status = await postCloseoutStatus('/closeout/status', { year, month });
       if (requestId === closeoutStatusRequestId) {
         selectedDateCloseoutStatus.value = status;
+        if (isMonthClosedForUser(status)) {
+          const fallbackDate = lastAllowedTransactionDate.value || String(previousDateValue || '');
+          if (fallbackDate && fallbackDate !== dateValue) {
+            isRevertingClosedDateSelection.value = true;
+            form.value.transaction_date = fallbackDate;
+            formError.value = 'You cannot select a date in a closed month.';
+          }
+          return;
+        }
+        lastAllowedTransactionDate.value = dateValue;
       }
     } catch (err) {
       if (requestId === closeoutStatusRequestId) {
         selectedDateCloseoutStatus.value = null;
+        lastAllowedTransactionDate.value = dateValue;
       }
     }
   },
@@ -805,12 +839,14 @@ watch(
 
 function resetForm() {
   payTowardDebt.value = false;
+  const today = new Date().toISOString().split('T')[0];
+  lastAllowedTransactionDate.value = today;
   form.value = {
     type: 'expense',
     amount: null,
     category_id: null,
     description: '',
-    transaction_date: new Date().toISOString().split('T')[0],
+    transaction_date: today,
     is_split: false,
     split_data: [],
     advance_fund_id: null,

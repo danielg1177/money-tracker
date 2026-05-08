@@ -1222,3 +1222,12 @@ Format:
   - Debt cards in `Debts.vue` now hide the **Original** amount when the debt is between family members (`creditor_id` present), while still showing **Remaining**.
   - The debt payment history modal summary line also hides the "original amount" text for those same inter-family debts and shows only remaining balance summary there.
   - External-creditor debts (`creditor_id` null) continue to show original + remaining summaries unchanged.
+
+## 2026-05-08 — Prevent closed-month date selection in transaction form
+- Files touched:
+  - Frontend: `resources/js/components/TransactionForm.vue`
+  - Docs: `docs/ai/03-frontend-vue.md`, `docs/ai/07-workflows.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - When the user picks a transaction date in a hard-closed month or a month soft-closed by that user, the date selection is immediately rejected and reverted to the last allowed date.
+  - The form now shows an inline validation error (`You cannot select a date in a closed month.`) instead of keeping a closed-month date selected and only disabling other controls.
+  - Existing backend closed-month guards remain unchanged and authoritative for all transaction mutations.
