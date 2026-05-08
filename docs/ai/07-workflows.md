@@ -7,7 +7,7 @@ Detailed step-by-step flows for the most complex operations in the app.
 ## Workflow 1: Creating a Split Expense Transaction
 
 1. User opens `TransactionForm` (via FAB in `AppNav`) and sets type=`expense`, amount, date, category
-   - If the chosen date falls in a month that is hard-closed or soft-closed for the user, the form immediately reverts date selection to the last allowed date and shows an inline validation message.
+   - If the chosen date falls in a month that is hard-closed or soft-closed for the user, the form keeps that date selected and shows a top warning banner. Save is blocked only when submit is attempted.
 2. User enables "Split between family members" → `SplitEditor` appears (income transactions do **not** show this toggle)
 3. User assigns percentages to family members (must sum to 100)
 4. Vue submits `POST /transactions` with body:

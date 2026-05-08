@@ -1231,3 +1231,13 @@ Format:
   - When the user picks a transaction date in a hard-closed month or a month soft-closed by that user, the date selection is immediately rejected and reverted to the last allowed date.
   - The form now shows an inline validation error (`You cannot select a date in a closed month.`) instead of keeping a closed-month date selected and only disabling other controls.
   - Existing backend closed-month guards remain unchanged and authoritative for all transaction mutations.
+
+## 2026-05-08 — Closed-month date UX adjustment in transaction form
+- Files touched:
+  - Frontend: `resources/js/components/TransactionForm.vue`
+  - Docs: `docs/ai/03-frontend-vue.md`, `docs/ai/07-workflows.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - Closed-month dates are now allowed to stay selected in the date input (no auto-revert).
+  - While a closed-month date is selected, the blue top warning is shown; controls remain interactive, but submit is blocked.
+  - The red bottom error message is only shown after clicking Create/Save with a closed-month date.
+  - Switching date back to an open month clears warning/error state and allows normal submit.

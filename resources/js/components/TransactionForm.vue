@@ -484,8 +484,6 @@ const { user } = useAuth();
 const formError = ref(null);
 const payTowardDebt = ref(false);
 const selectedDateCloseoutStatus = ref(null);
-const lastAllowedTransactionDate = ref(new Date().toISOString().split('T')[0]);
-const isRevertingClosedDateSelection = ref(false);
 let closeoutStatusRequestId = 0;
 
 const form = ref({
@@ -568,7 +566,7 @@ const isSelectedDateClosed = computed(() => {
 });
 
 const isInteractionBlocked = computed(() => {
-  return isDebtPaymentIncomeEditBlocked.value || isSelectedDateClosed.value;
+  return isDebtPaymentIncomeEditBlocked.value;
 });
 
 function isMonthClosedForUser(status) {
@@ -679,12 +677,7 @@ watch(
 
 watch(
   () => form.value.transaction_date,
-  async (dateValue, previousDateValue) => {
-    if (isRevertingClosedDateSelection.value) {
-      isRevertingClosedDateSelection.value = false;
-      return;
-    }
-
+  async (dateValue) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ''))) {
       selectedDateCloseoutStatus.value = null;
       return;
@@ -697,21 +690,14 @@ watch(
       const status = await postCloseoutStatus('/closeout/status', { year, month });
       if (requestId === closeoutStatusRequestId) {
         selectedDateCloseoutStatus.value = status;
-        if (isMonthClosedForUser(status)) {
-          const fallbackDate = lastAllowedTransactionDate.value || String(previousDateValue || '');
-          if (fallbackDate && fallbackDate !== dateValue) {
-            isRevertingClosedDateSelection.value = true;
-            form.value.transaction_date = fallbackDate;
-            formError.value = 'You cannot select a date in a closed month.';
-          }
-          return;
+        if (!isMonthClosedForUser(status)) {
+          formError.value = null;
         }
-        lastAllowedTransactionDate.value = dateValue;
       }
     } catch (err) {
       if (requestId === closeoutStatusRequestId) {
         selectedDateCloseoutStatus.value = null;
-        lastAllowedTransactionDate.value = dateValue;
+        formError.value = null;
       }
     }
   },
@@ -840,7 +826,6 @@ watch(
 function resetForm() {
   payTowardDebt.value = false;
   const today = new Date().toISOString().split('T')[0];
-  lastAllowedTransactionDate.value = today;
   form.value = {
     type: 'expense',
     amount: null,
@@ -887,7 +872,7 @@ async function handleSubmit() {
   }
 
   if (isSelectedDateClosed.value) {
-    formError.value = 'This transaction date is in a closed month. Reopen the month before saving.';
+    formError.value = 'This transaction date is in a closed month. Change the date or reopen the month before saving.';
     return;
   }
 
