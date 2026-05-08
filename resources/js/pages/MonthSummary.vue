@@ -379,10 +379,10 @@ function splitSourceSignedAmount(balance, source) {
   }
 
   if (balance?.direction === 'they_owe_you') {
-    return source === 'from_you_created' ? rawAmount : -rawAmount;
+    return source === 'from_you_created' ? -rawAmount : rawAmount;
   }
 
-  return source === 'from_you_created' ? -rawAmount : rawAmount;
+  return source === 'from_you_created' ? rawAmount : -rawAmount;
 }
 
 function splitSourceAmountClass(balance, source) {
