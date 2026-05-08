@@ -249,9 +249,13 @@ class DebtController extends Controller
             })
             ->filter(fn (array $entry): bool => ! empty($entry['transaction_date']));
 
+        $closeoutContributionsTotal = collect($debt->contributions ?? [])
+            ->sum(static fn (array $contribution): float => (float) ($contribution['amount'] ?? 0.0));
+        $initialPrincipalAmount = max(0.0, round((float) $debt->amount - (float) $closeoutContributionsTotal, 2));
+
         $initialValueEntry = [
             'id' => null,
-            'amount' => $debt->amount,
+            'amount' => $initialPrincipalAmount,
             'description' => 'Initial Value Set At',
             'transaction_date' => $debt->created_at->toDateString(),
             'type' => 'initial_value',

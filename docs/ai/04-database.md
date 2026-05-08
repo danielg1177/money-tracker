@@ -181,7 +181,7 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `amount` | decimal(15,2) | original amount |
 | `balance` | decimal(15,2) | remaining unpaid |
 | `description` | text nullable | |
-| `contributions` | json nullable | Closeout contribution records: `[{month, year, amount}]`; used by the debt history modal to show closeout additions separately from manual payments |
+| `contributions` | json nullable | Closeout contribution records: `[{month, year, amount, created_by_closeout_debt?}]`; `created_by_closeout_debt=true` marks contributions that originated from a debt row created during split-debt consolidation, allowing undo-hard-close to delete only those closeout-created debts safely |
 | `is_family_debt` | boolean | false = personal debt; true = visible to all family members |
 | `creditor_name` | varchar(255) nullable | name for external creditors (e.g., "Bank of America"); used when `creditor_id` is null |
 | `is_pending_closeout` | boolean | true during month hard-close split processing |

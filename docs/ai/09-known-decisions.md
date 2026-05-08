@@ -27,6 +27,9 @@ Paid debts (balance = 0) remain in the database permanently. There is no "paid" 
 ### Inter-family debt original amount is hidden on debt page
 For debts between two family members (`creditor_id` present), `resources/js/pages/Debts.vue` intentionally hides the **Original** amount on debt cards and in the payment-history summary line. The page emphasizes current remaining balance for these debts because split repayments can move amounts back and forth; full origin values still exist in debt history data (`initial_value` timeline entry).
 
+### Debt history `initial_value` is principal-only
+`DebtController::paymentHistory` computes the synthetic `initial_value` row from principal-only origin (`debt.amount - sum(debt.contributions)`). This keeps the starting amount stable when month-closeout split consolidations add new contribution entries to the debt.
+
 ### Closeout debt-payment transaction date policy
 When closeout rules allocate to a debt, the generated debt-payment transaction date is:
 - **today** if the hard-close month is the same month/year as the current date

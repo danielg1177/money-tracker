@@ -423,7 +423,12 @@ class MonthCloseoutService
                     }
                 ));
 
-                if (empty($remainingContributions)) {
+                $allMonthContributionsCreatedDebt = count($monthContributions) > 0
+                    && collect($monthContributions)->every(
+                        fn (array $contribution): bool => (bool) ($contribution['created_by_closeout_debt'] ?? false)
+                    );
+
+                if (empty($remainingContributions) && $allMonthContributionsCreatedDebt) {
                     $debt->delete();
 
                     continue;
@@ -868,6 +873,7 @@ class MonthCloseoutService
                     $existingDebt->contributions = array_merge($existingDebt->contributions ?? [], [$contribution]);
                     $existingDebt->save();
                 } else {
+                    $contribution['created_by_closeout_debt'] = true;
                     Debt::query()->create([
                         'family_id' => $family->id,
                         'debtor_id' => $actualDebtorId,

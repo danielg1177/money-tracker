@@ -87,6 +87,7 @@ The payment history modal in `Debts.vue` displays:
 - Who made the payment (payer's name)
 - Split contribution breakdown (when payment was split), showing each participant's amount and percentage
 - Whether it was initiated from a closeout (shown as a "Closeout" badge if applicable)
+- Initial value row based on pre-closeout principal (`debt.amount - sum(contributions)`) so closeout additions do not overwrite historical debt start
 
 ---
 
@@ -250,7 +251,7 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
 6. Deletes `CloseoutTitleSaving` rows for that family/month and deletes each linked `completion_transaction_id` row when present
 7. Reverses split-debt consolidation:
    - confirmed debts with month/year entries in `contributions` remove those entries and subtract that amount from `amount` + `balance`
-   - debts whose contributions become empty are deleted (created entirely by the reverted closeout)
+   - debts whose contributions become empty are deleted only when that month's contributions are marked `created_by_closeout_debt=true` (closeout-created debt rows)
 8. Recreates pending split debts from non-closeout split transactions in that month (`is_split=true`, `is_closeout_initiated=false`) when `(transaction_id, debtor_id)` debt does not already exist
 9. Reverses monthly debt interest entries by removing matching month/year records from `interest_accruals`, subtracting accrued interest from `balance`, and recomputing `interest_last_applied_at` from the latest remaining accrual (or null)
 10. Deletes month `MonthSoftClose` and `MonthHardClose` rows to return the month to pre-close state
@@ -314,7 +315,7 @@ Only available to `head_of_household` (or `is_admin=true`) users.
    c. Reverses fund balance changes from `FundMovement` rows (`type=closeout_allocation`, `advance_settlement`); deletes those `FundMovement` rows
    d. Deletes all transactions with `is_closeout_initiated=true` for family members dated in the closed month
    e. Deletes `CloseoutTitleSaving` records for this family/year/month; also deletes any `completion_transaction_id` transactions linked to them
-   f. Reverses confirmed split debts that have a `contributions` entry for this month — newly-created debts (only this month's contribution) are deleted; augmented existing debts have the contribution removed and `amount`/`balance` decremented
+   f. Reverses confirmed split debts that have a `contributions` entry for this month — debt rows are deleted only when reverted month contributions are marked `created_by_closeout_debt=true`; augmented existing debts have the contribution removed and `amount`/`balance` decremented
    g. Recreates `is_pending_closeout=true` debts from all split transactions (`is_split=true`, `is_closeout_initiated=false`) in the family/month that no longer have pending debt records
    h. Reverses interest: finds debts with `interest_accruals` entries for this year/month, subtracts accrual amounts from `debt.balance`, removes the entry from `interest_accruals`, restores `interest_last_applied_at`
    i. Deletes all `MonthSoftClose` records for this family/year/month

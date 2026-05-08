@@ -628,4 +628,146 @@ class UndoHardCloseTest extends TestCase
             'balance' => 40.00,
         ]);
     }
+
+    public function test_payment_history_keeps_initial_value_constant_when_closeout_additions_exist(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 4, 30, 12, 0, 0));
+
+        $family = Family::factory()->create();
+        $manager = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'head_of_household',
+            'is_admin' => false,
+        ]);
+        $member = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'member',
+            'is_admin' => false,
+        ]);
+        $expenseCategory = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_income' => false,
+            'is_expense' => true,
+        ]);
+
+        $existingDebt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $member->id,
+            'creditor_id' => $manager->id,
+            'amount' => 800.00,
+            'balance' => 800.00,
+            'is_pending_closeout' => false,
+            'is_family_debt' => false,
+            'transaction_id' => null,
+            'contributions' => null,
+        ]);
+
+        $this->actingAs($manager)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 100,
+            'description' => 'Shared expense',
+            'transaction_date' => '2026-04-20',
+            'category_id' => $expenseCategory->id,
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $manager->id, 'share_percentage' => 20],
+                ['user_id' => $member->id, 'share_percentage' => 80],
+            ],
+        ])->assertCreated();
+
+        $this->actingAs($manager)->postJson('/closeout/soft-close', [
+            'year' => 2026,
+            'month' => 4,
+        ])->assertOk();
+        $this->actingAs($member)->postJson('/closeout/soft-close', [
+            'year' => 2026,
+            'month' => 4,
+        ])->assertOk();
+        $this->actingAs($manager)->postJson('/closeout/hard-close', [
+            'year' => 2026,
+            'month' => 4,
+        ])->assertOk();
+
+        $existingDebt->refresh();
+        $this->assertEqualsWithDelta(880.0, (float) $existingDebt->amount, 0.01);
+        $this->assertEqualsWithDelta(880.0, (float) $existingDebt->balance, 0.01);
+
+        $history = collect($this->actingAs($manager)->getJson("/debts/{$existingDebt->id}/payments")->assertOk()->json());
+        $initialEntry = $history->first(fn (array $entry): bool => ($entry['type'] ?? '') === 'initial_value');
+        $this->assertNotNull($initialEntry);
+        $this->assertEqualsWithDelta(800.0, (float) ($initialEntry['amount'] ?? 0), 0.01);
+    }
+
+    public function test_undo_hard_close_does_not_delete_preexisting_confirmed_debt_with_only_reverted_contribution(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 4, 30, 12, 0, 0));
+
+        $family = Family::factory()->create();
+        $manager = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'head_of_household',
+            'is_admin' => false,
+        ]);
+        $member = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'member',
+            'is_admin' => false,
+        ]);
+        $expenseCategory = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_income' => false,
+            'is_expense' => true,
+        ]);
+
+        $existingDebt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $member->id,
+            'creditor_id' => $manager->id,
+            'amount' => 800.00,
+            'balance' => 800.00,
+            'is_pending_closeout' => false,
+            'is_family_debt' => false,
+            'transaction_id' => null,
+            'contributions' => null,
+        ]);
+
+        $this->actingAs($manager)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 100,
+            'description' => 'Shared expense',
+            'transaction_date' => '2026-04-20',
+            'category_id' => $expenseCategory->id,
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $manager->id, 'share_percentage' => 20],
+                ['user_id' => $member->id, 'share_percentage' => 80],
+            ],
+        ])->assertCreated();
+
+        $this->actingAs($manager)->postJson('/closeout/soft-close', [
+            'year' => 2026,
+            'month' => 4,
+        ])->assertOk();
+        $this->actingAs($member)->postJson('/closeout/soft-close', [
+            'year' => 2026,
+            'month' => 4,
+        ])->assertOk();
+        $this->actingAs($manager)->postJson('/closeout/hard-close', [
+            'year' => 2026,
+            'month' => 4,
+        ])->assertOk();
+
+        $existingDebt->refresh();
+        $this->assertEqualsWithDelta(880.0, (float) $existingDebt->amount, 0.01);
+
+        $this->actingAs($manager)->postJson('/closeout/undo-hard-close', [
+            'year' => 2026,
+            'month' => 4,
+        ])->assertOk();
+
+        $existingDebt->refresh();
+        $this->assertEqualsWithDelta(800.0, (float) $existingDebt->amount, 0.01);
+        $this->assertEqualsWithDelta(800.0, (float) $existingDebt->balance, 0.01);
+        $this->assertSame([], $existingDebt->contributions ?? []);
+    }
 }

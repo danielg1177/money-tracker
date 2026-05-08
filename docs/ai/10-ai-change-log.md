@@ -1261,3 +1261,14 @@ Format:
   - Inter-family debts (`creditor_id` present) on `Debts.vue` no longer render the progress bar or `% paid/% collected` labels.
   - Those cards now focus on current remaining owed/owing amount rather than percentage-complete progress.
   - External-creditor debts keep existing progress/percentage behavior unchanged.
+
+## 2026-05-08 — Fix debt history initial value drift and undo-hard-close debt deletion
+- Files touched:
+  - Backend: `app/Http/Controllers/DebtController.php`, `app/Services/MonthCloseoutService.php`
+  - Tests: `tests/Feature/UndoHardCloseTest.php`
+  - Docs: `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/07-workflows.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - Debt payment history now computes the synthetic `initial_value` row from principal-only origin (`debt.amount - sum(contributions)`), so hard-close split-settlement additions no longer rewrite the debt's starting amount in history.
+  - Split-settlement contribution entries now support `created_by_closeout_debt` metadata for debts created by consolidation during hard close.
+  - Undo hard close now deletes debt rows only when reverted month contributions are marked `created_by_closeout_debt=true`; pre-existing debts are preserved and only have their month contribution amounts removed from `amount`/`balance`.
+  - Added feature coverage proving: (1) initial-value history stays at original principal after closeout additions, and (2) undo hard close no longer deletes a pre-existing debt that had only closeout-added contributions.
