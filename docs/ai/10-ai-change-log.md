@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-08 — Transactions: add non-necessity row pill
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Transaction cards now include a violet **Non-necessity** pill when `type='expense'` and `is_non_necessity=true`, shown in the same pill row as advance/debt/borrow/closeout tags.
+
 ## 2026-05-08 — Category defaults: advance/non-necessity now per user-category
 
 - Files touched: `database/migrations/2026_05_08_122741_create_category_user_defaults_table.php`, `app/Models/Category.php`, `app/Models/User.php`, `app/Models/CategoryUserDefault.php`, `app/Http/Controllers/CategoryController.php`, `tests/Feature/CategoryTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`

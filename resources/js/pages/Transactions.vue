@@ -907,7 +907,7 @@ function transactionPayerDisplayLabel(transaction) {
 }
 
 /**
- * Small attribute pills on each row (debt repayment, advance, borrow, closeout).
+ * Small attribute pills on each row (debt repayment, advance, non-necessity, borrow, closeout).
  * Split expenses use only the purple “Split: Total…” control beside the amount, not a title-row pill.
  * @param {object} tx
  * @returns {{ key: string, label: string, classes: string, title?: string }[]}
@@ -936,6 +936,15 @@ function transactionKindPills(tx) {
       label: 'Advance',
       classes: 'bg-amber-900/55 text-amber-200',
       title: fundName ? `Advances against: ${fundName}` : 'Advances against a fund at closeout',
+    });
+  }
+
+  if (tx.type === 'expense' && tx.is_non_necessity) {
+    pills.push({
+      key: 'non-necessity',
+      label: 'Non-necessity',
+      classes: 'bg-violet-900/55 text-violet-200',
+      title: 'Excluded from closeout necessity-expense basis',
     });
   }
 
