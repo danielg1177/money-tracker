@@ -497,7 +497,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi';
 import TransactionForm from '../components/TransactionForm.vue';
@@ -524,6 +524,7 @@ const currentUser = ref(null);
 const splitDetailModalTransaction = ref(null);
 /** Split IOUs from `GET /month-summary` (`member_balances`) for the selected calendar month only. */
 const monthSplitBalances = ref([]);
+const editReturnScrollY = ref(null);
 
 function navigateToMonthSummary() {
   if (selectedMonthFilter.value && selectedMonthFilter.value !== 'custom') {
@@ -1049,9 +1050,22 @@ async function handleTransactionCreated(transaction) {
 }
 
 async function handleTransactionUpdated() {
+  const scrollTopBeforeSave = Number.isFinite(editReturnScrollY.value)
+    ? editReturnScrollY.value
+    : window.scrollY;
+
   await reloadCurrentFilterData();
   showForm.value = false;
   editingTransactionId.value = null;
+
+  await nextTick();
+  window.requestAnimationFrame(() => {
+    window.scrollTo({
+      top: scrollTopBeforeSave,
+      behavior: 'auto',
+    });
+  });
+  editReturnScrollY.value = null;
 }
 
 async function reloadCurrentFilterData() {
@@ -1089,6 +1103,7 @@ async function handleDeleteConfirm(transactionId) {
 function handleFormClose() {
   showForm.value = false;
   editingTransactionId.value = null;
+  editReturnScrollY.value = null;
 }
 
 function openEditForm(transactionId) {
@@ -1096,6 +1111,7 @@ function openEditForm(transactionId) {
   if (isSystemCloseoutEntry(tx)) {
     return;
   }
+  editReturnScrollY.value = window.scrollY;
   editingTransactionId.value = transactionId;
   showForm.value = true;
 }

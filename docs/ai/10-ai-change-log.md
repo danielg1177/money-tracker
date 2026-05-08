@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-08 — Transactions edit modal restores list scroll position
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: When opening an edit form from the Transactions list, the page now records the current `window.scrollY` and restores it after a successful save/reload, so users remain at their prior spot instead of jumping back to the top.
+
 ## 2026-05-08 — Transactions: add non-necessity row pill
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
