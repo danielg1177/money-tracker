@@ -36,10 +36,12 @@ This document maps each user-visible feature to the backend and frontend files t
 | Layer | Files |
 |---|---|
 | Backend | `TransactionController` (index, store, update, destroy) |
-| Service | `app/Services/TransactionService.php` |
+| Service | `app/Services/TransactionService.php`, `app/Services/ClosedMonthGuard.php` |
 | Model | `app/Models/Transaction.php`, `app/Models/TransactionSplit.php` |
 | Request | `app/Http/Requests/StoreTransactionRequest.php` |
 | Frontend | `resources/js/pages/Transactions.vue` (calendar-month filter triggers **`GET /month-summary`** for **`member_balances`** only alongside the usual transaction fetches; **Split balances (this month)** card when applicable), `resources/js/components/TransactionForm.vue`, `resources/js/components/SplitEditor.vue` |
+
+**Closed-month guard:** `ClosedMonthGuard` rejects transaction-producing mutations when the family month is hard-closed or any affected user has soft-closed the month. For transaction creates/updates/deletes, affected users include the owner, split participants, and mirrored debt-payment creditors. Debt payments and fund borrow/repay use the same guard through their controllers.
 
 **Split sub-feature:** Only for **expense** transactions. When `is_split = true` and `type = expense`, the transaction form shows `SplitEditor`. On save, `TransactionService` creates `TransactionSplit` records and `Debt` records (one per non-owner split participant). Income transactions never carry splits; payloads are normalized server-side.
 

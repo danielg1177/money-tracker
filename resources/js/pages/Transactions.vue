@@ -227,7 +227,9 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m0 0h6m0 0V6m0 0H6m0 0V3" />
         </svg>
         <p class="text-gray-400 font-medium">No transactions for this period</p>
-        <p class="text-gray-500 text-sm">Tap the + button to add a transaction</p>
+        <p class="text-gray-500 text-sm">
+          {{ isSelectedMonthLocked ? 'This month is closed, so new transactions are blocked.' : 'Tap the + button to add a transaction' }}
+        </p>
       </div>
     </div>
 
@@ -258,17 +260,17 @@
               'bg-gray-800 border border-gray-700 rounded-lg sm:rounded-xl p-2 sm:p-3 transition-colors',
               transaction.is_closeout_initiated ? 'border-purple-600/40 bg-purple-900/10' : '',
               confirmDelete[transaction.id] ? 'border-red-600 bg-red-900/20' : '',
-              isCurrentMonthHardClosed ? 'opacity-75' : '',
-              !confirmDelete[transaction.id] && !isCurrentMonthHardClosed && isSystemCloseoutEntry(transaction) ? 'cursor-default' : '',
-              !confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !isSystemCloseoutEntry(transaction) ? 'cursor-pointer hover:border-gray-600' : '',
+              isSelectedMonthLocked ? 'opacity-75' : '',
+              !confirmDelete[transaction.id] && !isSelectedMonthLocked && isSystemCloseoutEntry(transaction) ? 'cursor-default' : '',
+              !confirmDelete[transaction.id] && !isSelectedMonthLocked && !isSystemCloseoutEntry(transaction) ? 'cursor-pointer hover:border-gray-600' : '',
             ]"
-            @click="!confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !isSystemCloseoutEntry(transaction) && openEditForm(transaction.id)"
+            @click="!confirmDelete[transaction.id] && !isSelectedMonthLocked && !isSystemCloseoutEntry(transaction) && openEditForm(transaction.id)"
           >
             <!-- Main transaction row: one horizontal row on all breakpoints so amount + split stay beside title on mobile -->
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
               <div
                 class="min-w-0 flex-1"
-                :class="!confirmDelete[transaction.id] && !isCurrentMonthHardClosed && !isSystemCloseoutEntry(transaction) && 'cursor-pointer'"
+                :class="!confirmDelete[transaction.id] && !isSelectedMonthLocked && !isSystemCloseoutEntry(transaction) && 'cursor-pointer'"
               >
                 <div class="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1 min-w-0 flex-wrap">
                   <span
@@ -335,11 +337,12 @@
                 <div class="flex shrink-0 flex-col items-end gap-1 pt-0.5 sm:flex-row sm:items-start sm:gap-1 sm:pt-0">
                   <!-- Lock Icon (if month is closed) -->
                   <svg
-                    v-if="isCurrentMonthHardClosed"
-                    class="h-4 w-4 shrink-0 text-amber-400"
+                    v-if="isSelectedMonthLocked"
+                    class="h-4 w-4 shrink-0"
+                    :class="isCurrentMonthHardClosed ? 'text-amber-400' : 'text-blue-400'"
                     fill="currentColor"
                     viewBox="0 0 20 20"
-                    title="Applied to funds - month closed"
+                    :title="isCurrentMonthHardClosed ? 'Month is hard-closed' : 'You have soft-closed this month'"
                   >
                     <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
                   </svg>
@@ -348,9 +351,9 @@
                   <div v-if="!confirmDelete[transaction.id]" class="flex gap-1">
                     <button
                       @click.stop="confirmDelete[transaction.id] = true"
-                      :disabled="isCurrentMonthHardClosed || transaction.is_closeout_initiated"
-                      :class="['p-1 sm:p-2 rounded-md sm:rounded-lg transition-colors', (isCurrentMonthHardClosed || transaction.is_closeout_initiated) ? 'text-gray-500 cursor-not-allowed' : 'text-gray-400 hover:text-red-400 hover:bg-gray-700']"
-                      :title="isCurrentMonthHardClosed ? 'Cannot edit locked transactions' : (transaction.is_closeout_initiated ? 'Closeout-generated entries cannot be deleted here' : 'Delete')"
+                      :disabled="isSelectedMonthLocked || transaction.is_closeout_initiated"
+                      :class="['p-1 sm:p-2 rounded-md sm:rounded-lg transition-colors', (isSelectedMonthLocked || transaction.is_closeout_initiated) ? 'text-gray-500 cursor-not-allowed' : 'text-gray-400 hover:text-red-400 hover:bg-gray-700']"
+                      :title="isSelectedMonthLocked ? 'Cannot edit transactions in a closed month' : (transaction.is_closeout_initiated ? 'Closeout-generated entries cannot be deleted here' : 'Delete')"
                     >
                       <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -819,6 +822,10 @@ const isCurrentMonthHardClosed = computed(() => {
   return closeoutStatus.value?.hard_close != null;
 });
 
+const isSelectedMonthLocked = computed(() => {
+  return isCurrentMonthHardClosed.value || isUserSoftClosed.value;
+});
+
 function isMonthClosed(year, month) {
   return closedMonths.value.some(m => m.year === year && m.month === month);
 }
@@ -1084,6 +1091,11 @@ async function reloadCurrentFilterData() {
 }
 
 async function handleDeleteConfirm(transactionId) {
+  if (isSelectedMonthLocked.value) {
+    confirmDelete.value[transactionId] = false;
+    return;
+  }
+
   try {
     await del(`/transactions/${transactionId}`);
     confirmDelete.value[transactionId] = false;
@@ -1108,7 +1120,7 @@ function handleFormClose() {
 
 function openEditForm(transactionId) {
   const tx = getTransactionById(transactionId);
-  if (isSystemCloseoutEntry(tx)) {
+  if (isSelectedMonthLocked.value || isSystemCloseoutEntry(tx)) {
     return;
   }
   editReturnScrollY.value = window.scrollY;

@@ -6,6 +6,7 @@ use App\Models\Debt;
 use App\Models\Fund;
 use App\Models\FundMovement;
 use App\Models\FundRule;
+use App\Services\ClosedMonthGuard;
 use App\Services\FundService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -14,7 +15,10 @@ use InvalidArgumentException;
 
 class FundController extends Controller
 {
-    public function __construct(private readonly FundService $fundService) {}
+    public function __construct(
+        private readonly FundService $fundService,
+        private readonly ClosedMonthGuard $closedMonthGuard,
+    ) {}
 
     public function index()
     {
@@ -161,6 +165,8 @@ class FundController extends Controller
         ]);
 
         try {
+            $this->closedMonthGuard->assertUserDateOpen(auth()->user());
+
             $transaction = $this->fundService->borrowFromFund(
                 $fund,
                 (float) $request->amount,
@@ -185,6 +191,8 @@ class FundController extends Controller
         ]);
 
         try {
+            $this->closedMonthGuard->assertUserDateOpen(auth()->user());
+
             $this->fundService->repayFund($debt, (float) $request->amount, auth()->user());
 
             return response()->json(['message' => 'Fund repayment recorded'], 200);

@@ -50,9 +50,9 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | Method | Path | Controller | Notes |
 |---|---|---|---|
 | GET | `/transactions` | `TransactionController::index` | Accepts `?start_date=&end_date=` filters; JSON includes `debt` (with `creditor`, `debtor`, `fund` when present) for debt-payment rows, `advanceFund` when `advance_fund_id` is set; omits split debt-payment **expense** for the creditor when that row duplicates their repayment **income** for the same debt |
-| POST | `/transactions` | `TransactionController::store` | Body: see `StoreTransactionRequest` |
-| PUT | `/transactions/{transaction}` | `TransactionController::update` | Same body as store; debt-payment **expense** rows can be edited (recalculates debt balance + mirrored income), debt-payment **income** mirror rows are rejected |
-| DELETE | `/transactions/{transaction}` | `TransactionController::destroy` | — |
+| POST | `/transactions` | `TransactionController::store` | Body: see `StoreTransactionRequest`; rejects `422` when the family month is hard-closed or any affected user has soft-closed the month |
+| PUT | `/transactions/{transaction}` | `TransactionController::update` | Same body as store; debt-payment **expense** rows can be edited (recalculates debt balance + mirrored income), debt-payment **income** mirror rows are rejected; rejects `422` when the existing row month or target payload month is closed |
+| DELETE | `/transactions/{transaction}` | `TransactionController::destroy` | Rejects `422` when the transaction month is closed |
 
 ### Funds
 
@@ -63,7 +63,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | PUT | `/funds/{fund}` | `FundController::update` | `{name, description?}`; requires fund ownership or family membership with `can_manage_family` for editing |
 | DELETE | `/funds/{fund}` | `FundController::destroy` | Requires fund ownership (personal) or family membership with `can_manage_family` (family-scoped) |
 | GET | `/funds/{fund}/rules` | `FundController::showRules` | **Backward compatibility:** returns the same JSON as `GET /closeout-rules` (all of the auth user’s rules, not scoped to `{fund}`) |
-| POST | `/funds/{fund}/borrow` | `FundController::borrow` | `{amount, description?}`; requires fund ownership or family membership |
+| POST | `/funds/{fund}/borrow` | `FundController::borrow` | `{amount, description?}`; requires fund ownership or family membership; rejects `422` when the current month is closed for the user |
 
 ### Closeout rules (`FundRule` — month hard-close allocations)
 
@@ -82,10 +82,10 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | GET | `/split-debt-summary` | `DebtController::splitDebtSummary` | Query: `year`, `month` (1–12). JSON: pending closeout split debts grouped by counterpart; each nested `transaction` includes `category` and, when applicable, `debt` with `creditor`, `debtor`, `fund` for debt-payment rows |
 | POST | `/debts` | `DebtController::store` | `{is_family_debt?, is_interfamily?, creditor_id?, creditor_name?, amount, description?, interest_enabled?, interest_rate?, loan_received_date?}` |
 | PUT | `/debts/{debt}` | `DebtController::update` | Updates debt fields (`description`, `creditor_name`, `interest_enabled`, `interest_rate`, `loan_received_date`) |
-| POST | `/debts/pay` | `DebtController::payDebt` | `{debt_id, amount, description?, transaction_date?, split_with_user_id?, split_percentage?}` |
+| POST | `/debts/pay` | `DebtController::payDebt` | `{debt_id, amount, description?, transaction_date?, split_with_user_id?, split_percentage?}`; rejects `422` when the payment month is closed for the payer, optional split participant, or creditor |
 | GET | `/debts/{debt}/payments` | `DebtController::paymentHistory` | Debtor, creditor, or `can_manage_family`; JSON array of payment rows (creditor sees income rows, others see expense rows), includes `split_breakdown` when a payment was split |
 | DELETE | `/debts/{debt}` | `DebtController::destroy` | Only debtor or `can_manage_family` user can delete |
-| POST | `/debts/{debt}/repay-fund` | `FundController::repayFund` | `{amount}`; only for fund debts |
+| POST | `/debts/{debt}/repay-fund` | `FundController::repayFund` | `{amount}`; only for fund debts; rejects `422` when the current month is closed for the user |
 
 
 ### Month Closeout

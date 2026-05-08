@@ -4,13 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreTransactionRequest;
 use App\Models\Transaction;
+use App\Services\ClosedMonthGuard;
 use App\Services\TransactionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TransactionController extends Controller
 {
-    public function __construct(private TransactionService $transactionService) {}
+    public function __construct(
+        private TransactionService $transactionService,
+        private ClosedMonthGuard $closedMonthGuard,
+    ) {}
 
     /**
      * List transactions relevant to the authenticated user: rows they created, or family
@@ -70,8 +74,11 @@ class TransactionController extends Controller
         }
 
         try {
+            $validated = $request->validated();
+            $this->closedMonthGuard->assertTransactionPayloadOpen($user, $validated);
+
             $transaction = $this->transactionService->createTransaction(
-                $request->validated(),
+                $validated,
                 $user
             );
 
@@ -98,7 +105,10 @@ class TransactionController extends Controller
         }
 
         try {
-            $this->transactionService->updateTransaction($transaction, $request->validated());
+            $validated = $request->validated();
+            $this->closedMonthGuard->assertTransactionMutationOpen($transaction, $validated);
+
+            $this->transactionService->updateTransaction($transaction, $validated);
 
             return response()->json(
                 $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
@@ -121,7 +131,12 @@ class TransactionController extends Controller
             abort(403);
         }
 
-        $this->transactionService->deleteTransaction($transaction);
+        try {
+            $this->closedMonthGuard->assertTransactionMutationOpen($transaction);
+            $this->transactionService->deleteTransaction($transaction);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->noContent();
     }

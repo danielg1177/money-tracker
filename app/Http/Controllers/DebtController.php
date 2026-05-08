@@ -6,13 +6,17 @@ use App\Http\Requests\PayDebtRequest;
 use App\Models\Debt;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\ClosedMonthGuard;
 use App\Services\DebtService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class DebtController extends Controller
 {
-    public function __construct(private DebtService $debtService) {}
+    public function __construct(
+        private DebtService $debtService,
+        private ClosedMonthGuard $closedMonthGuard,
+    ) {}
 
     /**
      * Get all debts for the authenticated user, organized into personal, owing, and family debts.
@@ -161,6 +165,12 @@ class DebtController extends Controller
 
         try {
             $debt = Debt::query()->findOrFail($request->debt_id);
+            $this->closedMonthGuard->assertDebtPaymentOpen(
+                $debt,
+                $user,
+                $request->input('transaction_date'),
+                $request->split_with_user_id ? (int) $request->split_with_user_id : null,
+            );
 
             $this->debtService->payDebt(
                 $debt,

@@ -6,6 +6,12 @@
     >
       Debt repayment income entries cannot be edited directly. Edit the matching expense payment instead.
     </div>
+    <div
+      v-if="isSelectedDateClosed"
+      class="rounded-lg border border-blue-700/50 bg-blue-900/20 p-3 text-sm text-blue-200"
+    >
+      This transaction date is in a closed month. Reopen the month before adding or changing transactions.
+    </div>
 
     <!-- Type Toggle (Income / Expense) -->
     <div>
@@ -13,7 +19,7 @@
       <div class="grid grid-cols-2 gap-2">
         <button
           type="button"
-          :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
+          :disabled="submitLoading || isInteractionBlocked"
           @click="form.type = 'expense'"
           :class="[
             'py-2 px-4 rounded-lg font-medium transition-colors disabled:opacity-50',
@@ -26,7 +32,7 @@
         </button>
         <button
           type="button"
-          :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
+          :disabled="submitLoading || isInteractionBlocked"
           @click="form.type = 'income'"
           :class="[
             'py-2 px-4 rounded-lg font-medium transition-colors disabled:opacity-50',
@@ -55,7 +61,7 @@
           step="0.01"
           min="0"
           required
-          :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
+          :disabled="submitLoading || isInteractionBlocked"
           class="w-full pl-8 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
           placeholder="0.00"
         />
@@ -71,7 +77,7 @@
         id="category"
         v-model.number="form.category_id"
         required
-        :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
+        :disabled="submitLoading || isInteractionBlocked"
         class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
       >
         <option value="" disabled selected>Select a category</option>
@@ -94,7 +100,7 @@
         id="description"
         v-model="form.description"
         type="text"
-        :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
+        :disabled="submitLoading || isInteractionBlocked"
         class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:opacity-50"
         placeholder="Add a note..."
       />
@@ -164,7 +170,7 @@
         <select
           id="income-existing-debt"
           v-model.number="form.income_existing_debt_id"
-          :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
+          :disabled="submitLoading || isInteractionBlocked"
           class="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white focus:border-sky-500 focus:outline-none"
         >
           <option :value="null" disabled>Select a debt</option>
@@ -277,9 +283,9 @@
     <!-- Pay toward debt (expense only) -->
     <div v-if="form.type === 'expense'" class="space-y-2">
       <div
-        @click="!isDebtPaymentIncomeEditBlocked && togglePayTowardDebt()"
+        @click="!isInteractionBlocked && togglePayTowardDebt()"
         class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
-        :class="isDebtPaymentIncomeEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+        :class="isInteractionBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
       >
         <div>
           <p class="text-sm font-medium text-gray-300">Pay toward a tracked debt</p>
@@ -300,7 +306,7 @@
         <select
           id="debt-select"
           v-model.number="form.debt_id"
-          :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
+          :disabled="submitLoading || isInteractionBlocked"
           class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-sky-500"
         >
           <option :value="null" disabled>Select a debt</option>
@@ -317,9 +323,9 @@
     <!-- Split Toggle (expense only) -->
     <div
       v-if="form.type === 'expense'"
-      @click="!isDebtPaymentIncomeEditBlocked && (form.is_split = !form.is_split)"
+      @click="!isInteractionBlocked && (form.is_split = !form.is_split)"
       class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
-      :class="isDebtPaymentIncomeEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+      :class="isInteractionBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
     >
       <div>
         <p class="text-sm font-medium text-gray-300">Split between family members</p>
@@ -339,9 +345,9 @@
     <!-- Advance Against Fund -->
     <div v-if="form.type === 'expense' && !payTowardDebt" class="space-y-2">
       <div
-        @click="!isDebtPaymentIncomeEditBlocked && toggleAdvanceFund()"
+        @click="!isInteractionBlocked && toggleAdvanceFund()"
         class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
-        :class="isDebtPaymentIncomeEditBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+        :class="isInteractionBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
       >
         <div>
           <p class="text-sm font-medium text-gray-300">Advance against fund</p>
@@ -369,8 +375,9 @@
       </select>
       <div
         v-if="form.advance_fund_id !== null && selectedFundHasNonNecessityRule"
-        @click="form.is_non_necessity = !form.is_non_necessity"
-        class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600 cursor-pointer"
+        @click="!isInteractionBlocked && (form.is_non_necessity = !form.is_non_necessity)"
+        class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
+        :class="isInteractionBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
       >
         <div>
           <p class="text-sm font-medium text-gray-300">Mark as non-necessity</p>
@@ -415,7 +422,7 @@
       </button>
       <button
         type="submit"
-        :disabled="submitLoading || isDebtPaymentIncomeEditBlocked"
+        :disabled="submitLoading || isInteractionBlocked"
         class="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:bg-gray-700 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         <span v-if="submitLoading">
@@ -434,6 +441,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { useApi } from '../composables/useApi';
+import { useAuth } from '../composables/useAuth';
 import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 import SplitEditor from './SplitEditor.vue';
 import {
@@ -471,8 +479,12 @@ const props = defineProps({
 const emit = defineEmits(['created', 'updated', 'close']);
 
 const { post, put, loading: submitLoading } = useApi();
+const { post: postCloseoutStatus } = useApi();
+const { user } = useAuth();
 const formError = ref(null);
 const payTowardDebt = ref(false);
+const selectedDateCloseoutStatus = ref(null);
+let closeoutStatusRequestId = 0;
 
 const form = ref({
   type: 'expense',
@@ -542,6 +554,20 @@ const isDebtPaymentIncomeEditBlocked = computed(
     && Boolean(props.transaction?.is_debt_payment)
     && props.transaction?.type === 'income'
 );
+
+const isSelectedDateClosed = computed(() => {
+  if (selectedDateCloseoutStatus.value?.hard_close) {
+    return true;
+  }
+
+  return selectedDateCloseoutStatus.value?.soft_closes?.some(
+    (softClose) => Number(softClose.user_id) === Number(user.value?.id),
+  ) === true;
+});
+
+const isInteractionBlocked = computed(() => {
+  return isDebtPaymentIncomeEditBlocked.value || isSelectedDateClosed.value;
+});
 
 function formatCurrency(amount) {
   return new Intl.NumberFormat('en-US', {
@@ -631,6 +657,31 @@ watch(
     }
   },
   { immediate: true }
+);
+
+watch(
+  () => form.value.transaction_date,
+  async (dateValue) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ''))) {
+      selectedDateCloseoutStatus.value = null;
+      return;
+    }
+
+    const [year, month] = String(dateValue).split('-').map(Number);
+    const requestId = ++closeoutStatusRequestId;
+
+    try {
+      const status = await postCloseoutStatus('/closeout/status', { year, month });
+      if (requestId === closeoutStatusRequestId) {
+        selectedDateCloseoutStatus.value = status;
+      }
+    } catch (err) {
+      if (requestId === closeoutStatusRequestId) {
+        selectedDateCloseoutStatus.value = null;
+      }
+    }
+  },
+  { immediate: true },
 );
 
 watch(payTowardDebt, (on) => {
@@ -796,6 +847,11 @@ async function handleSubmit() {
 
   if (isDebtPaymentIncomeEditBlocked.value) {
     formError.value = 'This transaction cannot be edited.';
+    return;
+  }
+
+  if (isSelectedDateClosed.value) {
+    formError.value = 'This transaction date is in a closed month. Reopen the month before saving.';
     return;
   }
 

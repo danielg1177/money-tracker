@@ -24,15 +24,16 @@ Detailed step-by-step flows for the most complex operations in the app.
    }
    ```
 5. `StoreTransactionRequest` validates the payload (`type=income` would strip `split_data`, `is_split`, and `advance_fund_id` before validation)
-6. `TransactionController::store` calls `TransactionService::createTransaction`
-7. `SplitCalculator::validate` checks percentages sum to 100 (epsilon 0.01)
-8. `DB::transaction` begins:
+6. `TransactionController::store` calls `ClosedMonthGuard`; the save is rejected if the family month is hard-closed or if the owner / any split participant has soft-closed that month
+7. `TransactionController::store` calls `TransactionService::createTransaction`
+8. `SplitCalculator::validate` checks percentages sum to 100 (epsilon 0.01)
+9. `DB::transaction` begins:
    a. Creates `Transaction` record with `is_split=true`, stores `split_data` snapshot
    b. `SplitCalculator::allocate` computes per-user dollar amounts (last user absorbs rounding)
    c. For each split user: creates `TransactionSplit` record
    d. For each split user who is NOT the transaction owner: creates `Debt` record (`debtor_id` split user, `creditor_id` owner, etc.)
    e. Fund rules still apply on **month hard-close**, not at transaction save time
-9. Returns transaction with `splits.user` eager-loaded (HTTP 201)
+10. Returns transaction with `splits.user` eager-loaded (HTTP 201)
 
 ---
 
@@ -53,13 +54,14 @@ Detailed step-by-step flows for the most complex operations in the app.
    ```
    Optional split fields allow the payer to split the payment expense with another family member (creates a pending `Debt` for the split portion). `transaction_date` is optional; if omitted, backend uses today's date.
 4. `PayDebtRequest` validates
-5. `DebtController::payDebt` loads the debt, calls `DebtService::payDebt`
-6. `DebtService::payDebt` validates:
+5. `DebtController::payDebt` loads the debt and calls `ClosedMonthGuard`; the save is rejected if the family month is hard-closed or if the payer, optional split participant, or creditor has soft-closed that month
+6. `DebtController::payDebt` calls `DebtService::payDebt`
+7. `DebtService::payDebt` validates:
    - For family debts (`is_family_debt=true`): payer must be a family member
    - For personal debts: payer must be the debtor
    - Amount > 0
    - Amount ≤ debt balance
-7. `DB::transaction` begins:
+8. `DB::transaction` begins:
    a. Creates an `expense` transaction for the debtor (tagged `is_debt_payment=true`)
       - Sets `debt_id` to the debt being paid
       - Sets `paid_by_user_id` to the payer
@@ -70,7 +72,7 @@ Detailed step-by-step flows for the most complex operations in the app.
       - Sets `paid_by_user_id` to the payer
       - Sets `is_closeout_initiated=false` (manual payment)
    c. Decrements `debt.balance` by payment amount
-8. Returns HTTP 200 `{ "message": "Debt payment recorded" }`
+9. Returns HTTP 200 `{ "message": "Debt payment recorded" }`
 
 **Note:** Debt records with `balance = 0` remain in the database — there is no auto-deletion or "paid" status flag.
 
@@ -95,14 +97,15 @@ The payment history modal in `Debts.vue` displays:
    { "amount": 200.00, "description": "Emergency" }
    ```
 3. `FundController::borrow` authorizes via `FundPolicy::update` (must own the fund)
-4. Calls `FundService::borrowFromFund`
-5. Validates fund balance ≥ amount
-6. `DB::transaction` begins:
+4. Calls `ClosedMonthGuard`; the borrow is rejected if the current month is hard-closed or soft-closed for the user
+5. Calls `FundService::borrowFromFund`
+6. Validates fund balance ≥ amount
+7. `DB::transaction` begins:
    a. Creates an `income` transaction tagged `is_borrow=true`
    b. Decrements `fund.balance` by amount
    c. Creates `FundMovement` (type=`borrow`)
    d. Creates `Debt` with `debtor_id = user`, `fund_id = fund`, `creditor_id = null`, `balance = amount`
-7. Returns the created transaction (HTTP 201)
+8. Returns the created transaction (HTTP 201)
 
 ---
 
@@ -114,17 +117,18 @@ The payment history modal in `Debts.vue` displays:
    { "amount": 100.00 }
    ```
 3. `FundController::repayFund` checks `auth()->user()->id === $debt->debtor_id`
-4. Calls `FundService::repayFund`
-5. Validates:
+4. Calls `ClosedMonthGuard`; the repayment is rejected if the current month is hard-closed or soft-closed for the user
+5. Calls `FundService::repayFund`
+6. Validates:
    - Debt has a `fund_id` (not a person-to-person debt)
    - User is the debtor
    - Amount > 0 and ≤ debt balance
-6. `DB::transaction` begins:
+7. `DB::transaction` begins:
    a. Creates an `expense` transaction tagged `is_debt_payment=true`
    b. Increments `fund.balance` by amount
    c. Creates `FundMovement` (type=`repayment`)
    d. Decrements `debt.balance` by amount
-7. Returns HTTP 200
+8. Returns HTTP 200
 
 ---
 

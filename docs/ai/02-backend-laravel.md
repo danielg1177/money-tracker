@@ -84,9 +84,9 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 
 ### TransactionController
 - `index(Request)` — returns viewer-scoped family transactions (`user_id` or `transaction_splits` participation), filtered by `start_date`/`end_date`, eager-loads `user`, `category`, `splits.user`, `debt` (+ nested relations), `advanceFund`; excludes split debt-payment expenses for the creditor when they duplicate that creditor’s repayment income row
-- `store(StoreTransactionRequest)` — delegates to `TransactionService::createTransaction`
-- `update(StoreTransactionRequest, Transaction)` — checks ownership or same family, delegates to `TransactionService::updateTransaction`
-- `destroy(Transaction)` — checks ownership or same family; delegates `TransactionService::deleteTransaction()` (paired debt-payment cleanup + mirror rows)
+- `store(StoreTransactionRequest)` — validates closed-month status via `ClosedMonthGuard`, then delegates to `TransactionService::createTransaction`
+- `update(StoreTransactionRequest, Transaction)` — checks ownership or same family, validates both the existing row month and target payload month via `ClosedMonthGuard`, then delegates to `TransactionService::updateTransaction`
+- `destroy(Transaction)` — checks ownership or same family; validates closed-month status via `ClosedMonthGuard`; delegates `TransactionService::deleteTransaction()` (paired debt-payment cleanup + mirror rows)
 
 ### FundController
 - `index()` — personal funds: `auth()->user()->funds()->whereNull('family_id')`; family funds: `Fund::where('family_id', $user->family_id)` when set; merged JSON with `scope` per row; each row also includes `has_non_necessity_rule` (true when the auth user has an active `destination_type='fund'`, `allocation_type='percentage'`, `allocation_base='remaining'` rule targeting that fund id); `fundRules` and `movements.user` eager-loaded
@@ -96,8 +96,8 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `storeRule(Request)` — inline validation (+ duplicate check), creates `FundRule` for `auth()->id()`. For **`destination_type='title'`** rules that are **active**, **`destination_title`** must be **unique** among that user’s other **`destination_type='title'`** + **`is_active=true`** rows (avoids ambiguous **`CloseoutTitleSaving.rule_id`** when completing a title)
 - `updateRule(FundRule, Request)` — `403` if `fundRule.user_id !== auth()->id()`; same validation as `storeRule`, ignoring the current rule when checking title uniqueness
 - `destroy(Fund)` — authorizes via `FundPolicy`
-- `borrow(Fund, Request)` — authorizes via `FundPolicy`, delegates to `FundService::borrowFromFund`
-- `repayFund(Debt, Request)` — checks `debtor_id === auth()->id()`, delegates to `FundService::repayFund`
+- `borrow(Fund, Request)` — authorizes via `FundPolicy`, rejects if the current month is closed for the user via `ClosedMonthGuard`, then delegates to `FundService::borrowFromFund`
+- `repayFund(Debt, Request)` — checks `debtor_id === auth()->id()`, rejects if the current month is closed for the user via `ClosedMonthGuard`, then delegates to `FundService::repayFund`
 
 ### DebtController
 - `index()` — returns `{ owed: [...], owing: [...], family_debts: [...] }` where:
@@ -111,7 +111,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `store(Request)` also accepts optional loan/interest fields (`interest_enabled`, `interest_rate`, `loan_received_date`)
 - `update(Request, Debt)` — updates `description`, `creditor_name`, and optional loan/interest settings (`interest_enabled`, `interest_rate`, `loan_received_date`); only debtor or `can_manage_family` user may update; rejects pending closeout debts
 - `destroy(Debt)` — hard delete (`$debt->delete()`); only debtor or `can_manage_family` user can delete; cannot delete pending closeout debts
-- `payDebt(PayDebtRequest)` — delegates to `DebtService::payDebt`; accepts optional `transaction_date` to backdate/explicitly date debt-payment transactions
+- `payDebt(PayDebtRequest)` — validates closed-month status for the payer, optional split participant, and creditor via `ClosedMonthGuard`, then delegates to `DebtService::payDebt`; accepts optional `transaction_date` to backdate/explicitly date debt-payment transactions
 - `paymentHistory(Debt)` — role-based filtering: creditors see **income** rows with their `user_id`; all others (debtor, family manager) see **expense** rows; includes optional `split_breakdown` per payment (`[{user_id, user_name, amount, share_percentage}]`) when the debt payment was split; appends a synthetic `initial_value` entry showing the debt's original amount and creation date; debtor/creditor/`can_manage_family` required to access
 - `paymentHistory(Debt)` also appends `interest_accrual` entries from `debt.interest_accruals` so debt history includes interest events
 - `splitDebtSummary(Request)` — `GET /split-debt-summary?year=&month=`; returns pending split debts for the current user's family grouped by counterpart user with `you_owe`, `they_owe`, and nested `transactions`
@@ -161,6 +161,11 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
   - `title_savings`: auth-user `CloseoutTitleSaving` rows for the selected month, returned only when `is_hard_closed=true`; each row includes completion state (`is_completed`, `completed_at`)
 
 ## Services
+
+### ClosedMonthGuard (`app/Services/ClosedMonthGuard.php`)
+- Shared guard for transaction-producing write paths. A month is locked when the family has a `MonthHardClose` for that year/month or any affected user has a `MonthSoftClose`.
+- Transaction creates/updates/deletes include affected users: transaction owner, split participants, and mirrored debt-payment creditor rows. Debt-payment writes include payer, optional split participant, and creditor. Fund borrow/repay checks the current month for the acting user.
+- Throws `InvalidArgumentException`; controllers return `422` JSON with the guard message.
 
 ### TransactionService (`app/Services/TransactionService.php`)
 - `createTransaction(array, User): Transaction` — wraps everything in `DB::transaction`; for `type=income`, forces `is_split=false`, clears `split_data` and `advance_fund_id`, and optionally links debt via `income_debt_mode`:

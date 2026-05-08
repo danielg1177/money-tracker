@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-08 — Closed-month transaction mutation guard
+
+- Files touched: `app/Services/ClosedMonthGuard.php`, `app/Http/Controllers/TransactionController.php`, `app/Http/Controllers/DebtController.php`, `app/Http/Controllers/FundController.php`, `resources/js/components/TransactionForm.vue`, `resources/js/pages/Transactions.vue`, `tests/Feature/ClosedMonthMutationLockTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Transaction-producing mutations are now rejected when the family month is hard-closed or an affected user has soft-closed the month. This covers direct transaction create/update/delete, split participants, mirrored debt-payment creditors, debt payments, and fund borrow/repay. Transaction UI now shows closed-date messaging and disables edit/delete interactions for the viewer's locked month.
+
 ## 2026-05-08 — Month Summary split source sign fix
 
 - Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
