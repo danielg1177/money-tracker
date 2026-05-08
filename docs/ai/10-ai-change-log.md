@@ -1252,3 +1252,12 @@ Format:
     - viewer soft-closed month: blue closed lock
     - open month: gray open lock
   - The blue lock no longer waits for `all_soft_closed`; it now appears when the signed-in user has soft-closed that month.
+
+## 2026-05-08 — Remove progress UI from inter-family debt cards
+- Files touched:
+  - Frontend: `resources/js/pages/Debts.vue`
+  - Docs: `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - Inter-family debts (`creditor_id` present) on `Debts.vue` no longer render the progress bar or `% paid/% collected` labels.
+  - Those cards now focus on current remaining owed/owing amount rather than percentage-complete progress.
+  - External-creditor debts keep existing progress/percentage behavior unchanged.

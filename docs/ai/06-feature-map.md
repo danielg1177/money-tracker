@@ -152,7 +152,7 @@ Categories with `advance_fund_id` (expense only) can set `is_non_necessity_defau
 
 **Initial value history:** The debt's origin is displayed in the payment history modal as an `'initial_value'` entry, showing the debt's original amount and the date it was created. This entry is appended to the `GET /debts/{debt}/payments` response.
 
-**Debt page original-amount visibility:** On `Debts.vue`, inter-family debts (`creditor_id` present) hide the inline **Original** amount in debt cards and hide the history modal summary's "original" amount text, showing only the remaining balance summary on that page.
+**Debt page inter-family display simplification:** On `Debts.vue`, inter-family debts (`creditor_id` present) hide the inline **Original** amount in debt cards and hide the history modal summary's "original" amount text, showing only the remaining balance summary on that page. Those inter-family cards also hide progress bars and `% paid/% collected` labels.
 
 ---
 ## 9. Family Management (My Family)

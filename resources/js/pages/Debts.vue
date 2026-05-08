@@ -90,7 +90,7 @@
             </div>
 
             <!-- Progress Bar -->
-            <div v-if="debt.balance > 0" class="mb-3">
+            <div v-if="debt.balance > 0 && !debt.creditor_id" class="mb-3">
               <div class="w-full bg-gray-700 rounded-full h-2">
                 <div
                   class="h-2 rounded-full transition-all"
@@ -199,7 +199,7 @@
             </div>
 
             <!-- Progress Bar -->
-            <div v-if="debt.balance > 0" class="mb-3">
+            <div v-if="debt.balance > 0 && !debt.creditor_id" class="mb-3">
               <div class="w-full bg-gray-700 rounded-full h-2">
                 <div
                   class="bg-blue-500 h-2 rounded-full transition-all"
