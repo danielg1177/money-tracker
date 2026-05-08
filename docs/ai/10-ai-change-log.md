@@ -1280,3 +1280,20 @@ Format:
 - Behavioral impact:
   - Day-grouped layout on `Transactions.vue` remains unchanged.
   - Within each day section, transactions are now ordered by category label first and then alphabetical secondary key (description fallback), without adding any category headers or visual grouping chrome.
+
+## 2026-05-08 — Debt history signs/colors and closeout direction copy
+- Files touched:
+  - Frontend: `resources/js/pages/Debts.vue`
+  - Docs: `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - Debt history payment rows on `Debts.vue` now display **debtor-side payment rows** as **red positive** values and **creditor repayment-received rows** as **green negative** values.
+  - Closeout contribution cards in debt history now use red positive amount styling and viewer-aware description copy.
+  - Closeout-tagged payment rows now show explicit direction text indicating whether the closeout payment was **paid by** or **received by** the signed-in user.
+
+## 2026-05-08 — Funds balance colors follow sign
+- Files touched:
+  - Frontend: `resources/js/pages/Funds.vue`
+  - Docs: `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - Fund balances now render with sign-aware colors on the Funds page: **positive** balances are **green**, **negative** balances are **red**, and **zero** balances use neutral gray.
+  - This applies to both the main fund card balance and the history modal "Current Balance" value.

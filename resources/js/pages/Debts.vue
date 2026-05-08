@@ -666,9 +666,9 @@
                       <p class="text-sm font-medium text-white">
                         {{ monthNames[contribution.month - 1] }} {{ contribution.year }} Closeout
                       </p>
-                      <p class="text-xs text-gray-500 mt-0.5">Split settlements added to debt</p>
+                      <p class="text-xs text-gray-500 mt-0.5">{{ closeoutContributionDescription() }}</p>
                     </div>
-                    <p class="text-sm font-bold text-amber-400 flex-shrink-0">+{{ formatCurrency(contribution.amount) }}</p>
+                    <p class="text-sm font-bold text-red-400 flex-shrink-0">+{{ formatCurrency(contribution.amount) }}</p>
                   </div>
                 </div>
               </div>
@@ -720,6 +720,12 @@
                         {{ payment.type === 'income' ? 'From:' : 'Paid by:' }}
                         <span class="text-gray-300 font-medium">{{ payment.paid_by_user.name }}</span>
                       </p>
+                      <p
+                        v-if="payment.is_closeout_initiated && payment.type !== 'initial_value' && payment.type !== 'interest_accrual'"
+                        class="text-xs text-gray-500 mt-1"
+                      >
+                        {{ closeoutDirectionDescription(payment) }}
+                      </p>
                       <div
                         v-if="payment.split_breakdown && payment.split_breakdown.length > 0"
                         class="mt-1 space-y-0.5"
@@ -745,7 +751,7 @@
                           : (payment.type === 'income' ? 'text-green-400' : 'text-red-400')
                       "
                     >
-                      {{ payment.type === 'income' || payment.type === 'interest_accrual' ? '+' : '' }}{{ formatCurrency(payment.amount) }}
+                      {{ paymentAmountPrefix(payment) }}{{ formatCurrency(payment.amount) }}
                     </p>
                   </div>
                 </div>
@@ -977,6 +983,42 @@ function todayDateString() {
 
 function getSplitParticipantLabel(userId, userName) {
   return userId === authUser.value.id ? 'You' : userName;
+}
+
+function paymentAmountPrefix(payment) {
+  if (payment.type === 'income') {
+    return '-';
+  }
+
+  if (payment.type === 'initial_value' || payment.type === 'interest_accrual') {
+    return '+';
+  }
+
+  return '+';
+}
+
+function closeoutContributionDescription() {
+  if (!historyDebt.value || !authUser.value) {
+    return 'Split settlements added to debt';
+  }
+
+  if (historyDebt.value.debtor_id === authUser.value.id) {
+    return 'Closeout split added to your debt';
+  }
+
+  if (historyDebt.value.creditor_id === authUser.value.id) {
+    return 'Closeout split increased amount owed to you';
+  }
+
+  return 'Split settlements added to debt';
+}
+
+function closeoutDirectionDescription(payment) {
+  if (payment.type === 'income') {
+    return 'Closeout payment received by you';
+  }
+
+  return 'Closeout payment paid by you';
 }
 
 function isAddDebtFormValid() {

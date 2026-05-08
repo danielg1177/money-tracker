@@ -102,7 +102,7 @@
                 Confirm?
               </button>
               <div class="text-right flex-shrink-0">
-                <div class="text-2xl font-bold text-blue-400">
+                <div class="text-2xl font-bold" :class="fundBalanceClass(fund.balance ?? 0)">
                   {{ formatCurrency(fund.balance ?? 0) }}
                 </div>
                 <svg
@@ -488,7 +488,7 @@
             <!-- Current balance -->
             <div class="bg-gray-800 rounded-lg p-3 flex items-center justify-between">
               <span class="text-sm text-gray-400">Current Balance</span>
-              <span class="text-lg font-bold text-blue-400">{{ formatCurrency(selectedFundForHistory.balance ?? 0) }}</span>
+              <span class="text-lg font-bold" :class="fundBalanceClass(selectedFundForHistory.balance ?? 0)">{{ formatCurrency(selectedFundForHistory.balance ?? 0) }}</span>
             </div>
             <!-- Empty state -->
             <div v-if="!selectedFundForHistory.movements || selectedFundForHistory.movements.length === 0" class="py-8 text-center">
@@ -601,6 +601,18 @@ function formatCurrency(amount) {
     currency: 'USD',
     minimumFractionDigits: 2,
   }).format(amount);
+}
+
+function fundBalanceClass(balance) {
+  if (Number(balance) > 0) {
+    return 'text-green-400';
+  }
+
+  if (Number(balance) < 0) {
+    return 'text-red-400';
+  }
+
+  return 'text-gray-300';
 }
 
 function openEditFundModal(fund) {
