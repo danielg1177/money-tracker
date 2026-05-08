@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-08 — Global guard: prevent wheel changes on number inputs
+
+- Files touched: `resources/js/app.js`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Added a global capture-phase `wheel` listener that blurs focused `input[type="number"]` controls when wheel scrolling occurs over them, preventing accidental value changes for all existing and future number inputs.
+
 ## 2026-05-08 — Month summary selector reload fix
 
 - Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/10-ai-change-log.md`

@@ -16,7 +16,7 @@
 ## Entry point
 
 `resources/js/app.js` creates the Vue app, installs Vue Router, and mounts `AppShell.vue` into `<div id="app">` (in `resources/views/app.blade.php`).
-It sets `window.history.scrollRestoration = 'manual'` (when supported) to prevent mobile browsers from restoring mid-page offsets on reload/back-forward cache restores, and registers a global Axios response interceptor that treats `401`/`419` responses as session expiry, clears `localStorage.user`, and hard-redirects to `/login`.
+It sets `window.history.scrollRestoration = 'manual'` (when supported) to prevent mobile browsers from restoring mid-page offsets on reload/back-forward cache restores, registers a global wheel guard that blurs focused `input[type="number"]` fields to prevent accidental scroll-wheel value changes, and registers a global Axios response interceptor that treats `401`/`419` responses as session expiry, clears `localStorage.user`, and hard-redirects to `/login`.
 
 ## Component tree
 

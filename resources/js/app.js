@@ -10,6 +10,25 @@ if ('scrollRestoration' in window.history) {
   window.history.scrollRestoration = 'manual';
 }
 
+function preventNumberWheelValueChanges() {
+  window.addEventListener('wheel', (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    const numberInput = event.target.closest('input[type="number"]');
+    if (!(numberInput instanceof HTMLInputElement)) {
+      return;
+    }
+
+    if (document.activeElement === numberInput) {
+      numberInput.blur();
+    }
+  }, { capture: true, passive: true });
+}
+
+preventNumberWheelValueChanges();
+
 window.axios.interceptors.response.use(
   (response) => {
     return response;
