@@ -1241,3 +1241,14 @@ Format:
   - While a closed-month date is selected, the blue top warning is shown; controls remain interactive, but submit is blocked.
   - The red bottom error message is only shown after clicking Create/Save with a closed-month date.
   - Switching date back to an open month clears warning/error state and allows normal submit.
+
+## 2026-05-08 — Align month-status lock icon semantics on Month Summary
+- Files touched:
+  - Frontend: `resources/js/pages/MonthSummary.vue`
+  - Docs: `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - `MonthSummary` header lock icon now follows the app-wide state rule used elsewhere:
+    - hard-closed month: amber/yellow closed lock
+    - viewer soft-closed month: blue closed lock
+    - open month: gray open lock
+  - The blue lock no longer waits for `all_soft_closed`; it now appears when the signed-in user has soft-closed that month.
