@@ -202,6 +202,9 @@ const showAllExpenseCategories = ref(false);
 const showAllIncomeCategories = ref(false);
 const selectedCategory = ref(null);
 const isCategoryTransactionsModalOpen = ref(false);
+const splitHistoryModalRows = ref([]);
+const splitHistoryModalTitle = ref('');
+const isSplitHistoryModalOpen = ref(false);
 
 function sortCategoriesByTotalDesc(rows) {
   return [...rows].sort((a, b) => Number(b.total) - Number(a.total));
@@ -297,6 +300,25 @@ function openCategoryTransactions(category) {
 
 function closeCategoryTransactionsModal() {
   isCategoryTransactionsModalOpen.value = false;
+}
+
+function openSplitHistoryModal(balance, source) {
+  const isFromYou = source === 'from_you_created';
+  const rows = isFromYou
+    ? (balance?.from_you_created_transactions ?? [])
+    : (balance?.from_them_created_transactions ?? []);
+
+  splitHistoryModalRows.value = Array.isArray(rows) ? rows : [];
+  splitHistoryModalTitle.value = isFromYou
+    ? `From your split transactions with ${balance?.user_name ?? 'member'}`
+    : `From ${balance?.user_name ?? 'member'} split transactions`;
+  isSplitHistoryModalOpen.value = true;
+}
+
+function closeSplitHistoryModal() {
+  isSplitHistoryModalOpen.value = false;
+  splitHistoryModalRows.value = [];
+  splitHistoryModalTitle.value = '';
 }
 
 const selectedCategoryTransactions = computed(() => {
@@ -548,22 +570,62 @@ function movementTypeLabel(type) {
           <div
             v-for="balance in summary.member_balances"
             :key="balance.user_id"
-            class="flex items-center justify-between px-3 py-2 bg-gray-800 rounded-lg border border-gray-700"
+            class="px-3 py-2 bg-gray-800 rounded-lg border border-gray-700 space-y-2"
           >
-            <span class="text-sm text-gray-300 min-w-0 pr-2">
-              <span v-if="balance.direction === 'they_owe_you'">
-                {{ balance.user_name }} owes you
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm text-gray-300 min-w-0 pr-2">
+                <span v-if="balance.direction === 'they_owe_you'">
+                  {{ balance.user_name }} owes you
+                </span>
+                <span v-else>
+                  You owe {{ balance.user_name }}
+                </span>
               </span>
-              <span v-else>
-                You owe {{ balance.user_name }}
+              <span
+                :class="balance.direction === 'they_owe_you' ? 'text-green-400' : 'text-red-400'"
+                class="text-sm font-medium shrink-0 tabular-nums"
+              >
+                {{ formatCurrency(balance.net_amount) }}
               </span>
-            </span>
-            <span
-              :class="balance.direction === 'they_owe_you' ? 'text-green-400' : 'text-red-400'"
-              class="text-sm font-medium shrink-0 tabular-nums"
-            >
-              {{ formatCurrency(balance.net_amount) }}
-            </span>
+            </div>
+
+            <div class="space-y-1.5 border-t border-gray-700/70 pt-2">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs text-gray-400 min-w-0 pr-2">
+                  From your created split transactions
+                </span>
+                <div class="flex items-center gap-2 shrink-0">
+                  <span class="text-xs font-medium text-gray-200 tabular-nums">
+                    {{ formatCurrency(balance.from_you_created_amount || 0) }}
+                  </span>
+                  <button
+                    type="button"
+                    class="px-2 py-1 text-[11px] rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+                    @click="openSplitHistoryModal(balance, 'from_you_created')"
+                  >
+                    History
+                  </button>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs text-gray-400 min-w-0 pr-2">
+                  From {{ balance.user_name }} created split transactions
+                </span>
+                <div class="flex items-center gap-2 shrink-0">
+                  <span class="text-xs font-medium text-gray-200 tabular-nums">
+                    {{ formatCurrency(balance.from_them_created_amount || 0) }}
+                  </span>
+                  <button
+                    type="button"
+                    class="px-2 py-1 text-[11px] rounded bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+                    @click="openSplitHistoryModal(balance, 'from_them_created')"
+                  >
+                    History
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -916,6 +978,61 @@ function movementTypeLabel(type) {
                   :class="selectedCategory?.type === 'expense' ? 'text-red-400' : 'text-green-400'"
                 >
                   {{ selectedCategory?.type === 'expense' ? '−' : '+' }}{{ formatCurrency(row.amount) }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Teleport>
+
+      <Teleport to="body">
+        <div
+          v-if="isSplitHistoryModalOpen"
+          class="fixed inset-0 z-50 bg-black/70"
+          @click.self="closeSplitHistoryModal"
+        >
+          <div class="fixed inset-x-0 bottom-0 max-h-[82vh] overflow-hidden rounded-t-2xl border-t border-gray-700 bg-gray-900">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+              <div class="min-w-0">
+                <h3 class="text-sm font-semibold text-gray-100 truncate">
+                  {{ splitHistoryModalTitle }}
+                </h3>
+                <p class="text-xs text-gray-400">
+                  {{ monthLabel.replace(' Summary', '') }} split transaction history
+                </p>
+              </div>
+              <button
+                type="button"
+                class="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+                @click="closeSplitHistoryModal"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div class="overflow-y-auto px-4 py-3 space-y-2 max-h-[calc(82vh-4rem)]">
+              <div v-if="splitHistoryModalRows.length === 0" class="text-sm text-gray-500 py-8 text-center">
+                No split transactions found for this source.
+              </div>
+
+              <div
+                v-else
+                v-for="row in splitHistoryModalRows"
+                :key="`split-hist-${row.transaction_id}`"
+                class="flex items-center justify-between gap-3 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5"
+              >
+                <div class="min-w-0">
+                  <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
+                  <p class="text-sm text-gray-200 truncate">{{ row.category_name }}</p>
+                  <p v-if="row.description" class="text-xs text-gray-400 truncate mt-0.5">{{ row.description }}</p>
+                  <p class="text-[11px] text-gray-500 mt-0.5">
+                    Total {{ formatCurrency(row.total_amount) }}
+                  </p>
+                </div>
+                <span class="text-sm font-medium text-gray-200 shrink-0 tabular-nums">
+                  {{ formatCurrency(row.balance_amount) }}
                 </span>
               </div>
             </div>

@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-08 — Month summary split balances: source breakdown + history
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `member_balances` now includes per-counterparty source totals split by creator (`from_you_created_amount`, `from_them_created_amount`) and transaction history arrays for each source. Month Summary UI shows both subtotals under each split-balance row and adds History buttons that open a bottom sheet listing transactions that contributed to each source subtotal.
+
 ## 2026-05-08 — Transactions edit modal restores list scroll position
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

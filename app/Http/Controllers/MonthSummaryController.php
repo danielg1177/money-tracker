@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\MonthCloseoutService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class MonthSummaryController extends Controller
 {
@@ -27,7 +28,7 @@ class MonthSummaryController extends Controller
 
     public function show(Request $request): JsonResponse
     {
-        $user = auth()->user();
+        $user = Auth::user();
 
         if (! $user->family_id) {
             return response()->json(['message' => 'User must be in a family'], 403);
@@ -786,26 +787,51 @@ class MonthSummaryController extends Controller
             ->where('is_closeout_initiated', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
-            ->with(['splits.user', 'user'])
+            ->orderBy('transaction_date')
+            ->orderBy('id')
+            ->with(['splits.user', 'user', 'category'])
             ->get();
 
         $netBalances = [];
+        $sourceBreakdown = [];
 
         foreach ($splitTransactions as $tx) {
-            $payerId = $tx->user_id;
+            $payerId = (int) $tx->user_id;
 
             foreach ($tx->splits as $split) {
-                if ($split->user_id === $payerId) {
+                $splitUserId = (int) $split->user_id;
+                if ($splitUserId === $payerId) {
                     continue;
                 }
 
                 if ($payerId === $user->id) {
-                    $netBalances[$split->user_id] = ($netBalances[$split->user_id] ?? 0) + (float) $split->amount;
-                } elseif ($split->user_id === $user->id) {
+                    $counterpartyId = $splitUserId;
+                    $shareAmount = (float) $split->amount;
+                    $netBalances[$counterpartyId] = ($netBalances[$counterpartyId] ?? 0) + $shareAmount;
+                    $this->accumulateSplitBalanceSource(
+                        $sourceBreakdown,
+                        $counterpartyId,
+                        'from_you_created',
+                        $tx,
+                        $shareAmount
+                    );
+                } elseif ($splitUserId === $user->id) {
                     $netBalances[$payerId] = ($netBalances[$payerId] ?? 0) - (float) $split->amount;
+                    $this->accumulateSplitBalanceSource(
+                        $sourceBreakdown,
+                        $payerId,
+                        'from_them_created',
+                        $tx,
+                        (float) $split->amount
+                    );
                 }
             }
         }
+
+        $splitUsers = User::query()
+            ->whereIn('id', array_keys($netBalances))
+            ->get()
+            ->keyBy('id');
 
         $memberBalances = [];
         foreach ($netBalances as $userId => $netAmount) {
@@ -813,17 +839,76 @@ class MonthSummaryController extends Controller
                 continue;
             }
 
-            $splitUser = User::find($userId);
+            $breakdown = $sourceBreakdown[$userId] ?? [
+                'from_you_created_amount' => 0.0,
+                'from_them_created_amount' => 0.0,
+                'from_you_created_transactions' => [],
+                'from_them_created_transactions' => [],
+            ];
+            $splitUser = $splitUsers->get((int) $userId);
 
             $memberBalances[] = [
                 'user_id' => $userId,
                 'user_name' => $splitUser?->name ?? 'Unknown',
                 'net_amount' => abs($netAmount),
                 'direction' => $netAmount > 0 ? 'they_owe_you' : 'you_owe_them',
+                'from_you_created_amount' => round((float) $breakdown['from_you_created_amount'], 2),
+                'from_them_created_amount' => round((float) $breakdown['from_them_created_amount'], 2),
+                'from_you_created_transactions' => $breakdown['from_you_created_transactions'],
+                'from_them_created_transactions' => $breakdown['from_them_created_transactions'],
             ];
         }
 
         return $memberBalances;
+    }
+
+    /**
+     * @param  array<int, array{
+     *   from_you_created_amount: float,
+     *   from_them_created_amount: float,
+     *   from_you_created_transactions: array<int, array{
+     *     transaction_id: int,
+     *     transaction_date: string,
+     *     category_name: string,
+     *     description: string|null,
+     *     total_amount: float,
+     *     balance_amount: float,
+     *   }>,
+     *   from_them_created_transactions: array<int, array{
+     *     transaction_id: int,
+     *     transaction_date: string,
+     *     category_name: string,
+     *     description: string|null,
+     *     total_amount: float,
+     *     balance_amount: float,
+     *   }>
+     * }>  $sourceBreakdown
+     */
+    private function accumulateSplitBalanceSource(array &$sourceBreakdown, int $counterpartyId, string $sourceKey, Transaction $tx, float $shareAmount): void
+    {
+        if (! isset($sourceBreakdown[$counterpartyId])) {
+            $sourceBreakdown[$counterpartyId] = [
+                'from_you_created_amount' => 0.0,
+                'from_them_created_amount' => 0.0,
+                'from_you_created_transactions' => [],
+                'from_them_created_transactions' => [],
+            ];
+        }
+
+        $amountKey = "{$sourceKey}_amount";
+        $transactionsKey = "{$sourceKey}_transactions";
+        $sourceBreakdown[$counterpartyId][$amountKey] += $shareAmount;
+
+        $sourceBreakdown[$counterpartyId][$transactionsKey][] = [
+            'transaction_id' => (int) $tx->id,
+            'transaction_date' => $tx->transaction_date instanceof \DateTimeInterface
+                ? $tx->transaction_date->format('Y-m-d')
+                : (string) $tx->transaction_date,
+            'category_name' => $tx->category?->name ?? 'Uncategorized',
+            'description' => $tx->description,
+            'total_amount' => round((float) $tx->amount, 2),
+            'balance_amount' => round($shareAmount, 2),
+        ];
     }
 
     /**

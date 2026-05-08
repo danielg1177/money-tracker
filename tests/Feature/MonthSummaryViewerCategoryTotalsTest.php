@@ -549,6 +549,11 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
         $this->assertSame($bob->id, $aliceBalances[0]['user_id']);
         $this->assertSame('they_owe_you', $aliceBalances[0]['direction']);
         $this->assertEqualsWithDelta(40.0, (float) $aliceBalances[0]['net_amount'], 0.02);
+        $this->assertEqualsWithDelta(40.0, (float) $aliceBalances[0]['from_you_created_amount'], 0.02);
+        $this->assertEqualsWithDelta(0.0, (float) $aliceBalances[0]['from_them_created_amount'], 0.02);
+        $this->assertCount(1, $aliceBalances[0]['from_you_created_transactions']);
+        $this->assertCount(0, $aliceBalances[0]['from_them_created_transactions']);
+        $this->assertEqualsWithDelta(40.0, (float) $aliceBalances[0]['from_you_created_transactions'][0]['balance_amount'], 0.02);
 
         $bobSummary = $this->actingAs($bob)->getJson('/month-summary?year=2026&month=7')->assertOk();
         $bobBalances = $bobSummary->json('member_balances');
@@ -556,6 +561,61 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
         $this->assertSame($alice->id, $bobBalances[0]['user_id']);
         $this->assertSame('you_owe_them', $bobBalances[0]['direction']);
         $this->assertEqualsWithDelta(40.0, (float) $bobBalances[0]['net_amount'], 0.02);
+        $this->assertEqualsWithDelta(0.0, (float) $bobBalances[0]['from_you_created_amount'], 0.02);
+        $this->assertEqualsWithDelta(40.0, (float) $bobBalances[0]['from_them_created_amount'], 0.02);
+        $this->assertCount(0, $bobBalances[0]['from_you_created_transactions']);
+        $this->assertCount(1, $bobBalances[0]['from_them_created_transactions']);
+        $this->assertEqualsWithDelta(40.0, (float) $bobBalances[0]['from_them_created_transactions'][0]['balance_amount'], 0.02);
+    }
+
+    public function test_month_summary_member_balances_include_source_breakdown_for_both_creators(): void
+    {
+        $family = Family::factory()->create();
+        $alice = User::factory()->create(['family_id' => $family->id]);
+        $bob = User::factory()->create(['family_id' => $family->id]);
+
+        $expenseCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Shared',
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->actingAs($alice)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 120,
+            'category_id' => $expenseCat->id,
+            'transaction_date' => '2026-07-02',
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $alice->id, 'share_percentage' => 50],
+                ['user_id' => $bob->id, 'share_percentage' => 50],
+            ],
+        ])->assertCreated();
+
+        $this->actingAs($bob)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 80,
+            'category_id' => $expenseCat->id,
+            'transaction_date' => '2026-07-06',
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $alice->id, 'share_percentage' => 50],
+                ['user_id' => $bob->id, 'share_percentage' => 50],
+            ],
+        ])->assertCreated();
+
+        $aliceSummary = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=7')->assertOk();
+        $balances = $aliceSummary->json('member_balances');
+
+        $this->assertCount(1, $balances);
+        $this->assertSame($bob->id, $balances[0]['user_id']);
+        $this->assertEqualsWithDelta(60.0, (float) $balances[0]['from_you_created_amount'], 0.02);
+        $this->assertEqualsWithDelta(40.0, (float) $balances[0]['from_them_created_amount'], 0.02);
+        $this->assertEqualsWithDelta(20.0, (float) $balances[0]['net_amount'], 0.02);
+        $this->assertSame('they_owe_you', $balances[0]['direction']);
+        $this->assertCount(1, $balances[0]['from_you_created_transactions']);
+        $this->assertCount(1, $balances[0]['from_them_created_transactions']);
     }
 
     public function test_month_summary_member_balances_omit_members_when_month_net_splits_to_zero(): void
