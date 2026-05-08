@@ -81,7 +81,7 @@ routes/web.php
 |---|---|
 | Family | Global (admin creates) |
 | User | Global; assigned to one `family_id` |
-| Category | Per `family_id`; each row is **either** income **or** expense (`is_income` XOR `is_expense`, enforced in `StoreCategoryRequest`); optional `advance_fund_id`, `split_default`, and `is_non_necessity_default` apply only when `is_expense` is true (defaults for **expense** transactions) |
+| Category | Per `family_id`; each row is **either** income **or** expense (`is_income` XOR `is_expense`, enforced in `StoreCategoryRequest`); `split_default` remains family-shared on the category while `advance_fund_id` + `is_non_necessity_default` are stored per-user-per-category in `category_user_defaults` and only applied when `is_expense` is true |
 | Transaction | Per `family_id`, owned by one `user_id`; optionally linked to `debt_id` if a debt payment; optional `advance_fund_id` marks an expense as advancing against a fund |
 | TransactionSplit | Per transaction |
 

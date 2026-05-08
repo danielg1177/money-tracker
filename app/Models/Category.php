@@ -19,8 +19,6 @@ class Category extends Model
         'is_expense',
         'is_split_default',
         'split_default',
-        'advance_fund_id',
-        'is_non_necessity_default',
     ];
 
     protected $casts = [
@@ -28,8 +26,6 @@ class Category extends Model
         'is_expense' => 'bool',
         'is_split_default' => 'bool',
         'split_default' => 'array',
-        'advance_fund_id' => 'integer',
-        'is_non_necessity_default' => 'bool',
     ];
 
     public function family(): BelongsTo
@@ -40,5 +36,10 @@ class Category extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    public function userDefaults(): HasMany
+    {
+        return $this->hasMany(CategoryUserDefault::class);
     }
 }

@@ -10,7 +10,7 @@
 - Borrow from personal funds and track repayment
 - Mark expense transactions as advancing against (settling at month close against) a specific fund
 - Track debts owed between family members and record payments, including the initial value of the debt in history
-- Organize transactions by category (per family), with optional expense-only defaults for split template, advance fund, and non-necessity flagging
+- Organize transactions by category (per family), with optional expense defaults where split template is family-shared and advance/non-necessity defaults are per-user-per-category
 - Administrate users and families (admin/head-of-household roles)
 
 ## Tech stack

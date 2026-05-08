@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-08 — Category defaults: advance/non-necessity now per user-category
+
+- Files touched: `database/migrations/2026_05_08_122741_create_category_user_defaults_table.php`, `app/Models/Category.php`, `app/Models/User.php`, `app/Models/CategoryUserDefault.php`, `app/Http/Controllers/CategoryController.php`, `tests/Feature/CategoryTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `split_default` remains a shared family-category setting, but `advance_fund_id` and `is_non_necessity_default` are now persisted per (`category`, `user`) in `category_user_defaults`. `GET /categories` resolves those two defaults for the authenticated user only, and category create/update writes shared category fields plus only the caller’s personal defaults. Migration backfills any existing category-level advance/non-necessity values to each family’s `head_of_household` user before dropping those columns from `categories`.
+
 ## 2026-05-07 — Non-necessity transaction feature
 
 - Added `is_non_necessity` (boolean) to transactions table and model

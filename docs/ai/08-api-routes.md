@@ -108,7 +108,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
-| GET | `/categories` | `CategoryController::index` | Returns family categories (JSON) |
+| GET | `/categories` | `CategoryController::index` | Returns family categories with caller-specific `advance_fund_id` + `is_non_necessity_default` |
 | POST | `/categories` | `CategoryController::store` | See `StoreCategoryRequest` (exactly one of `is_income` / `is_expense` must be true) |
 | PUT | `/categories/{category}` | `CategoryController::update` | See `StoreCategoryRequest` (same XOR rule) |
 | DELETE | `/categories/{category}` | `CategoryController::destroy` | — |
@@ -204,7 +204,7 @@ For `type=expense`, optional **`debt_id`** (existing `debts.id` for the payer’
 ### `StoreCategoryRequest`
 When `is_expense` is false, `is_split_default`, `split_default`, and `advance_fund_id` are cleared server-side before validation.
 
-`is_non_necessity_default` is a boolean category flag. It is force-normalized to `false` unless the category is an expense and has `advance_fund_id`. When sent as `true`, validation requires an active auth-user closeout rule targeting that same advance fund (`destination_type='fund'`, `allocation_type='percentage'`, `allocation_base='remaining'`).
+`is_non_necessity_default` is a boolean category flag on the request, but persistence is per-user-per-category (`category_user_defaults`), not on the shared category row. It is force-normalized to `false` unless the category is an expense and has `advance_fund_id`. When sent as `true`, validation requires an active auth-user closeout rule targeting that same advance fund (`destination_type='fund'`, `allocation_type='percentage'`, `allocation_base='remaining'`).
 
 ```json
 {

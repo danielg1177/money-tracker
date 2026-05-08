@@ -22,10 +22,15 @@
 - Relations: `hasMany(User)`, `hasMany(Category)`, `hasMany(Transaction)`, `hasMany(Debt)`
 
 ### Category (`app/Models/Category.php`)
-- Fields: `family_id`, `name`, `icon`, `is_income` (bool), `is_expense` (bool), `is_split_default` (bool), `split_default` (JSON array), `advance_fund_id` (nullable)
+- Fields: `family_id`, `name`, `icon`, `is_income` (bool), `is_expense` (bool), `is_split_default` (bool), `split_default` (JSON array)
 - **Type constraint:** exactly one of `is_income` / `is_expense` must be true (not both, not neither); validated in `StoreCategoryRequest::withValidator`
-- `split_default` and `advance_fund_id` are meaningful only when `is_expense` is true; `StoreCategoryRequest` clears them when saving an income-only category
-- Relations: `belongsTo(Family)`, `hasMany(Transaction)`
+- `split_default` is meaningful only when `is_expense` is true; `StoreCategoryRequest` clears split defaults when saving an income-only category
+- Relations: `belongsTo(Family)`, `hasMany(Transaction)`, `hasMany(CategoryUserDefault)` as `userDefaults`
+
+### CategoryUserDefault (`app/Models/CategoryUserDefault.php`)
+- Fields: `category_id`, `user_id`, `advance_fund_id` (nullable), `is_non_necessity_default` (bool)
+- Purpose: user-specific category defaults for expense transactions; one row per (`category_id`, `user_id`)
+- Relations: `belongsTo(Category)`, `belongsTo(User)`, `belongsTo(Fund, 'advance_fund_id')` as `advanceFund`
 
 ### Transaction (`app/Models/Transaction.php`)
 - Fields: `family_id`, `user_id`, `category_id` (nullable), `type` (`income`|`expense`), `amount` (decimal:2), `description`, `transaction_date` (date), `is_split` (bool), `split_data` (JSON array), `fund_id` (nullable), `advance_fund_id` (nullable), `is_borrow` (bool), `is_debt_payment` (bool), `debt_id` (nullable FK → debts), `mirror_transaction_id` (nullable FK → transactions), `paid_by_user_id` (nullable FK → users), `is_closeout_initiated` (bool)
@@ -112,9 +117,9 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `splitDebtSummary(Request)` — `GET /split-debt-summary?year=&month=`; returns pending split debts for the current user's family grouped by counterpart user with `you_owe`, `they_owe`, and nested `transactions`
 
 ### CategoryController
-- `index()` — returns family categories
-- `store(StoreCategoryRequest)` — creates category for auth user's family
-- `update(StoreCategoryRequest, Category)` — updates category (no ownership check beyond family — Needs verification)
+- `index()` — returns family categories with `advance_fund_id` + `is_non_necessity_default` hydrated from the authenticated user's `category_user_defaults` row for each category
+- `store(StoreCategoryRequest)` — creates shared category for auth user's family, then stores auth-user defaults (`advance_fund_id`, `is_non_necessity_default`) in `category_user_defaults`
+- `update(StoreCategoryRequest, Category)` — updates shared family category fields; updates only the authenticated user's `category_user_defaults` row for per-user defaults
 - `destroy(Category)` — deletes (no explicit authorization policy — Needs verification)
 
 ### AdminController
@@ -213,7 +218,7 @@ Located in `app/Http/Requests/`. Several exist but not all are used uniformly:
 
 `StoreTransactionRequest` additionally enforces `is_non_necessity` as a guarded boolean: it is normalized to `false` unless the request is a non-split expense with `advance_fund_id` and no `debt_id`; when `true`, it is only valid if the auth user has an active `FundRule` for that same fund with `destination_type='fund'`, `allocation_type='percentage'`, and `allocation_base='remaining'`.
 
-`StoreCategoryRequest` additionally enforces `is_non_necessity_default` as a guarded boolean: it is normalized to `false` unless the category is expense-type and has `advance_fund_id`; when `true`, it is only valid if the auth user has an active `FundRule` targeting that same fund with `destination_type='fund'`, `allocation_type='percentage'`, and `allocation_base='remaining'`.
+`StoreCategoryRequest` additionally enforces `is_non_necessity_default` as a guarded boolean for the authenticated user’s per-category defaults: it is normalized to `false` unless the category is expense-type and has `advance_fund_id`; when `true`, it is only valid if the auth user has an active `FundRule` targeting that same fund with `destination_type='fund'`, `allocation_type='percentage'`, and `allocation_base='remaining'`.
 
 ## Policies
 

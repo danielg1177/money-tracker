@@ -39,7 +39,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_05_04_204012_fix_debts_transaction_id_cascade_and_repair_orphans` | Sets `is_pending_closeout=false` on pending debts with null `transaction_id`; replaces `debts.transaction_id` FK with `cascadeOnDelete` (was `nullOnDelete`) |
 | `2026_05_04_205520_add_contributions_to_debts_table` | Adds nullable `contributions` JSON column to `debts` |
 | `2026_05_04_211754_repair_missing_april_2026_split_debt` | Data repair: inserts a confirmed April 2026 inter-family split debt for family 1 if missing; no-ops in test environments |
-| `2026_05_05_201653_add_advance_fund_id_to_categories_table` | Nullable `advance_fund_id` FK on `categories` → `funds.id` (`nullOnDelete`) |
+| `2026_05_05_201653_add_advance_fund_id_to_categories_table` | (Historical) added nullable `advance_fund_id` FK on `categories` |
 | `2026_05_05_201653_add_advance_fund_id_to_transactions_table` | Nullable `advance_fund_id` FK on `transactions` → `funds.id` (`nullOnDelete`) |
 | `2026_05_05_212303_ensure_categories_are_income_xor_expense` | Data repair: normalizes `categories` so each row is income-only or expense-only (not both / not neither) |
 | `2026_05_05_214052_add_mirror_transaction_id_to_transactions_table` | Nullable `mirror_transaction_id` self-FK linking paired debt-payment expense ↔ creditor income rows |
@@ -49,7 +49,8 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_05_06_154936_add_bank_balance_to_users_table` | Adds `bank_balance_enabled` (bool), `bank_balance` (decimal nullable), `bank_balance_set_at` (date nullable) to `users` |
 | `2026_05_06_154936_add_completion_to_closeout_title_savings_table` | Adds `is_completed` (bool) and `completed_at` (timestamp nullable) to `closeout_title_savings` |
 | `2026_05_06_161500_add_closeout_transaction_fields` | Adds `fund_rules.closeout_expense_category_id` (nullable FK to categories) and `closeout_title_savings.completion_transaction_id` (nullable FK to transactions) |
-| `2026_05_08_020419_add_is_non_necessity_default_to_categories_table` | Adds `is_non_necessity_default` boolean (default false) to `categories` |
+| `2026_05_08_020419_add_is_non_necessity_default_to_categories_table` | (Historical) added `is_non_necessity_default` boolean to `categories` |
+| `2026_05_08_122741_create_category_user_defaults_table` | Creates `category_user_defaults`, migrates category-level advance/non-necessity defaults to head-of-household users, and removes those columns from `categories` |
 | `2026_05_08_020419_add_is_non_necessity_to_transactions_table` | Adds `is_non_necessity` boolean (default false) to `transactions` |
 
 ## Table schemas
@@ -91,9 +92,19 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `is_expense` | boolean | default false; **must be the logical opposite of `is_income`** |
 | `is_split_default` | boolean | default false |
 | `split_default` | json nullable | default split percentages `[{user_id, share_percentage}]` |
-| `advance_fund_id` | bigint FK nullable | → `funds.id` with `nullOnDelete`; default advance fund for **expense** transactions in this category (cleared when category is not expense-capable) |
-| `is_non_necessity_default` | boolean | default false; when true, new expense transactions in this category default `is_non_necessity=true` (requires `advance_fund_id` and a matching active percentage-of-remaining closeout rule) |
 | `timestamps` | | |
+### `category_user_defaults`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint PK | |
+| `category_id` | bigint FK | → `categories.id` (`cascadeOnDelete`) |
+| `user_id` | bigint FK | → `users.id` (`cascadeOnDelete`) |
+| `advance_fund_id` | bigint FK nullable | → `funds.id` (`nullOnDelete`) |
+| `is_non_necessity_default` | boolean | default false; user-specific non-necessity default for this category |
+| `timestamps` | | |
+
+Unique key: `category_id` + `user_id` (one default row per user/category pair).
+
 
 ### `funds`
 | Column | Type | Notes |

@@ -83,6 +83,11 @@ class User extends Authenticatable
         return $this->hasMany(MonthSoftClose::class);
     }
 
+    public function categoryDefaults(): HasMany
+    {
+        return $this->hasMany(CategoryUserDefault::class);
+    }
+
     #[Attribute]
     protected function isAdmin(): Attribute
     {

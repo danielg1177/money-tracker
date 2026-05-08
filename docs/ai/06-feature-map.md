@@ -57,7 +57,7 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 
 ## 4. Categories
 
-**What it does:** Manage income and expense categories per family; each category is **either** income **or** expense (not both). **Expense** categories can optionally define a default split template and default advance fund. On **Categories**, tap a row to open the edit sheet; **Add Category** creates a new one. Delete remains a separate control per row so it does not trigger edit.
+**What it does:** Manage income and expense categories per family; each category is **either** income **or** expense (not both). **Expense** categories can optionally define a family-shared default split template plus per-user defaults for advance fund and non-necessity. On **Categories**, tap a row to open the edit sheet; **Add Category** creates a new one. Delete remains a separate control per row so it does not trigger edit.
 
 | Layer | Files |
 |---|---|
@@ -66,9 +66,9 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 | Request | `app/Http/Requests/StoreCategoryRequest.php` |
 | Frontend | `resources/js/pages/Categories.vue`, `resources/js/components/IconPicker.vue` |
 
-**`split_default` / `advance_fund_id`:** Only honored when `is_expense` is true. Stored as JSON FK respectively; excluded when saving an income-only category. The transaction form applies these defaults only when the active transaction **type is expense**. If the category enables split (`is_split_default` with `split_default`), the form turns **split** on and fills **equal shares across the current family** (`familyUsers`); the stored `split_default` JSON documents the category for reference but does not pre-fill those percentages in the transaction form.
+**`split_default` / `advance_fund_id`:** Only honored when `is_expense` is true. `split_default` is stored on the shared `categories` row; `advance_fund_id` is stored in `category_user_defaults` (per user/category). The transaction form applies these defaults only when the active transaction **type is expense**. If the category enables split (`is_split_default` with `split_default`), the form turns **split** on and fills **equal shares across the current family** (`familyUsers`); the stored `split_default` JSON documents the category for reference but does not pre-fill those percentages in the transaction form.
 
-Categories with `advance_fund_id` (expense only) can set `is_non_necessity_default=true`. Requires the same fund rule constraint as the transaction flag. When set, new transactions in that category auto-default to `is_non_necessity=true`.
+Categories with `advance_fund_id` (expense only) can set `is_non_necessity_default=true` per user/category. Requires the same fund rule constraint as the transaction flag. When set, new transactions in that category auto-default to `is_non_necessity=true` for that user.
 
 ---
 
