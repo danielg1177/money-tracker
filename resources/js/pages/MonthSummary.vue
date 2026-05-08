@@ -1067,7 +1067,7 @@ function movementTypeLabel(type) {
                   <div class="min-w-0">
                     <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
                     <p v-if="row.description" class="text-sm text-gray-200 truncate">{{ row.description }}</p>
-                    <p v-else class="text-sm text-gray-500 italic">No description</p>
+                    <p v-else class="text-sm text-gray-300 truncate">{{ row.category_name }}</p>
                     <p class="text-[11px] text-gray-500 mt-0.5">
                       Total {{ formatCurrency(row.total_amount) }}
                     </p>
