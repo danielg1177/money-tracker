@@ -783,7 +783,6 @@ class MonthSummaryController extends Controller
             ->where('family_id', $user->family_id)
             ->where('type', 'expense')
             ->where('is_split', true)
-            ->where('is_debt_payment', false)
             ->where('is_closeout_initiated', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)

@@ -175,7 +175,7 @@
     >
       <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Split balances (this month)</h2>
       <p class="mt-1 text-[10px] text-gray-500 leading-snug">
-        From shared expenses in this calendar month only. Repayments toward tracked debts and closeout ledger lines are excluded.
+        From shared expenses in this calendar month only. Split debt repayments are included; closeout-generated ledger lines are excluded.
       </p>
       <div class="mt-3 space-y-2">
         <div

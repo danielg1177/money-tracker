@@ -660,7 +660,7 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
         $this->assertSame([], $aliceSummary->json('member_balances'));
     }
 
-    public function test_month_summary_member_balances_exclude_split_debt_payment_and_closeout_splits(): void
+    public function test_month_summary_member_balances_include_split_debt_payment_and_exclude_closeout_splits(): void
     {
         $family = Family::factory()->create();
         $alice = User::factory()->create(['family_id' => $family->id]);
@@ -725,8 +725,12 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
             'amount' => 20,
         ]);
 
-        $aliceSummaryOnlyExcluded = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=9')->assertOk();
-        $this->assertSame([], $aliceSummaryOnlyExcluded->json('member_balances'));
+        $aliceSummaryOnlyDebtPayment = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=9')->assertOk();
+        $balancesFromDebtPaymentOnly = $aliceSummaryOnlyDebtPayment->json('member_balances');
+        $this->assertCount(1, $balancesFromDebtPaymentOnly);
+        $this->assertSame($bob->id, $balancesFromDebtPaymentOnly[0]['user_id']);
+        $this->assertSame('they_owe_you', $balancesFromDebtPaymentOnly[0]['direction']);
+        $this->assertEqualsWithDelta(40.0, (float) $balancesFromDebtPaymentOnly[0]['net_amount'], 0.02);
 
         $this->actingAs($alice)->postJson('/transactions', [
             'type' => 'expense',
@@ -745,6 +749,6 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
         $this->assertCount(1, $balances);
         $this->assertSame($bob->id, $balances[0]['user_id']);
         $this->assertSame('they_owe_you', $balances[0]['direction']);
-        $this->assertEqualsWithDelta(30.0, (float) $balances[0]['net_amount'], 0.02);
+        $this->assertEqualsWithDelta(70.0, (float) $balances[0]['net_amount'], 0.02);
     }
 }

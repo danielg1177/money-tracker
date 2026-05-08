@@ -685,7 +685,7 @@ function movementTypeLabel(type) {
       <div v-if="summary.member_balances.length > 0" class="px-4 mt-6">
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Split balances (this month)</h2>
         <p class="text-xs text-gray-500 mb-3">
-          From shared expense transactions dated this month (not repayments toward tracked debts or closeout ledger lines). Only members with a non-zero net for you appear.
+          From shared expense transactions dated this month (including split debt repayments, excluding closeout-generated ledger lines). Only members with a non-zero net for you appear.
         </p>
 
         <div class="space-y-2">

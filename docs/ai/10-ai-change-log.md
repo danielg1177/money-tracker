@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-08 — Split balances now include split debt repayments
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `resources/js/pages/Transactions.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `member_balances` now includes `is_split` debt-payment expenses in month net IOU math and in source breakdown/history totals; closeout-generated split rows (`is_closeout_initiated=true`) remain excluded. Split-balances helper text in Month Summary and Transactions was updated to match.
+
 ## 2026-05-08 — Global guard: prevent wheel changes on number inputs
 
 - Files touched: `resources/js/app.js`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
