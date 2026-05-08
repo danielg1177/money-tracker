@@ -1297,3 +1297,11 @@ Format:
 - Behavioral impact:
   - Fund balances now render with sign-aware colors on the Funds page: **positive** balances are **green**, **negative** balances are **red**, and **zero** balances use neutral gray.
   - This applies to both the main fund card balance and the history modal "Current Balance" value.
+
+## 2026-05-08 — Correct debt history repayment sign/color semantics
+- Files touched:
+  - Frontend: `resources/js/pages/Debts.vue`
+  - Docs: `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - Debt history repayment rows now consistently render as **green negative** values (`-`) for both debtor-side payment rows and creditor-side repayment-received rows, reflecting debt reduction.
+  - Debt-increasing synthetic rows keep additive semantics: `initial_value` and interest accrual stay positive, and closeout contribution cards remain **red positive**.

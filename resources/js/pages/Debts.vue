@@ -743,13 +743,7 @@
                     </div>
                     <p
                       class="text-sm font-bold ml-3 flex-shrink-0"
-                      :class="
-                        payment.type === 'initial_value'
-                          ? 'text-blue-400'
-                          : payment.type === 'interest_accrual'
-                            ? 'text-amber-400'
-                          : (payment.type === 'income' ? 'text-green-400' : 'text-red-400')
-                      "
+                      :class="paymentAmountClass(payment)"
                     >
                       {{ paymentAmountPrefix(payment) }}{{ formatCurrency(payment.amount) }}
                     </p>
@@ -986,15 +980,23 @@ function getSplitParticipantLabel(userId, userName) {
 }
 
 function paymentAmountPrefix(payment) {
-  if (payment.type === 'income') {
-    return '-';
-  }
-
   if (payment.type === 'initial_value' || payment.type === 'interest_accrual') {
     return '+';
   }
 
-  return '+';
+  return '-';
+}
+
+function paymentAmountClass(payment) {
+  if (payment.type === 'initial_value') {
+    return 'text-blue-400';
+  }
+
+  if (payment.type === 'interest_accrual') {
+    return 'text-amber-400';
+  }
+
+  return 'text-green-400';
 }
 
 function closeoutContributionDescription() {
