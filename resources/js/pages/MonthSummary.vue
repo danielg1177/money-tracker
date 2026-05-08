@@ -65,10 +65,14 @@ watch(
   () => route.params.yearMonth,
   async (nextYearMonth) => {
     const parsed = parseMonthValue(nextYearMonth);
-    if (!parsed || parsed === selectedMonthFilter.value) {
+    if (!parsed) {
       return;
     }
+    const shouldReload = parsed !== selectedMonthFilter.value || !summary.value;
     selectedMonthFilter.value = parsed;
+    if (!shouldReload) {
+      return;
+    }
     await loadSummaryForSelectedMonth();
   }
 );

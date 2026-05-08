@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-08 — Month summary selector reload fix
+
+- Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Changing the **View month** selector now reliably reloads month-summary data (not just route/title), by ensuring route-param changes trigger `loadSummaryForSelectedMonth()` even when the local selector already matches the new route value.
+
 ## 2026-05-08 — Month summary: add top month selector
 
 - Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
