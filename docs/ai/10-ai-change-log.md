@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-05-08 — Month summary: add top month selector
+
+- Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Month Summary now includes a top **View month** dropdown that navigates to `/month-summary/:yearMonth` for the selected month and reloads the summary in place, so users can switch months without backing out to Transactions.
+
+## 2026-05-08 — Split source subtotals now show owed direction
+
+- Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: In **Split balances (this month)**, source subtotal rows (**from your created** / **from their created**) now render signed values with direction-aware colors: positive green when that source contributes to money owed to you, negative red when it contributes to money you owe.
+
 ## 2026-05-08 — Month summary split balances: source breakdown + grouped history
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

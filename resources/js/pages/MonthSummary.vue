@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
 
@@ -7,26 +7,79 @@ const route = useRoute();
 const router = useRouter();
 const { get, post, del, loading, error } = useApi();
 
-// Parse route params
-const yearMonth = route.params.yearMonth; // "2026-05"
-const [year, month] = yearMonth.split('-').map(Number);
-
 const summary = ref(null);
 const currentUser = ref(null);
 const isClosing = ref(false);
+const selectedMonthFilter = ref(typeof route.params.yearMonth === 'string' ? route.params.yearMonth : '');
 
 // Month label
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const monthLabel = computed(() => `${monthNames[month - 1]} ${year} Summary`);
+const currentYear = computed(() => Number.parseInt(String(selectedMonthFilter.value).split('-')[0] || '0', 10));
+const currentMonth = computed(() => Number.parseInt(String(selectedMonthFilter.value).split('-')[1] || '0', 10));
+const monthLabel = computed(() => `${monthNames[(currentMonth.value || 1) - 1]} ${currentYear.value} Summary`);
 
-// Load data on mount
-onMounted(async () => {
-  await fetchCurrentUser();
+const quickSelectMonths = computed(() => {
+  const months = [];
+  const cursor = new Date();
+  cursor.setDate(1);
+  cursor.setMonth(cursor.getMonth() + 2);
+
+  for (let i = 0; i < 26; i += 1) {
+    const year = cursor.getFullYear();
+    const monthIndex = cursor.getMonth();
+    const monthNumber = monthIndex + 1;
+    months.push({
+      label: `${monthNames[monthIndex]} ${year}`,
+      value: `${year}-${String(monthNumber).padStart(2, '0')}`,
+    });
+    cursor.setMonth(cursor.getMonth() - 1);
+  }
+
+  return months;
+});
+
+function parseMonthValue(value) {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(value)) ? String(value) : '';
+}
+
+async function loadSummaryForSelectedMonth() {
+  const monthValue = parseMonthValue(selectedMonthFilter.value);
+  if (!monthValue) {
+    summary.value = null;
+    return;
+  }
+  const [year, month] = monthValue.split('-').map(Number);
   const response = await get(`/month-summary?year=${year}&month=${month}`);
   if (response) {
     summary.value = response;
   }
+}
+
+// Load data on mount
+onMounted(async () => {
+  await fetchCurrentUser();
+  await loadSummaryForSelectedMonth();
 });
+
+watch(
+  () => route.params.yearMonth,
+  async (nextYearMonth) => {
+    const parsed = parseMonthValue(nextYearMonth);
+    if (!parsed || parsed === selectedMonthFilter.value) {
+      return;
+    }
+    selectedMonthFilter.value = parsed;
+    await loadSummaryForSelectedMonth();
+  }
+);
+
+async function handleMonthFilterChange() {
+  const parsed = parseMonthValue(selectedMonthFilter.value);
+  if (!parsed || parsed === route.params.yearMonth) {
+    return;
+  }
+  await router.push(`/month-summary/${parsed}`);
+}
 
 async function fetchCurrentUser() {
   try {
@@ -123,12 +176,8 @@ const canHardClose = computed(() => {
 async function handleSoftClose() {
   try {
     isClosing.value = true;
-    await post('/closeout/soft-close', { year, month });
-    // Refresh the data
-    const response = await get(`/month-summary?year=${year}&month=${month}`);
-    if (response) {
-      summary.value = response;
-    }
+    await post('/closeout/soft-close', { year: currentYear.value, month: currentMonth.value });
+    await loadSummaryForSelectedMonth();
   } catch (err) {
     console.error('Failed to soft close:', err);
   } finally {
@@ -139,12 +188,8 @@ async function handleSoftClose() {
 async function handleUndoSoftClose() {
   try {
     isClosing.value = true;
-    await post('/closeout/undo-soft-close', { year, month });
-    // Refresh the data
-    const response = await get(`/month-summary?year=${year}&month=${month}`);
-    if (response) {
-      summary.value = response;
-    }
+    await post('/closeout/undo-soft-close', { year: currentYear.value, month: currentMonth.value });
+    await loadSummaryForSelectedMonth();
   } catch (err) {
     console.error('Failed to undo soft close:', err);
   } finally {
@@ -155,12 +200,8 @@ async function handleUndoSoftClose() {
 async function handleHardClose() {
   try {
     isClosing.value = true;
-    await post('/closeout/hard-close', { year, month });
-    // Refresh the data
-    const response = await get(`/month-summary?year=${year}&month=${month}`);
-    if (response) {
-      summary.value = response;
-    }
+    await post('/closeout/hard-close', { year: currentYear.value, month: currentMonth.value });
+    await loadSummaryForSelectedMonth();
   } catch (err) {
     console.error('Failed to hard close:', err);
   } finally {
@@ -321,6 +362,30 @@ function closeSplitHistoryModal() {
   splitHistoryModalTitle.value = '';
 }
 
+function splitSourceSignedAmount(balance, source) {
+  const rawAmount = Number(balance?.[`${source}_amount`] || 0);
+  if (!rawAmount) {
+    return 0;
+  }
+
+  if (balance?.direction === 'they_owe_you') {
+    return source === 'from_you_created' ? rawAmount : -rawAmount;
+  }
+
+  return source === 'from_you_created' ? -rawAmount : rawAmount;
+}
+
+function splitSourceAmountClass(balance, source) {
+  const signedAmount = splitSourceSignedAmount(balance, source);
+  if (signedAmount > 0.005) {
+    return 'text-green-400';
+  }
+  if (signedAmount < -0.005) {
+    return 'text-red-400';
+  }
+  return 'text-gray-200';
+}
+
 const splitHistoryGroups = computed(() => {
   if (!Array.isArray(splitHistoryModalRows.value) || splitHistoryModalRows.value.length === 0) {
     return [];
@@ -452,6 +517,24 @@ function movementTypeLabel(type) {
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
         </svg>
       </div>
+    </div>
+
+    <div class="px-4 pt-3">
+      <label for="month-summary-month-select" class="block text-xs text-gray-400 mb-1">View month</label>
+      <select
+        id="month-summary-month-select"
+        v-model="selectedMonthFilter"
+        @change="handleMonthFilterChange"
+        class="w-full bg-gray-800 border border-gray-700 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-blue-500"
+      >
+        <option
+          v-for="monthOption in quickSelectMonths"
+          :key="monthOption.value"
+          :value="monthOption.value"
+        >
+          {{ monthOption.label }}
+        </option>
+      </select>
     </div>
 
     <!-- Loading state -->
@@ -625,7 +708,9 @@ function movementTypeLabel(type) {
                 </span>
                 <div class="flex items-center gap-2 shrink-0">
                   <span class="text-xs font-medium text-gray-200 tabular-nums">
-                    {{ formatCurrency(balance.from_you_created_amount || 0) }}
+                    <span :class="splitSourceAmountClass(balance, 'from_you_created')">
+                      {{ splitSourceSignedAmount(balance, 'from_you_created') > 0.005 ? '+' : '' }}{{ formatCurrency(splitSourceSignedAmount(balance, 'from_you_created')) }}
+                    </span>
                   </span>
                   <button
                     type="button"
@@ -643,7 +728,9 @@ function movementTypeLabel(type) {
                 </span>
                 <div class="flex items-center gap-2 shrink-0">
                   <span class="text-xs font-medium text-gray-200 tabular-nums">
-                    {{ formatCurrency(balance.from_them_created_amount || 0) }}
+                    <span :class="splitSourceAmountClass(balance, 'from_them_created')">
+                      {{ splitSourceSignedAmount(balance, 'from_them_created') > 0.005 ? '+' : '' }}{{ formatCurrency(splitSourceSignedAmount(balance, 'from_them_created')) }}
+                    </span>
                   </span>
                   <button
                     type="button"
