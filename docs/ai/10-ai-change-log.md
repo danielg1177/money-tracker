@@ -11,6 +11,41 @@ Format:
 
 ---
 
+## 2026-05-08 — Undo Hard Close
+
+- Summary: Added ability for head of household to fully revert a month's hard close, restoring fund balances, debt balances, interest accruals, title savings, and split debt state to pre-close condition.
+- Files touched:
+  - `app/Services/MonthCloseoutService.php` — new `undoHardClose()` method
+  - `app/Http/Controllers/MonthCloseoutController.php` — new `undoHardClose()` action
+  - `routes/web.php` — new `POST /closeout/undo-hard-close` route
+  - `resources/js/pages/MonthSummary.vue` — new `Undo Hard Close` button (head of household only)
+  - `tests/Feature/UndoHardCloseTest.php` — 11 feature tests
+- Behavioral impact:
+  - Head of household can now undo a hard close from the Month Summary page
+  - All closeout-generated transactions, fund movements, title savings, and interest accruals are deleted/reversed
+  - Split debts are re-pended for reconsolidation at the next hard close
+  - Clamped behavior: debt balances cannot go negative if post-closeout payments were made on consolidated debts
+
+## 2026-05-08 — Add undo-hard-close feature test coverage
+
+- Files touched: `tests/Feature/UndoHardCloseTest.php`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Added a dedicated PHPUnit feature test class for `POST /closeout/undo-hard-close` with 11 scenarios covering auth/authorization/validation guards plus reversal behavior for hard-close records, fund allocations, debt allocations, title savings + completion transactions, interest accrual rollback, advance settlement rollback, and split-debt consolidation reversal with pending-debt recreation.
+
+## 2026-05-08 — Month Summary adds Undo Hard Close action
+
+- Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Month Summary header now shows an `Undo Hard Close` button for users with `can_manage_family` when the viewed month is already hard-closed. Tapping it requires destructive confirmation and then calls `POST /closeout/undo-hard-close`; on success the month summary reloads and closeout status updates in place.
+
+## 2026-05-08 — Add closeout undo-hard-close controller endpoint
+
+- Files touched: `app/Http/Controllers/MonthCloseoutController.php`, `routes/web.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Added `POST /closeout/undo-hard-close` wired to `MonthCloseoutController::undoHardClose`. Endpoint validates `{year, month}`, requires authenticated family membership and `can_manage_family`, calls `MonthCloseoutService::undoHardClose`, returns success JSON on revert and `422` with service validation message when the month cannot be reverted.
+
+## 2026-05-08 — Add month hard-close full undo service method
+
+- Files touched: `app/Services/MonthCloseoutService.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/07-workflows.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Added `MonthCloseoutService::undoHardClose(Family $family, int $year, int $month)` to fully revert hard-close effects for a month in one DB transaction: restore debt/fund balances from closeout artifacts, remove closeout-generated transactions/fund movements/title savings, reverse consolidated contribution debt changes, recreate pending split debts, reverse month interest accrual entries, and remove soft/hard close records.
+
 ## 2026-05-08 — Split balances now include split debt repayments
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `resources/js/pages/Transactions.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

@@ -110,6 +110,31 @@ class MonthCloseoutController extends Controller
         }
     }
 
+    public function undoHardClose(Request $request): JsonResponse
+    {
+        $request->validate([
+            'year' => 'required|integer',
+            'month' => 'required|integer|min:1|max:12',
+        ]);
+
+        $user = auth()->user();
+        if (! $user->family_id) {
+            return response()->json(['message' => 'User must be in a family'], 403);
+        }
+
+        if (! $user->can_manage_family) {
+            abort(403);
+        }
+
+        try {
+            $this->closeoutService->undoHardClose($user->family, (int) $request->year, (int) $request->month);
+
+            return response()->json(['message' => 'Hard close reverted successfully']);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
     public function closedMonths(Request $request): JsonResponse
     {
         $user = auth()->user();

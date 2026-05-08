@@ -232,6 +232,26 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
 
 ---
 
+## Workflow 8b: Undo Hard Close (Service-Level Reversal)
+
+1. Backend calls `MonthCloseoutService::undoHardClose($family, $year, $month)`
+2. Service starts one `DB::transaction` and verifies a `MonthHardClose` exists; otherwise throws `InvalidArgumentException("No hard close found for this month.")`
+3. Reverses closeout debt-payment transactions first (for month + family users): for each `is_closeout_initiated=true` + `is_debt_payment=true` row, increments linked debt `balance` by transaction amount
+4. Reverses fund movements for that month tag (`YYYY-MM`):
+   - `closeout_allocation`: decrement fund balance by movement amount
+   - `advance_settlement`: increment fund balance by movement amount
+   - then deletes both movement sets
+5. Deletes closeout-generated month transactions (`is_closeout_initiated=true`) after debt balances are restored
+6. Deletes `CloseoutTitleSaving` rows for that family/month and deletes each linked `completion_transaction_id` row when present
+7. Reverses split-debt consolidation:
+   - confirmed debts with month/year entries in `contributions` remove those entries and subtract that amount from `amount` + `balance`
+   - debts whose contributions become empty are deleted (created entirely by the reverted closeout)
+8. Recreates pending split debts from non-closeout split transactions in that month (`is_split=true`, `is_closeout_initiated=false`) when `(transaction_id, debtor_id)` debt does not already exist
+9. Reverses monthly debt interest entries by removing matching month/year records from `interest_accruals`, subtracting accrued interest from `balance`, and recomputing `interest_last_applied_at` from the latest remaining accrual (or null)
+10. Deletes month `MonthSoftClose` and `MonthHardClose` rows to return the month to pre-close state
+
+---
+
 ## Workflow 9: Income From Debt (New or Existing)
 
 1. User opens `TransactionForm`, sets `type=income`, amount/date/category
@@ -271,3 +291,32 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
    - stores resulting debt id on `transactions.debt_id`
 6. Transaction remains a regular `income` row (`is_debt_payment=false`)
 7. At month hard-close, this row is still treated as normal gross income for closeout rules
+
+---
+
+## Workflow 10: Undo Hard Close
+
+Only available to `head_of_household` (or `is_admin=true`) users.
+
+1. Head of household navigates to `MonthSummary.vue` for a hard-closed month
+2. An `Undo Hard Close` button (red) appears in the page header (only visible when `is_hard_closed=true` and `can_manage_family=true`)
+3. User clicks it; a `window.confirm()` dialog warns about the destructive nature
+4. On confirmation, Vue posts `POST /closeout/undo-hard-close` with `{year, month}`
+5. `MonthCloseoutController::undoHardClose` validates, checks `can_manage_family`, and calls `MonthCloseoutService::undoHardClose`
+6. Service runs entirely in `DB::transaction`:
+   a. Guards: verifies hard close exists for this family/year/month
+   b. Reverses closeout debt payment transactions: restores `debt.balance` for each
+   c. Reverses fund balance changes from `FundMovement` rows (`type=closeout_allocation`, `advance_settlement`); deletes those `FundMovement` rows
+   d. Deletes all transactions with `is_closeout_initiated=true` for family members dated in the closed month
+   e. Deletes `CloseoutTitleSaving` records for this family/year/month; also deletes any `completion_transaction_id` transactions linked to them
+   f. Reverses confirmed split debts that have a `contributions` entry for this month — newly-created debts (only this month's contribution) are deleted; augmented existing debts have the contribution removed and `amount`/`balance` decremented
+   g. Recreates `is_pending_closeout=true` debts from all split transactions (`is_split=true`, `is_closeout_initiated=false`) in the family/month that no longer have pending debt records
+   h. Reverses interest: finds debts with `interest_accruals` entries for this year/month, subtracts accrual amounts from `debt.balance`, removes the entry from `interest_accruals`, restores `interest_last_applied_at`
+   i. Deletes all `MonthSoftClose` records for this family/year/month
+   j. Deletes the `MonthHardClose` record
+7. Vue reloads the month summary — the month appears open again
+
+Known limitations:
+
+- If a confirmed split debt was partially paid down by a user after closeout, undoing the closeout reduces the debt balance but cannot restore it below zero. Balance is clamped at `max(0, balance - contribution_amount)`.
+- The system does not guard against undoing a month when a subsequent month is already hard-closed; this can introduce inconsistencies in multi-month interest calculations or fund balances.

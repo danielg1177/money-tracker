@@ -123,6 +123,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/closeout/soft-close', [MonthCloseoutController::class, 'softClose']);
     Route::post('/closeout/undo-soft-close', [MonthCloseoutController::class, 'undoSoftClose']);
     Route::post('/closeout/hard-close', [MonthCloseoutController::class, 'hardClose']);
+    Route::post('/closeout/undo-hard-close', [MonthCloseoutController::class, 'undoHardClose']);
     Route::get('/closeout/closed-months', fn (Request $r) => $r->expectsJson() ? app(MonthCloseoutController::class)->closedMonths($r) : view('app'));
 
     Route::middleware(['can:admin'])->group(function () {

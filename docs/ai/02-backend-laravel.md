@@ -149,6 +149,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `softClose(Request)` — `POST /closeout/soft-close`; creates a `MonthSoftClose` record; auto-triggers `hardClose` for single-member families; returns `{message, data, hard_close?, auto_hard_closed?}`
 - `undoSoftClose(Request)` — `POST /closeout/undo-soft-close`; removes the user's soft-close record (only if no hard close exists)
 - `hardClose(Request)` — `POST /closeout/hard-close`; requires `can:manage_family`; runs `MonthCloseoutService::hardClose` (processes all members' closeout rules, consolidates split debts, applies monthly debt interest through the closed month-end date, creates `MonthHardClose`)
+- `undoHardClose(Request)` — `POST /closeout/undo-hard-close`; requires `can_manage_family`; runs `MonthCloseoutService::undoHardClose` and returns `422` for closeout-state validation errors (e.g., no hard close for month)
 - `closedMonths(Request)` — `GET /closeout/closed-months`; returns array of `{year, month}` hard-closed months for the auth user's family
 
 ### MonthSummaryController
@@ -199,6 +200,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `allocateToFund(...)` creates both a `FundMovement` (`closeout_allocation`) and a closeout-tagged expense transaction for ledger visibility in Transactions
 - `allocateToDebt(...)` applies `closeout_expense_category_id` to closeout-created debt-payment expense rows
 - `allocateToTitle(...)` upserts **`CloseoutTitleSaving`** by `(family_id, user_id, year, month, title)`; **`rule_id` is set only when the row is first created** so a second title rule that shares the same title string still accumulates **`amount`** but does not overwrite **`rule_id`** (completion expenses use the first rule’s **`closeout_expense_category_id`**)
+- `undoHardClose(Family, int, int): void` fully reverts hard-close artifacts inside one DB transaction (guarded by an existing `MonthHardClose` row): reverses closeout debt-payment impacts, reverses/deletes month-tagged closeout `FundMovement` rows (`closeout_allocation`, `advance_settlement`), deletes closeout-generated transactions, removes title savings and completion transactions, rolls back consolidated debt `contributions` for that month (deleting fully closeout-created debts), recreates pending split debts from month split transactions, removes month interest accrual entries from debts, then deletes month soft/hard close records
 
 ## Form Requests
 

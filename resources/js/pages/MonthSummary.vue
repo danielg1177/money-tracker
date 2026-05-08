@@ -182,6 +182,10 @@ const canHardClose = computed(() => {
   return !isHardClosed.value && allSoftClosed.value && currentUser.value?.can_manage_family;
 });
 
+const canUndoHardClose = computed(() => {
+  return isHardClosed.value && currentUser.value?.can_manage_family;
+});
+
 // Closeout functions
 async function handleSoftClose() {
   try {
@@ -214,6 +218,22 @@ async function handleHardClose() {
     await loadSummaryForSelectedMonth();
   } catch (err) {
     console.error('Failed to hard close:', err);
+  } finally {
+    isClosing.value = false;
+  }
+}
+
+async function handleUndoHardClose() {
+  const confirmed = window.confirm(
+    'Are you sure you want to undo this hard close? This will reverse all fund allocations, debt payments, title savings, interest accruals, and split debt consolidations from this closeout. This action cannot be undone automatically.'
+  );
+  if (!confirmed) return;
+  try {
+    isClosing.value = true;
+    await post('/closeout/undo-hard-close', { year: currentYear.value, month: currentMonth.value });
+    await loadSummaryForSelectedMonth();
+  } catch (err) {
+    console.error('Failed to undo hard close:', err);
   } finally {
     isClosing.value = false;
   }
@@ -466,6 +486,16 @@ function movementTypeLabel(type) {
 
       <div class="flex items-center gap-2">
         <!-- Closeout Buttons -->
+        <button
+          v-if="canUndoHardClose"
+          type="button"
+          @click="handleUndoHardClose"
+          :disabled="isClosing"
+          class="px-3 py-2 bg-red-700 hover:bg-red-800 text-white text-sm rounded-lg font-medium transition-colors disabled:opacity-50"
+          title="Revert this hard close — only available to head of household"
+        >
+          {{ isClosing ? 'Reverting...' : 'Undo Hard Close' }}
+        </button>
         <button
           v-if="canHardClose"
           type="button"

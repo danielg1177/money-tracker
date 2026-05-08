@@ -272,6 +272,268 @@ class MonthCloseoutService
     }
 
     /**
+     * Fully revert a hard close for a family, restoring data to pre-close state.
+     *
+     * @throws InvalidArgumentException If no hard close exists for this month
+     */
+    public function undoHardClose(Family $family, int $year, int $month): void
+    {
+        DB::transaction(function () use ($family, $year, $month): void {
+            $hardClose = MonthHardClose::query()
+                ->where('family_id', $family->id)
+                ->where('year', $year)
+                ->where('month', $month)
+                ->first();
+
+            if (! $hardClose) {
+                throw new InvalidArgumentException('No hard close found for this month.');
+            }
+
+            $familyUserIds = $family->users()->pluck('id')->all();
+            $closeoutMonthTag = sprintf('%04d-%02d', $year, $month);
+
+            $closeoutDebtPaymentTransactions = Transaction::query()
+                ->whereIn('user_id', $familyUserIds)
+                ->where('is_closeout_initiated', true)
+                ->where('is_debt_payment', true)
+                ->whereYear('transaction_date', $year)
+                ->whereMonth('transaction_date', $month)
+                ->get();
+
+            foreach ($closeoutDebtPaymentTransactions as $transaction) {
+                if (! $transaction->debt_id) {
+                    continue;
+                }
+
+                $debt = Debt::query()
+                    ->where('id', $transaction->debt_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $debt) {
+                    continue;
+                }
+
+                $debt->increment('balance', (float) $transaction->amount);
+            }
+
+            $closeoutAllocationMovements = FundMovement::query()
+                ->whereIn('user_id', $familyUserIds)
+                ->where('type', 'closeout_allocation')
+                ->where('description', 'like', '%('.$closeoutMonthTag.')%')
+                ->get();
+
+            foreach ($closeoutAllocationMovements as $movement) {
+                $fund = Fund::query()
+                    ->where('id', $movement->fund_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $fund) {
+                    continue;
+                }
+
+                $fund->decrement('balance', (float) $movement->amount);
+            }
+
+            $advanceSettlementMovements = FundMovement::query()
+                ->whereIn('user_id', $familyUserIds)
+                ->where('type', 'advance_settlement')
+                ->where('description', 'like', '%('.$closeoutMonthTag.'%')
+                ->get();
+
+            foreach ($advanceSettlementMovements as $movement) {
+                $fund = Fund::query()
+                    ->where('id', $movement->fund_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $fund) {
+                    continue;
+                }
+
+                $fund->increment('balance', (float) $movement->amount);
+            }
+
+            FundMovement::query()
+                ->whereIn('id', $closeoutAllocationMovements->pluck('id'))
+                ->delete();
+
+            FundMovement::query()
+                ->whereIn('id', $advanceSettlementMovements->pluck('id'))
+                ->delete();
+
+            Transaction::query()
+                ->whereIn('user_id', $familyUserIds)
+                ->where('is_closeout_initiated', true)
+                ->whereYear('transaction_date', $year)
+                ->whereMonth('transaction_date', $month)
+                ->delete();
+
+            $titleSavings = CloseoutTitleSaving::query()
+                ->where('family_id', $family->id)
+                ->where('year', $year)
+                ->where('month', $month)
+                ->get();
+
+            foreach ($titleSavings as $titleSaving) {
+                if (! $titleSaving->completion_transaction_id) {
+                    continue;
+                }
+
+                Transaction::query()
+                    ->where('id', $titleSaving->completion_transaction_id)
+                    ->delete();
+            }
+
+            CloseoutTitleSaving::query()
+                ->whereIn('id', $titleSavings->pluck('id'))
+                ->delete();
+
+            $confirmedDebts = Debt::query()
+                ->where('family_id', $family->id)
+                ->where('is_pending_closeout', false)
+                ->whereNotNull('contributions')
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($confirmedDebts as $debt) {
+                $contributions = $debt->contributions ?? [];
+                $monthContributions = array_filter($contributions, function ($contribution) use ($year, $month): bool {
+                    return (int) ($contribution['month'] ?? 0) === $month
+                        && (int) ($contribution['year'] ?? 0) === $year;
+                });
+
+                if (empty($monthContributions)) {
+                    continue;
+                }
+
+                $monthAmount = array_sum(array_map(
+                    static fn (array $contribution): float => (float) ($contribution['amount'] ?? 0),
+                    $monthContributions
+                ));
+
+                $remainingContributions = array_values(array_filter(
+                    $contributions,
+                    function ($contribution) use ($year, $month): bool {
+                        return ! (
+                            (int) ($contribution['month'] ?? 0) === $month
+                            && (int) ($contribution['year'] ?? 0) === $year
+                        );
+                    }
+                ));
+
+                if (empty($remainingContributions)) {
+                    $debt->delete();
+
+                    continue;
+                }
+
+                $debt->update([
+                    'amount' => max(0, (float) $debt->amount - $monthAmount),
+                    'balance' => max(0, (float) $debt->balance - $monthAmount),
+                    'contributions' => $remainingContributions,
+                ]);
+            }
+
+            $splitTransactions = Transaction::query()
+                ->where('family_id', $family->id)
+                ->where('is_split', true)
+                ->where('is_closeout_initiated', false)
+                ->whereYear('transaction_date', $year)
+                ->whereMonth('transaction_date', $month)
+                ->with('splits')
+                ->get();
+
+            foreach ($splitTransactions as $transaction) {
+                foreach ($transaction->splits as $split) {
+                    if ($split->user_id === $transaction->user_id) {
+                        continue;
+                    }
+
+                    $exists = Debt::query()
+                        ->where('transaction_id', $transaction->id)
+                        ->where('debtor_id', $split->user_id)
+                        ->exists();
+
+                    if ($exists) {
+                        continue;
+                    }
+
+                    Debt::query()->create([
+                        'family_id' => $transaction->family_id,
+                        'debtor_id' => $split->user_id,
+                        'creditor_id' => $transaction->user_id,
+                        'transaction_id' => $transaction->id,
+                        'amount' => $split->amount,
+                        'balance' => $split->amount,
+                        'description' => "Split from transaction #{$transaction->id}",
+                        'is_pending_closeout' => true,
+                    ]);
+                }
+            }
+
+            $interestDebts = Debt::query()
+                ->where('family_id', $family->id)
+                ->where('interest_enabled', true)
+                ->whereNotNull('interest_accruals')
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($interestDebts as $debt) {
+                $interestAccruals = $debt->interest_accruals ?? [];
+                $monthAccruals = array_filter($interestAccruals, function ($accrual) use ($year, $month): bool {
+                    return (int) ($accrual['year'] ?? 0) === $year
+                        && (int) ($accrual['month'] ?? 0) === $month;
+                });
+
+                if (empty($monthAccruals)) {
+                    continue;
+                }
+
+                $interestToReverse = array_sum(array_map(
+                    static fn (array $accrual): float => (float) ($accrual['amount'] ?? 0),
+                    $monthAccruals
+                ));
+
+                $remainingAccruals = array_values(array_filter(
+                    $interestAccruals,
+                    function ($accrual) use ($year, $month): bool {
+                        return ! (
+                            (int) ($accrual['year'] ?? 0) === $year
+                            && (int) ($accrual['month'] ?? 0) === $month
+                        );
+                    }
+                ));
+
+                $newLastAppliedAt = null;
+                if (! empty($remainingAccruals)) {
+                    $lastAccrual = end($remainingAccruals);
+                    $newLastAppliedAt = $lastAccrual['applied_at'] ?? null;
+                }
+
+                $debt->update([
+                    'balance' => max(0, (float) $debt->balance - $interestToReverse),
+                    'interest_accruals' => empty($remainingAccruals) ? null : $remainingAccruals,
+                    'interest_last_applied_at' => $newLastAppliedAt,
+                ]);
+            }
+
+            MonthSoftClose::query()
+                ->where('family_id', $family->id)
+                ->where('year', $year)
+                ->where('month', $month)
+                ->delete();
+
+            MonthHardClose::query()
+                ->where('family_id', $family->id)
+                ->where('year', $year)
+                ->where('month', $month)
+                ->delete();
+        });
+    }
+
+    /**
      * Process a user's active closeout rules for a given month.
      *
      * @private

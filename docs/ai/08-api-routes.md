@@ -96,6 +96,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | POST | `/closeout/soft-close` | `MonthCloseoutController::softClose` | `{year, month}`; auto-hard-closes if family has only one member; returns `{message, data (soft_close), hard_close?, auto_hard_closed?}` |
 | POST | `/closeout/undo-soft-close` | `MonthCloseoutController::undoSoftClose` | `{year, month}`; undoes soft close (must have no hard close) |
 | POST | `/closeout/hard-close` | `MonthCloseoutController::hardClose` | `{year, month}`; requires `can_manage_family`; processes all members' closeout rules, consolidates pending split debts, and applies eligible debt interest through the closed month-end date (daily accrual with in-month payment impact) |
+| POST | `/closeout/undo-hard-close` | `MonthCloseoutController::undoHardClose` | Undo a hard close; reverts all closeout artifacts. Requires auth + `can_manage_family`. Body: `{year, month}`. Returns `{message}`. |
 | GET | `/closeout/closed-months` | `MonthCloseoutController::closedMonths` | JSON: array of hard-closed months for family as `{year, month}` |
 
 ### Family members
