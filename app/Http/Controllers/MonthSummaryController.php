@@ -870,6 +870,7 @@ class MonthSummaryController extends Controller
      *     transaction_id: int,
      *     transaction_date: string,
      *     category_name: string,
+     *     category_icon: string|null,
      *     description: string|null,
      *     total_amount: float,
      *     balance_amount: float,
@@ -878,6 +879,7 @@ class MonthSummaryController extends Controller
      *     transaction_id: int,
      *     transaction_date: string,
      *     category_name: string,
+     *     category_icon: string|null,
      *     description: string|null,
      *     total_amount: float,
      *     balance_amount: float,
@@ -905,6 +907,7 @@ class MonthSummaryController extends Controller
                 ? $tx->transaction_date->format('Y-m-d')
                 : (string) $tx->transaction_date,
             'category_name' => $tx->category?->name ?? 'Uncategorized',
+            'category_icon' => $tx->category?->icon,
             'description' => $tx->description,
             'total_amount' => round((float) $tx->amount, 2),
             'balance_amount' => round($shareAmount, 2),

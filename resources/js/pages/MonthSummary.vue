@@ -321,6 +321,35 @@ function closeSplitHistoryModal() {
   splitHistoryModalTitle.value = '';
 }
 
+const splitHistoryGroups = computed(() => {
+  if (!Array.isArray(splitHistoryModalRows.value) || splitHistoryModalRows.value.length === 0) {
+    return [];
+  }
+
+  const grouped = new Map();
+
+  splitHistoryModalRows.value.forEach((row) => {
+    const categoryName = row?.category_name || 'Uncategorized';
+    const categoryIcon = row?.category_icon || null;
+    const key = `${categoryName}::${categoryIcon || ''}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        category_name: categoryName,
+        category_icon: categoryIcon,
+        rows: [],
+      });
+    }
+    grouped.get(key).rows.push(row);
+  });
+
+  return [...grouped.values()]
+    .map(group => ({
+      ...group,
+      rows: [...group.rows].sort((a, b) => String(a.transaction_date).localeCompare(String(b.transaction_date))),
+    }))
+    .sort((a, b) => String(a.category_name).localeCompare(String(b.category_name), undefined, { sensitivity: 'base' }));
+});
+
 const selectedCategoryTransactions = computed(() => {
   if (!selectedCategory.value) {
     return [];
@@ -1013,27 +1042,40 @@ function movementTypeLabel(type) {
             </div>
 
             <div class="overflow-y-auto px-4 py-3 space-y-2 max-h-[calc(82vh-4rem)]">
-              <div v-if="splitHistoryModalRows.length === 0" class="text-sm text-gray-500 py-8 text-center">
+              <div v-if="splitHistoryGroups.length === 0" class="text-sm text-gray-500 py-8 text-center">
                 No split transactions found for this source.
               </div>
 
               <div
                 v-else
-                v-for="row in splitHistoryModalRows"
-                :key="`split-hist-${row.transaction_id}`"
-                class="flex items-center justify-between gap-3 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5"
+                v-for="group in splitHistoryGroups"
+                :key="`split-hist-group-${group.category_name}-${group.category_icon || 'none'}`"
+                class="space-y-2"
               >
-                <div class="min-w-0">
-                  <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
-                  <p class="text-sm text-gray-200 truncate">{{ row.category_name }}</p>
-                  <p v-if="row.description" class="text-xs text-gray-400 truncate mt-0.5">{{ row.description }}</p>
-                  <p class="text-[11px] text-gray-500 mt-0.5">
-                    Total {{ formatCurrency(row.total_amount) }}
-                  </p>
+                <div class="flex items-center gap-2 px-1">
+                  <span v-if="group.category_icon" class="text-sm shrink-0">{{ group.category_icon }}</span>
+                  <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-300 truncate">
+                    {{ group.category_name }}
+                  </h4>
                 </div>
-                <span class="text-sm font-medium text-gray-200 shrink-0 tabular-nums">
-                  {{ formatCurrency(row.balance_amount) }}
-                </span>
+
+                <div
+                  v-for="row in group.rows"
+                  :key="`split-hist-${row.transaction_id}`"
+                  class="flex items-center justify-between gap-3 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5"
+                >
+                  <div class="min-w-0">
+                    <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
+                    <p v-if="row.description" class="text-sm text-gray-200 truncate">{{ row.description }}</p>
+                    <p v-else class="text-sm text-gray-500 italic">No description</p>
+                    <p class="text-[11px] text-gray-500 mt-0.5">
+                      Total {{ formatCurrency(row.total_amount) }}
+                    </p>
+                  </div>
+                  <span class="text-sm font-medium text-gray-200 shrink-0 tabular-nums">
+                    {{ formatCurrency(row.balance_amount) }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
