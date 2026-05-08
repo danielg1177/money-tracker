@@ -1272,3 +1272,11 @@ Format:
   - Split-settlement contribution entries now support `created_by_closeout_debt` metadata for debts created by consolidation during hard close.
   - Undo hard close now deletes debt rows only when reverted month contributions are marked `created_by_closeout_debt=true`; pre-existing debts are preserved and only have their month contribution amounts removed from `amount`/`balance`.
   - Added feature coverage proving: (1) initial-value history stays at original principal after closeout additions, and (2) undo hard close no longer deletes a pre-existing debt that had only closeout-added contributions.
+
+## 2026-05-08 — Transactions day list sorting by category then alphabetical
+- Files touched:
+  - Frontend: `resources/js/pages/Transactions.vue`
+  - Docs: `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact:
+  - Day-grouped layout on `Transactions.vue` remains unchanged.
+  - Within each day section, transactions are now ordered by category label first and then alphabetical secondary key (description fallback), without adding any category headers or visual grouping chrome.

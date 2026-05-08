@@ -770,6 +770,23 @@ function expenseAmountForViewerTotals(transaction) {
   return Number(transaction.amount) || 0;
 }
 
+function normalizeSortText(value) {
+  return String(value ?? '').trim().toLocaleLowerCase();
+}
+
+function transactionCategorySortKey(transaction) {
+  return normalizeSortText(getTransactionCategoryLabel(transaction));
+}
+
+function transactionAlphabeticalSortKey(transaction) {
+  const description = normalizeSortText(transaction?.description);
+  if (description) {
+    return description;
+  }
+
+  return transactionCategorySortKey(transaction);
+}
+
 const transactionsByDay = computed(() => {
   const grouped = {};
 
@@ -793,7 +810,24 @@ const transactionsByDay = computed(() => {
     }
   });
 
-  return Object.values(grouped).sort((a, b) => parseDateStringAsLocal(b.date) - parseDateStringAsLocal(a.date));
+  return Object.values(grouped)
+    .map(dayGroup => ({
+      ...dayGroup,
+      transactions: [...dayGroup.transactions].sort((a, b) => {
+        const categoryCompare = transactionCategorySortKey(a).localeCompare(transactionCategorySortKey(b));
+        if (categoryCompare !== 0) {
+          return categoryCompare;
+        }
+
+        const alphabeticalCompare = transactionAlphabeticalSortKey(a).localeCompare(transactionAlphabeticalSortKey(b));
+        if (alphabeticalCompare !== 0) {
+          return alphabeticalCompare;
+        }
+
+        return Number(b.id || 0) - Number(a.id || 0);
+      }),
+    }))
+    .sort((a, b) => parseDateStringAsLocal(b.date) - parseDateStringAsLocal(a.date));
 });
 
 const totalIncome = computed(() => {
