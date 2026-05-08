@@ -73,8 +73,8 @@
             </div>
 
             <!-- Amounts -->
-            <div class="grid grid-cols-2 gap-3 mb-3">
-              <div>
+            <div class="grid gap-3 mb-3" :class="debt.creditor_id ? 'grid-cols-1' : 'grid-cols-2'">
+              <div v-if="!debt.creditor_id">
                 <p class="text-xs text-gray-500">Original</p>
                 <p class="text-sm font-medium text-gray-300">{{ formatCurrency(debt.amount) }}</p>
               </div>
@@ -628,7 +628,12 @@
           </div>
           <div class="p-4 space-y-3 min-w-0 max-w-full">
             <!-- Debt summary line -->
-            <p class="text-sm text-gray-400">
+            <p v-if="historyDebt.creditor_id" class="text-sm text-gray-400">
+              <span :class="historyDebt.balance === 0 ? 'text-green-400' : 'text-red-400'" class="font-medium">
+                {{ formatCurrency(historyDebt.balance) }}
+              </span> remaining
+            </p>
+            <p v-else class="text-sm text-gray-400">
               <span class="text-white font-medium">{{ formatCurrency(historyDebt.amount) }}</span> original,
               <span :class="historyDebt.balance === 0 ? 'text-green-400' : 'text-red-400'" class="font-medium">
                 {{ formatCurrency(historyDebt.balance) }}
