@@ -79,10 +79,16 @@ watch(
 
 async function handleMonthFilterChange() {
   const parsed = parseMonthValue(selectedMonthFilter.value);
-  if (!parsed || parsed === route.params.yearMonth) {
+  if (!parsed) {
     return;
   }
-  await router.push(`/month-summary/${parsed}`);
+
+  // Always refresh immediately from the selected month value.
+  await loadSummaryForSelectedMonth();
+
+  if (parsed !== route.params.yearMonth) {
+    await router.push(`/month-summary/${parsed}`);
+  }
 }
 
 async function fetchCurrentUser() {
