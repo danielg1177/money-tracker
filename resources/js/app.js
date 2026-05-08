@@ -10,6 +10,18 @@ if ('scrollRestoration' in window.history) {
   window.history.scrollRestoration = 'manual';
 }
 
+function resetPageScrollToTop() {
+  window.requestAnimationFrame(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    });
+  });
+}
+
+window.addEventListener('pageshow', resetPageScrollToTop);
+
 function preventNumberWheelValueChanges() {
   window.addEventListener('wheel', (event) => {
     if (!(event.target instanceof Element)) {
@@ -52,3 +64,5 @@ window.axios.interceptors.response.use(
 createApp(AppShell)
   .use(router)
   .mount('#app');
+
+router.isReady().then(resetPageScrollToTop);

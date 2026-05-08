@@ -1,7 +1,7 @@
 <template>
   <div class="flex flex-col min-h-dvh min-h-screen w-full max-w-full overflow-x-clip">
     <!-- min-w-0 lets flex children shrink below intrinsic content width (prevents horizontal scroll) -->
-    <div class="flex-1 min-w-0 w-full pt-[env(safe-area-inset-top,0px)]">
+    <div class="flex-1 min-w-0 w-full">
       <slot />
     </div>
 

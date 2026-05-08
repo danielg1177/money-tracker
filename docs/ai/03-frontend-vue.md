@@ -16,13 +16,13 @@
 ## Entry point
 
 `resources/js/app.js` creates the Vue app, installs Vue Router, and mounts `AppShell.vue` into `<div id="app">` (in `resources/views/app.blade.php`).
-It sets `window.history.scrollRestoration = 'manual'` (when supported) to prevent mobile browsers from restoring mid-page offsets on reload/back-forward cache restores, registers a global wheel guard that blurs focused `input[type="number"]` fields to prevent accidental scroll-wheel value changes, and registers a global Axios response interceptor that treats `401`/`419` responses as session expiry, clears `localStorage.user`, and hard-redirects to `/login`.
+It sets `window.history.scrollRestoration = 'manual'` (when supported) and runs a double-`requestAnimationFrame` scroll reset on first router readiness plus `pageshow`, preventing mobile browsers from restoring slight mid-page offsets on reload/back-forward cache restores. It also registers a global wheel guard that blurs focused `input[type="number"]` fields to prevent accidental scroll-wheel value changes, and registers a global Axios response interceptor that treats `401`/`419` responses as session expiry, clears `localStorage.user`, and hard-redirects to `/login`.
 
 ## Component tree
 
 ```
 AppShell.vue
-├── AppNav.vue              (rendered when `useAuth().user` is set; main slot adds `padding-top: env(safe-area-inset-top)` and bottom nav uses `padding-bottom: env(safe-area-inset-bottom)`; spacer height includes safe-area)
+├── AppNav.vue              (rendered when `useAuth().user` is set; main slot is flush to the top so each page header touches the viewport/header edge; bottom nav uses `padding-bottom: env(safe-area-inset-bottom)` and spacer height includes safe-area)
 │   ├── bottom nav bar      (Dashboard, Transactions, Funds, Debts, Account button)
 │   ├── FAB button          (opens TransactionForm modal)
 │   ├── TransactionForm.vue (modal overlay, inline in AppNav)

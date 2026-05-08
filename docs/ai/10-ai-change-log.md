@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-08 — Mobile initial page top alignment
+
+- Files touched: `resources/js/app.js`, `resources/js/components/AppNav.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Authenticated mobile pages no longer add a top safe-area offset above each page header, so page content starts flush against the header/viewport edge. Initial load and `pageshow` now force a double animation-frame scroll reset to keep mobile browsers from restoring a slight scrolled-down position on render.
+
 ## 2026-05-08 — Undo Hard Close
 
 - Summary: Added ability for head of household to fully revert a month's hard close, restoring fund balances, debt balances, interest accruals, title savings, and split debt state to pre-close condition.
