@@ -149,6 +149,22 @@
           <!-- Menu Items -->
           <div class="py-2">
             <router-link
+              to="/bank-connections"
+              @click="showUserMenu = false"
+              class="flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+            >
+              <svg class="w-5 h-5 shrink-0 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1H4zm2 6h8v2H6v-2zm0 4h8v2H6v-2z" clip-rule="evenodd" />
+              </svg>
+              <span class="min-w-0 flex-1 text-sm font-medium">Bank connections</span>
+              <span
+                v-if="pendingImportCount > 0"
+                class="flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-none text-white"
+              >
+                {{ pendingImportCount > 99 ? '99+' : pendingImportCount }}
+              </span>
+            </router-link>
+            <router-link
               to="/categories"
               @click="showUserMenu = false"
               class="flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
@@ -223,7 +239,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
 import { useApi } from '../composables/useApi';
@@ -239,6 +255,7 @@ const categories = ref([]);
 const familyUsers = ref([]);
 const funds = ref([]);
 const debtsPayload = ref({ owed: [], owing: [], family_debts: [] });
+const pendingImportCount = ref(0);
 
 const isAdminPage = computed(() => {
   return route.path.startsWith('/admin');
@@ -266,6 +283,17 @@ async function handleTransactionCreated(transaction) {
   window.dispatchEvent(new CustomEvent('transaction-created', { detail: transaction }));
 }
 
+async function fetchPendingImportCount() {
+  try {
+    const { data } = await window.axios.get('/plaid/pending-imports', {
+      params: { count_only: 1 },
+    });
+    pendingImportCount.value = Number(data?.count ?? 0);
+  } catch {
+    pendingImportCount.value = 0;
+  }
+}
+
 async function loadFormDependencies() {
   try {
     const [catData, usersData, fundsData, debtsData] = await Promise.all([
@@ -288,8 +316,14 @@ function handleCategoriesChanged() {
 }
 
 onMounted(async () => {
-  await loadFormDependencies();
+  await Promise.all([loadFormDependencies(), fetchPendingImportCount()]);
   window.addEventListener('categories-changed', handleCategoriesChanged);
+});
+
+watch(showUserMenu, (open) => {
+  if (open) {
+    void fetchPendingImportCount();
+  }
 });
 
 onBeforeUnmount(() => {

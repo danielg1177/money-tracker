@@ -58,6 +58,11 @@ class User extends Authenticatable
         return $this->hasMany(Transaction::class);
     }
 
+    public function plaidItems(): HasMany
+    {
+        return $this->hasMany(PlaidItem::class);
+    }
+
     public function funds(): HasMany
     {
         return $this->hasMany(Fund::class);

@@ -27,7 +27,7 @@ AppShell.vue
 │   ├── FAB button          (opens TransactionForm modal)
 │   ├── TransactionForm.vue (modal overlay, inline in AppNav)
 │   │     └── SplitEditor.vue  (shown when "split" toggle is on)
-│   └── User Menu Bottom Sheet (Categories, Closeout Rules, My Family, Admin links, Logout)
+│   └── User Menu Bottom Sheet (Bank connections, Categories, Closeout Rules, My Family, Admin links, Logout)
 └── <router-view>           (current page component)
 ```
 
@@ -43,6 +43,9 @@ History mode (`createWebHistory`). Route definitions:
 | `/` | redirect → `/dashboard` | — |
 | `/dashboard` | `Dashboard.vue` | `requiresAuth` |
 | `/transactions` | `Transactions.vue` | `requiresAuth` |
+| `/bank-connections` | `BankConnections.vue` | `requiresAuth` — Plaid Link, pending-import banner, sync-this-month, calibrate navigation, disconnect |
+| `/plaid/import-review` | `PlaidImportReview.vue` | `requiresAuth` — `GET /plaid/pending-imports` returns `pending` and `transfers` separately; **To Review** (badged) vs **Transfers** (amber badge) tabs; review tab keeps expand/confirm/dismiss; transfers tab shows explainer, Plaid category + institution, **Always Ignore** (`dismiss-as-transfer?learn=true` + toast) / **Dismiss Once** (`dismiss-as-transfer`); default tab is Transfers when only transfers remain |
+| `/plaid/calibrate/:itemId` | `PlaidCalibrate.vue` | `requiresAuth` — matched / unmatched bank / unmatched ledger tabs, apply `POST /plaid/items/{id}/calibrate` |
 | `/funds` | `Funds.vue` | `requiresAuth` |
 | `/closeout-rules` | `CloseoutRules.vue` | `requiresAuth` |
 | `/debts` | `Debts.vue` | `requiresAuth` |
@@ -189,7 +192,7 @@ Editing now allows debt-payment **expense** transactions and keeps repayment mod
 Sub-component of `TransactionForm`. Renders a list of family members with percentage inputs. Validates that percentages sum to 100 before allowing submission. The **Equal Split** button uses the same proportional rounding helper as initial defaults (`equalSharePercentages` in `resources/js/support/equalFamilySplit.js`) so percentages sum to exactly 100.
 
 ### `AppNav.vue` (`resources/js/components/AppNav.vue`)
-Bottom navigation bar with 4 primary nav links (Dashboard, Transactions, Funds, Debts) and an Account button. The Account button opens a bottom-sheet menu containing Categories, Closeout Rules, My Family (if applicable), Admin links (if admin), and Logout. Also contains the FAB (floating action button) that opens the `TransactionForm` modal. On mount it fetches categories, family users, funds, **and debts** (`GET /debts`); those props are passed into `TransactionForm` so advance-fund and **pay toward debt** work from the global FAB on every page.
+Bottom navigation bar with 4 primary nav links (Dashboard, Transactions, Funds, Debts) and an Account button. The Account button opens a bottom-sheet menu containing **Bank connections** (with a small **red badge** when `GET /plaid/pending-imports?count_only=1` returns `count > 0`; count is loaded on shell mount and refreshed when the menu opens), Categories, Closeout Rules, My Family (if applicable), Admin links (if admin), and Logout. Also contains the FAB (floating action button) that opens the `TransactionForm` modal. On mount it fetches categories, family users, funds, **debts**, and the pending-import count; those props are passed into `TransactionForm` so advance-fund and **pay toward debt** work from the global FAB on every page.
 
 `AppNav` also listens for `categories-changed` and reloads those form dependencies, keeping the FAB category dropdown in sync right after category CRUD.
 

@@ -1,0 +1,238 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\PlaidMerchantRule;
+use App\Models\Transaction;
+use Carbon\Carbon;
+
+class PlaidMatchingService
+{
+    /**
+     * Find best matching existing ledger row for a Plaid transaction payload.
+     *
+     * Plaid: positive amount = expense, negative = income. Ledger uses positive `amount` with `type`.
+     *
+     * @param  array<string, mixed>  $plaidRow
+     */
+    public function findLedgerMatch(array $plaidRow, int $familyId): ?Transaction
+    {
+        $resolved = $this->findLedgerMatchWithScore($plaidRow, $familyId);
+
+        return $resolved !== null ? $resolved['transaction'] : null;
+    }
+
+    /**
+     * Same matching rules as {@see findLedgerMatch}, including the ≥ 0.3 score threshold.
+     *
+     * @param  array<string, mixed>  $plaidRow
+     * @return array{transaction: Transaction, score: float}|null
+     */
+    public function findLedgerMatchWithScore(array $plaidRow, int $familyId): ?array
+    {
+        $resolved = $this->resolveLedgerMatch($plaidRow, $familyId);
+        if ($resolved === null || $resolved['score'] < 0.3) {
+            return null;
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * @param  array<string, mixed>  $plaidRow
+     * @return array{transaction: Transaction, score: float}|null
+     */
+    private function resolveLedgerMatch(array $plaidRow, int $familyId): ?array
+    {
+        $plaidAmount = (float) data_get($plaidRow, 'amount', 0);
+
+        if ($plaidAmount > 0) {
+            $expectedType = 'expense';
+            $ledgerAmount = $plaidAmount;
+        } elseif ($plaidAmount < 0) {
+            $expectedType = 'income';
+            $ledgerAmount = abs($plaidAmount);
+        } else {
+            return null;
+        }
+
+        $dateStr = data_get($plaidRow, 'date') ?? data_get($plaidRow, 'authorized_date');
+        if (! is_string($dateStr) || $dateStr === '') {
+            return null;
+        }
+
+        try {
+            $center = Carbon::parse($dateStr)->startOfDay();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $merchantRaw = (string) (data_get($plaidRow, 'merchant_name') ?? data_get($plaidRow, 'name') ?? '');
+        $merchantLower = mb_strtolower(trim($merchantRaw));
+
+        $candidates = Transaction::query()
+            ->where('family_id', $familyId)
+            ->whereNull('plaid_transaction_id')
+            ->where('type', $expectedType)
+            ->whereBetween('transaction_date', [
+                $center->copy()->subDay()->toDateString(),
+                $center->copy()->addDay()->toDateString(),
+            ])
+            ->whereBetween('amount', [
+                $ledgerAmount - 0.01,
+                $ledgerAmount + 0.01,
+            ])
+            ->get();
+
+        $best = null;
+        $bestScore = 0.0;
+
+        foreach ($candidates as $transaction) {
+            $score = $this->merchantSimilarityScore($merchantLower, (string) ($transaction->description ?? ''));
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = $transaction;
+            }
+        }
+
+        if ($best === null) {
+            return null;
+        }
+
+        return [
+            'transaction' => $best,
+            'score' => $bestScore,
+        ];
+    }
+
+    public function normalizeMerchantKey(string $name): string
+    {
+        return PlaidMerchantRule::normalizeKey($name);
+    }
+
+    /**
+     * @param  array<string, mixed>  $plaidRow
+     * @return array{
+     *     category_id: int|null,
+     *     type: string,
+     *     fund_id: int|null,
+     *     advance_fund_id: int|null,
+     *     is_non_necessity: bool,
+     *     confidence_score: float,
+     *     is_auto_eligible: bool
+     * }
+     */
+    public function getSuggestion(array $plaidRow, int $userId): array
+    {
+        $merchantRaw = (string) (data_get($plaidRow, 'merchant_name') ?? data_get($plaidRow, 'name') ?? '');
+        $key = $this->normalizeMerchantKey($merchantRaw);
+
+        $plaidAmount = (float) data_get($plaidRow, 'amount', 0);
+        $typeFromPlaid = $plaidAmount >= 0 ? 'expense' : 'income';
+
+        $rule = PlaidMerchantRule::query()
+            ->where('user_id', $userId)
+            ->where('merchant_key', $key)
+            ->first();
+
+        if ($rule === null) {
+            return [
+                'category_id' => null,
+                'type' => $typeFromPlaid,
+                'fund_id' => null,
+                'advance_fund_id' => null,
+                'is_non_necessity' => false,
+                'confidence_score' => 0.0,
+                'is_auto_eligible' => false,
+            ];
+        }
+
+        return [
+            'category_id' => $rule->category_id,
+            'type' => (string) $rule->type,
+            'fund_id' => $rule->fund_id,
+            'advance_fund_id' => $rule->advance_fund_id,
+            'is_non_necessity' => (bool) $rule->is_non_necessity,
+            'confidence_score' => $rule->confidenceScore(),
+            'is_auto_eligible' => $rule->action === 'dismiss' ? false : $rule->isAutoCreateEligible(),
+        ];
+    }
+
+    public function recordConfirmation(PlaidMerchantRule $rule): void
+    {
+        $rule->increment('confirmation_count');
+        $rule->increment('total_seen_count');
+    }
+
+    public function recordSeen(PlaidMerchantRule $rule): void
+    {
+        $rule->increment('total_seen_count');
+    }
+
+    /**
+     * @param  array<string, mixed>  $confirmedSettings
+     */
+    public function learnFromConfirmation(int $userId, string $merchantName, array $confirmedSettings): PlaidMerchantRule
+    {
+        $key = $this->normalizeMerchantKey($merchantName);
+
+        $rule = PlaidMerchantRule::query()->firstOrNew([
+            'user_id' => $userId,
+            'merchant_key' => $key,
+        ]);
+
+        $allowed = ['category_id', 'type', 'fund_id', 'advance_fund_id', 'is_non_necessity', 'is_split', 'action'];
+        foreach ($allowed as $field) {
+            if (array_key_exists($field, $confirmedSettings)) {
+                $rule->{$field} = $confirmedSettings[$field];
+            }
+        }
+
+        if (! array_key_exists('action', $confirmedSettings)) {
+            $rule->action = 'categorize';
+        }
+
+        $rule->confirmation_count = (int) $rule->confirmation_count + 1;
+        $rule->total_seen_count = (int) $rule->total_seen_count + 1;
+        $rule->save();
+        $rule->refresh();
+
+        return $rule;
+    }
+
+    /**
+     * Teach the matcher to auto-dismiss future Plaid rows for this merchant key (sync path uses `action=dismiss`).
+     */
+    public function learnDismissRule(int $userId, string $merchantName): PlaidMerchantRule
+    {
+        $key = $this->normalizeMerchantKey($merchantName);
+
+        $rule = PlaidMerchantRule::query()->firstOrNew([
+            'user_id' => $userId,
+            'merchant_key' => $key,
+        ]);
+
+        $rule->action = 'dismiss';
+        $rule->total_seen_count = (int) $rule->total_seen_count + 1;
+        $rule->save();
+        $rule->refresh();
+
+        return $rule;
+    }
+
+    private function merchantSimilarityScore(string $merchantLower, string $description): float
+    {
+        $descriptionLower = mb_strtolower(trim($description));
+
+        if ($merchantLower !== '' && $descriptionLower !== '') {
+            if (str_contains($descriptionLower, $merchantLower) || str_contains($merchantLower, $descriptionLower)) {
+                return 1.0;
+            }
+        }
+
+        $percent = 0.0;
+        similar_text($merchantLower, $descriptionLower, $percent);
+
+        return min(1.0, $percent / 100.0);
+    }
+}

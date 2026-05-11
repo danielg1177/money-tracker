@@ -71,6 +71,8 @@ routes/web.php
 - `MonthCloseoutService` — month hard-close workflow; applies user `FundRule` allocations and related debt/title moves; also provides `getMonthStatus` for month summaries
 - `DebtService` — pay a debt (creates expense + income transactions, reduces balance)
 - `SplitCalculator` — pure static utility for percentage validation and amount distribution
+- `PlaidClient` / `PlaidTransactionSyncService` / `PlaidCalibrationService` — Plaid HTTP client; `/transactions/sync` pulls + pending/auto-ledger processing; `/transactions/get` date-range fetch + optional **calibration** match/reconcile helpers (`buildCalibrationMatches` / `applyCalibrationResults`)
+- `PlaidMatchingService` — match Plaid payloads to ledger `Transaction` rows and read/update `PlaidMerchantRule` suggestions (not used by routes yet)
 
 **Read-only controllers:**
 - `MonthSummaryController::show` — returns comprehensive month overview (close status, category totals including optional synthetic **Uncategorized Debt Payments** for repayments without a category, member balances, rule preview) without modifying data; **`rule_preview.basis.total_expenses`** aligns with **`MonthCloseoutService::expenseTotalTowardRemainingBasis`** (tracked repayments included; non-necessity advance expenses excluded from the basis and settled via fund advances). **`rule_preview.basis.remaining_after_expenses`** is the **signed** post-allocation figure; **`rule_preview.expense_closeout_basis.lines`** documents the expense basis for the preview.

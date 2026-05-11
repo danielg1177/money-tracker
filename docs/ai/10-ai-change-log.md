@@ -11,6 +11,107 @@ Format:
 
 ---
 
+## 2026-05-11 — Import review tabs + transfer cards + `plaidItem` on pending JSON
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `resources/js/pages/PlaidImportReview.vue`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Pending-imports index eager-loads `plaidItem` for both `pending` and `transfers` so the SPA can show institution name on transfer cards. Import Review uses separate lists, a two-tab UI (counts on badges; Transfers badge amber), transfer-specific dismiss actions and toast on “Always Ignore”, and defaults to the Transfers tab when there are transfers and nothing to review.
+
+## 2026-05-11 — Pending-imports JSON: `pending` / `transfers` + `learnDismissRule`
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `app/Services/PlaidMatchingService.php`, `resources/js/pages/PlaidImportReview.vue`, `resources/js/pages/BankConnections.vue`, `tests/Feature/PlaidImportTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `GET /plaid/pending-imports` returns `{ pending, transfers, recently_auto_created }` (non-transfer vs transfer-flagged pending). `POST …/dismiss-as-transfer` sets `dismissed` only; `?learn=true` calls `learnDismissRule` (rule `action=dismiss`, increments `total_seen_count` only). Replaces prior always-on transfer-dismiss learning. Vue import review and bank connections consume the new shape.
+
+## 2026-05-11 — `dismiss-as-transfer` + dismiss merchant rule sync path
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `app/Services/PlaidMatchingService.php`, `app/Services/PlaidTransactionSyncService.php`, `app/Services/PlaidCalibrationService.php`, `routes/web.php`, `tests/Feature/PlaidImportTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Sync/calibration “add pending” paths skip the review queue when a rule has `action=dismiss` (insert `dismissed` row for dedupe). `learnFromConfirmation` / calibration confirm paths pass `action=categorize`; `getSuggestion` forces `is_auto_eligible=false` for dismiss rules. `ingestPlaidRowsAsPending` counts only `pending` + `auto_created` (not auto-dismissed rows). (HTTP `dismiss-as-transfer` + index JSON refined in the `pending` / `transfers` + `learnDismissRule` entry above.)
+
+## 2026-05-11 — Plaid transfer-detection columns + merchant rule `action`
+
+- Files touched: `database/migrations/2026_05_11_220000_add_transfer_detection_to_plaid_tables.php`, `app/Models/PlaidItem.php`, `app/Models/PlaidMerchantRule.php`, `app/Models/PlaidPendingImport.php`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `plaid_merchant_rules.action` (default `categorize`; intended values `categorize` \| `dismiss`). `plaid_pending_imports` gains `is_transfer`, `plaid_category_primary`, `plaid_category_detailed`. `plaid_items.account_type` nullable (Plaid values e.g. `depository`, `credit`, `investment`, `loan`, `other`). Models’ `$fillable` / casts updated for mass assignment.
+
+## 2026-05-11 — `PlaidImportTest` + ledger amount filter fix in `PlaidMatchingService`
+
+- Files touched: `tests/Feature/PlaidImportTest.php`, `app/Services/PlaidMatchingService.php`, `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: New feature tests cover `PlaidMerchantRule::isAutoCreateEligible`, `findLedgerMatch` happy/null paths, pending-import confirm/dismiss/list JSON routes, cross-user confirm `403` (via explicit `Route::bind` in the test to bypass scoped route model binding), and `plaid:daily-sync` with `Http::fake` for `/transactions/sync`. Ledger candidate filtering now uses `whereBetween('amount', … ±0.01)` instead of `whereRaw('ABS(amount - ?) < ?', …)` so SQLite does not mis-associate placeholders (which could match unrelated rows, e.g. `ABS(amount - 0.01) < 99`).
+
+---
+
+## 2026-05-11 — Pending-import `count_only` + AppNav badge
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `resources/js/components/AppNav.vue`, `routes/web.php` (comment grouping), `tests/Feature/PlaidIntegrationTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `GET /plaid/pending-imports?count_only=1` returns `{ count }` (pending rows only). Account menu **Bank connections** shows a red count badge when `count > 0`; count loads on mount and when the sheet opens. Feature-map Plaid subsection expanded; SPA shell routes for import review / calibrate already documented.
+
+## 2026-05-11 — PlaidCalibrate UI + calibration ledger JSON (`type`, `fund_id`)
+
+- Files touched: `resources/js/pages/PlaidCalibrate.vue`, `resources/js/router/index.js`, `routes/web.php`, `app/Http/Controllers/PlaidImportController.php`, `docs/ai/03-frontend-vue.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: SPA route `/plaid/calibrate/:itemId` (shell `{itemId}`) with tabs for matched / unmatched bank / unmatched ledger, local pagination over 100 rows per section, high-score matches pre-selected to **Confirm**, **Apply Calibration** posts `confirmed_pairs` + `import_as_new`, success screen links to Import Review. `GET …/calibrate` ledger JSON now includes `type` and `fund_id` for structured apply payloads.
+
+## 2026-05-11 — Import Review page (confirm / dismiss UI)
+
+- Files touched: `resources/js/pages/PlaidImportReview.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `/plaid/import-review` loads pending imports, categories, and funds; each row expands to confirm (`POST …/confirm`) or dismiss (`POST …/dismiss`) with leave animation; auto-import banner uses `recently_auto_created`.
+
+## 2026-05-11 — Bank Connections + Plaid import/calibrate SPA pages
+
+- Files touched: `resources/js/pages/BankConnections.vue`, `resources/js/pages/PlaidImportReview.vue`, `resources/js/pages/PlaidCalibrate.vue`, `resources/js/router/index.js`, `routes/web.php`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Bank Connections is production-oriented (no raw JSON preview). Pending count from `GET /plaid/pending-imports`; amber banner + review route; post-link success + Calibrate Now; per-item Sync this month (toast) / Calibrate / Disconnect. New shells `/plaid/import-review` and `/plaid/calibrate/:itemId` with Laravel `view('app')` entries.
+
+## 2026-05-11 — `plaid:daily-sync` Artisan command + scheduler
+
+- Files touched: `app/Console/Commands/PlaidDailySyncCommand.php`, `routes/console.php`, `docs/ai/00-repo-overview.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `php artisan plaid:daily-sync` runs `PlaidTransactionSyncService::syncItem` for every `PlaidItem` (or `--item={id}` only), catches/logs per-item failures, and prints a summary line per item (Plaid `added` count plus how many of those ids ended `pending` vs `auto_created` on that item). Laravel scheduler registers the same command daily at 02:00; production still needs `schedule:run` (cron or equivalent).
+
+## 2026-05-11 — Plaid import HTTP (`PlaidImportController`, form requests, routes)
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `app/Http/Requests/StoreImportConfirmRequest.php`, `app/Http/Requests/ApplyPlaidCalibrationRequest.php`, `routes/web.php`, `tests/Feature/PlaidCalibrationServiceTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Authenticated JSON endpoints under `/plaid/*` for listing pending imports (+ recent auto-create count), confirming/dismissing a pending import, calibration GET/POST (slim ledger JSON on GET), and “sync current month” via `fetchByDateRange` + `ingestPlaidRowsAsPending`. `applyCalibrationResults` tests now fake `/transactions/get` so no real Plaid HTTP is required when that path runs.
+
+## 2026-05-11 — PlaidCalibrationService + `findLedgerMatchWithScore`
+
+- Files touched: `app/Services/PlaidCalibrationService.php`, `app/Services/PlaidMatchingService.php`, `tests/Feature/PlaidCalibrationServiceTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `PlaidCalibrationService::buildCalibrationMatches` pulls the last two full calendar months via `fetchByDateRange`, matches Plaid rows to in-range unlinked ledger transactions, and returns `matched` / `unmatched_plaid` / `unmatched_ledger`. `applyCalibrationResults` applies user-confirmed Plaid↔ledger pairs (`learnFromConfirmation` + `plaid_transaction_id` on ledger) and stages `importAsNew` rows as `PlaidPendingImport`. `PlaidMatchingService::findLedgerMatchWithScore` exposes the match score (threshold unchanged).
+
+## 2026-05-11 — Plaid sync: pending imports, modified/removed handling, `transactions/get`
+
+- Files touched: `app/Services/PlaidTransactionSyncService.php`, `tests/Feature/PlaidIntegrationTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: After `/transactions/sync`, `syncItem` calls `processSyncedTransactions` to upsert `plaid_pending_imports` for new Plaid ids (skipping duplicates), optionally auto-create ledger rows via `TransactionService` + `PlaidMatchingService`, update pending/linked ledger amounts on `modified`, delete pending rows on `removed`, and increment merchant `total_seen_count` when a rule matches. New `fetchByDateRange` uses paginated `/transactions/get` for calibration. Auto-create failures leave the pending row; sync does not run `ClosedMonthGuard`.
+
+## 2026-05-11 — PlaidMatchingService (ledger match + merchant suggestions)
+
+- Files touched: `app/Services/PlaidMatchingService.php`, `tests/Feature/PlaidMatchingServiceTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: New service (not wired to HTTP yet) matches Plaid raw rows to existing `transactions` by family, amount, date, type, and merchant/description similarity; reads/updates `PlaidMerchantRule` for suggestions and learning counters. PHPUnit coverage in `PlaidMatchingServiceTest`.
+
+## 2026-05-11 — Plaid import Eloquent models (`PlaidPendingImport`, `PlaidMerchantRule`)
+
+- Files touched: `app/Models/PlaidPendingImport.php`, `app/Models/PlaidMerchantRule.php`, `app/Models/PlaidItem.php`, `app/Models/Transaction.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Models map to `plaid_pending_imports` and `plaid_merchant_rules` with relations, scopes, and helper methods as documented. `PlaidItem::pendingImports()`, `Transaction` fillable includes Plaid import columns. No HTTP or sync behavior change yet.
+
+## 2026-05-11 — Plaid import infrastructure migration (DB schema)
+
+- Files touched: `database/migrations/2026_05_11_210000_add_plaid_import_infrastructure.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: After `migrate`, `transactions` again has nullable `plaid_transaction_id` and `import_source` with composite unique `transactions_family_plaid_unique` on `(family_id, plaid_transaction_id)`. New tables `plaid_pending_imports` and `plaid_merchant_rules` exist for staging and merchant-key rules. No application code reads or writes these yet; Plaid pull remains fetch-only JSON.
+
+## 2026-05-11 — Plaid default API version fix (`INVALID_HEADERS`)
+
+- Files touched: `config/plaid.php`, `.env.example`, `tests/Feature/PlaidIntegrationTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Default `Plaid-Version` is now `2020-09-14` (a released Plaid API version). The previous default `2024-06-01` caused Plaid to return `INVALID_HEADERS` / `invalid api version override provided`. If `.env` sets `PLAID_API_VERSION`, it must be a valid released date from Plaid's versioning documentation.
+
+## 2026-05-11 — Plaid fetch-only (no ledger integration)
+
+- Files touched: `app/Services/PlaidTransactionSyncService.php`, `app/Http/Controllers/PlaidController.php`, `app/Http/Controllers/PlaidWebhookController.php`, `app/Models/Transaction.php`, `app/Http/Controllers/TransactionController.php`, `database/migrations/2026_05_11_200000_remove_plaid_columns_from_transactions_table.php`, `resources/js/pages/BankConnections.vue`, `tests/Feature/PlaidIntegrationTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Plaid still links items and calls `/transactions/sync`, but results are returned as JSON (`pull`) only and **do not** create or update `transactions` rows. Webhooks advance the sync cursor via the same fetch helper without ledger writes. `plaid_transaction_id` / `import_source` columns are removed from `transactions` by `2026_05_11_200000_remove_plaid_columns_from_transactions_table` (later re-added for schema-only by `2026_05_11_210000_add_plaid_import_infrastructure`; PHP sync still does not populate them). Link/exchange no longer requires `family_id`. Bank Connections UI shows counts and a small raw JSON preview; it does not dispatch ledger refresh events.
+
+## 2026-05-11 — Plaid bank import (US personal, read-only transactions)
+
+**Superseded** by **Plaid fetch-only** above.
+
+- Files touched: `config/plaid.php`, `database/migrations/2026_05_11_120000_create_plaid_items_and_import_columns_on_transactions.php`, `app/Models/PlaidItem.php`, `app/Models/Transaction.php`, `app/Models/User.php`, `app/Http/Controllers/PlaidController.php`, `app/Http/Controllers/PlaidWebhookController.php`, `app/Http/Requests/ExchangePlaidTokenRequest.php`, `app/Http/Controllers/TransactionController.php`, `app/Services/PlaidClient.php`, `app/Services/PlaidTransactionSyncService.php`, `app/Providers/AppServiceProvider.php`, `bootstrap/app.php`, `routes/web.php`, `resources/js/pages/BankConnections.vue`, `resources/js/router/index.js`, `resources/js/components/AppNav.vue`, `tests/Feature/PlaidIntegrationTest.php`, `.env.example`, `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact (historical): Initial Plaid scaffolding; ledger import was removed in the fetch-only follow-up.
+
+---
+
 ## 2026-05-08 — Closed-month transaction mutation guard
 
 - Files touched: `app/Services/ClosedMonthGuard.php`, `app/Http/Controllers/TransactionController.php`, `app/Http/Controllers/DebtController.php`, `app/Http/Controllers/FundController.php`, `resources/js/components/TransactionForm.vue`, `resources/js/pages/Transactions.vue`, `tests/Feature/ClosedMonthMutationLockTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

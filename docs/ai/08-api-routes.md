@@ -21,7 +21,18 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | GET | `/admin/categories` | `view('app')` (SPA shell — no JSON endpoint exists) |
 | GET | `/my-family` | `view('app')` (SPA shell — JSON requires auth + `manage_family`) |
 | GET | `/debts` | `view('app')` (SPA shell — JSON requires auth) |
+| GET | `/bank-connections` | `view('app')` (SPA shell — JSON requires auth for `/plaid/*`) |
+| GET | `/plaid/import-review` | `view('app')` (SPA shell — pending import review) |
+| GET | `/plaid/calibrate/{itemId}` | `view('app')` (SPA shell — Plaid calibration) |
 | GET | `/month-summary/{yearMonth}` | `view('app')` (SPA shell — JSON requires auth) |
+
+---
+
+## Webhooks (no auth; CSRF excluded)
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| POST | `/plaid/webhook` | `PlaidWebhookController` | Plaid server-to-server callbacks (`TRANSACTIONS` triggers `syncItem`, which advances the cursor and runs `processSyncedTransactions`). **Not verified cryptographically in-app** — keep the URL private or terminate TLS only on your network |
 
 ---
 
@@ -53,6 +64,25 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 | POST | `/transactions` | `TransactionController::store` | Body: see `StoreTransactionRequest`; rejects `422` when the family month is hard-closed or any affected user has soft-closed the month |
 | PUT | `/transactions/{transaction}` | `TransactionController::update` | Same body as store; debt-payment **expense** rows can be edited (recalculates debt balance + mirrored income), debt-payment **income** mirror rows are rejected; rejects `422` when the existing row month or target payload month is closed |
 | DELETE | `/transactions/{transaction}` | `TransactionController::destroy` | Rejects `422` when the transaction month is closed |
+
+### Plaid (bank connections)
+
+Requires `PLAID_CLIENT_ID` + `PLAID_SECRET` in the environment. Link tokens use product `transactions` and `country_codes` `US`. Sync writes `plaid_pending_imports` (and may auto-create `transactions` when merchant rules qualify); see `docs/ai/02-backend-laravel.md` (`PlaidTransactionSyncService`).
+
+| Method | Path | Controller | Notes |
+|---|---|---|---|
+| GET | `/plaid/link-token` | `PlaidController::linkToken` | JSON `{link_token}`; `503` when Plaid env incomplete |
+| POST | `/plaid/exchange` | `PlaidController::exchange` | Body `{public_token}` from Link `onSuccess`; stores encrypted access token on `plaid_items`, hydrates institution metadata, runs initial `/transactions/sync` pull; `201` with `{item, pull}` where `pull` contains `counts`, `added`, `modified`, `removed`, `accounts` |
+| GET | `/plaid/items` | `PlaidController::items` | Lists auth user’s linked items (no secrets) |
+| GET | `/plaid/pending-imports` | `PlaidImportController::index` | Default JSON `{ pending, transfers, recently_auto_created }` (`pending` / `transfers` split by `is_transfer` among `status=pending`; both include `suggestedCategory` and `plaidItem` for institution name). With `?count_only=1` (or `count_only=true`), JSON `{ count }` only — all pending rows for the auth user (lightweight for nav badge) |
+| POST | `/plaid/pending-imports/{pendingImport}/confirm` | `PlaidImportController::confirm` | Body: `StoreImportConfirmRequest` (`category_id`, `type`, optional `fund_id` / `advance_fund_id`, `is_non_necessity`, `description`); creates a ledger `Transaction` via `TransactionService::createTransaction` with `plaid_transaction_id` + `import_source=plaid`, marks pending `confirmed`, `learnFromConfirmation`; returns the transaction JSON; `422` if not pending / closed month / validation |
+| POST | `/plaid/pending-imports/{pendingImport}/dismiss` | `PlaidImportController::dismiss` | Sets `status=dismissed`, `recordSeen` on merchant rule when present; `204`; `{pendingImport}` scoped to auth user |
+| POST | `/plaid/pending-imports/{pendingImport}/dismiss-as-transfer` | `PlaidImportController::dismissAsTransfer` | Sets `status=dismissed`; optional `?learn=true` runs `learnDismissRule` (`plaid_merchant_rules.action=dismiss`, `total_seen_count` only); `204`; owner-only |
+| GET | `/plaid/items/{plaidItem}/calibrate` | `PlaidImportController::calibrationData` | JSON from `PlaidCalibrationService::buildCalibrationMatches`; ledger sides are slim `{id, date, amount, description, type, fund_id, category}` |
+| POST | `/plaid/items/{plaidItem}/calibrate` | `PlaidImportController::applyCalibration` | Body: `ApplyPlaidCalibrationRequest` (`confirmed_pairs[]`, `import_as_new[]`); `PlaidCalibrationService::applyCalibrationResults`; JSON `{ confirmed_linked, imported_pending }` |
+| POST | `/plaid/items/{plaidItem}/sync-month` | `PlaidImportController::syncMonth` | Current calendar month; `fetchByDateRange` + `ingestPlaidRowsAsPending` (same path as sync `added`); JSON `{ pending_created, auto_created }` or `502` on Plaid failure |
+| POST | `/plaid/items/{plaidItem}/sync` | `PlaidController::sync` | Same as exchange pull; JSON `{pull: …}` |
+| DELETE | `/plaid/items/{plaidItem}` | `PlaidController::destroy` | Calls Plaid `/item/remove`, deletes local `plaid_items` row |
 
 ### Funds
 

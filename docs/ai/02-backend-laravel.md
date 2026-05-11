@@ -2,7 +2,7 @@
 
 ## Entry points
 
-- `bootstrap/app.php` — Laravel 13 bootstrap; registers `AppServiceProvider` and `FortifyServiceProvider`
+- `bootstrap/app.php` — Laravel 13 bootstrap; registers `AppServiceProvider` and `FortifyServiceProvider`; CSRF exclusion for `plaid/webhook`
 - `routes/web.php` — all routes (no `api.php`)
 - `app/Providers/AppServiceProvider.php` — defines Gates: `admin`, `head_of_household`, `manage_family`
 - `app/Providers/FortifyServiceProvider.php` — wires Fortify actions + rate limiters
@@ -15,7 +15,7 @@
 - System admin: Boolean `is_admin` column; when true, grants admin permissions independent of family role
 - Appended computed attributes (serialized in JSON): `is_admin`, `is_head_of_household`, `can_manage_family`
 - Uses PHP 8 attribute annotations `#[Fillable]`, `#[Hidden]`
-- Relations: `belongsTo(Family)`, `hasMany(Transaction)`, `hasMany(Fund)`, `hasMany(FundMovement)` as `fundMovements`, `hasMany(Debt, 'debtor_id')` as `debtsOwed`, `hasMany(Debt, 'creditor_id')` as `debtsOwedTo`, `hasMany(MonthSoftClose)` as `monthSoftCloses`
+- Relations: `belongsTo(Family)`, `hasMany(Transaction)`, `hasMany(Fund)`, `hasMany(FundMovement)` as `fundMovements`, `hasMany(Debt, 'debtor_id')` as `debtsOwed`, `hasMany(Debt, 'creditor_id')` as `debtsOwedTo`, `hasMany(MonthSoftClose)` as `monthSoftCloses`, `hasMany(PlaidItem)` as `plaidItems`
 
 ### Family (`app/Models/Family.php`)
 - Fields: `name`, `description`
@@ -33,12 +33,30 @@
 - Relations: `belongsTo(Category)`, `belongsTo(User)`, `belongsTo(Fund, 'advance_fund_id')` as `advanceFund`
 
 ### Transaction (`app/Models/Transaction.php`)
-- Fields: `family_id`, `user_id`, `category_id` (nullable), `type` (`income`|`expense`), `amount` (decimal:2), `description`, `transaction_date` (date), `is_split` (bool), `split_data` (JSON array), `fund_id` (nullable), `advance_fund_id` (nullable), `is_borrow` (bool), `is_debt_payment` (bool), `debt_id` (nullable FK → debts), `mirror_transaction_id` (nullable FK → transactions), `paid_by_user_id` (nullable FK → users), `is_closeout_initiated` (bool)
+- Fields: `family_id`, `user_id`, `category_id` (nullable), `type` (`income`|`expense`), `amount` (decimal:2), `description`, `transaction_date` (date), `is_split` (bool), `split_data` (JSON array), `fund_id` (nullable), `advance_fund_id` (nullable), `is_borrow` (bool), `is_debt_payment` (bool), `debt_id` (nullable FK → debts), `mirror_transaction_id` (nullable FK → transactions), `plaid_transaction_id` (nullable), `import_source` (nullable string, 32), `paid_by_user_id` (nullable FK → users), `is_closeout_initiated` (bool) — DB columns `plaid_transaction_id` / `import_source` are mass-assignable; unique per `family_id` when Plaid id set; `PlaidTransactionSyncService` may set them when auto-importing from Plaid
 - `split_data` is a snapshot of split percentages stored on the transaction itself
 - `debt_id` links a payment transaction to the debt it settles
 - `paid_by_user_id` tracks which user initiated the payment (may differ from `user_id` for creditor income rows)
 - `is_closeout_initiated` distinguishes manual rows (`false`) from backend-generated closeout movement rows (`true`) across debt payments, fund allocations, and title-completion expenses
 - Relations: `belongsTo(Family)`, `belongsTo(User)`, `belongsTo(User, 'paid_by_user_id')` as `paidByUser`, `belongsTo(Category)`, `belongsTo(Fund)`, `belongsTo(Fund, 'advance_fund_id')` as `advanceFund`, `belongsTo(Debt)` via `debt_id`, `belongsTo(Transaction, 'mirror_transaction_id')` as `mirrorTransaction`, `hasMany(TransactionSplit)` as `splits`, `hasMany(Debt)` as `debts` (split-linked debts)
+
+### PlaidItem (`app/Models/PlaidItem.php`)
+- Fields: `user_id`, `item_id` (Plaid), `access_token` (encrypted at rest), `institution_id`, `institution_name`, `transactions_cursor` (for `/transactions/sync`)
+- Relations: `belongsTo(User)`, `hasMany(PlaidPendingImport)` as `pendingImports`; custom `resolveRouteBinding` restricts `{plaidItem}` routes to the authenticated owner
+
+### PlaidPendingImport (`app/Models/PlaidPendingImport.php`)
+- Staging row for a Plaid transaction before ledger confirm; table `plaid_pending_imports` (see migration `2026_05_11_210000_add_plaid_import_infrastructure.php`).
+- `resolveRouteBinding` scopes `{pendingImport}` routes to `user_id` = authenticated user.
+- Casts: `amount` decimal:2, `date` date, `raw_payload` array, `suggested_is_non_necessity` bool, `confidence_score` decimal:4.
+- Relations: `belongsTo(User)`, `belongsTo(PlaidItem)` as `plaidItem`, `belongsTo(Transaction)` as `transaction`.
+- `scopePending` — `status = pending`. `isAutoCreateEligible()` always `false` (merchant rules gate auto-create).
+
+### PlaidMerchantRule (`app/Models/PlaidMerchantRule.php`)
+- Per-user merchant-key defaults; table `plaid_merchant_rules`.
+- Casts: `is_non_necessity`, `is_split` bool; `confirmation_count`, `total_seen_count` integer. `confidenceScore()` is computed as `confirmation_count / total_seen_count` (or `0.0` when `total_seen_count` is 0); not a DB column.
+- `isAutoCreateEligible()` — `confirmation_count >= 3` and `confidenceScore() >= 0.80`.
+- `normalizeKey(string)` — lowercase, strip non-alphanumeric except spaces, collapse whitespace, trim.
+- Relations: `belongsTo(User)`, `belongsTo(Category)`, `belongsTo(Fund)` as `fund`, `belongsTo(Fund, 'advance_fund_id')` as `advanceFund`.
 
 ### TransactionSplit (`app/Models/TransactionSplit.php`)
 - Fields: `transaction_id`, `user_id`, `share_percentage` (decimal:2), `amount` (decimal:2)
@@ -144,6 +162,25 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `completeTitleSaving(int $id)` — marks one user-owned `CloseoutTitleSaving` row as completed, stamps `completed_at`, and creates a closeout-tagged expense transaction (`is_closeout_initiated=true`) using the rule’s optional `closeout_expense_category_id`
 - `incompleteTitleSaving(int $id)` — clears completion state/timestamp and deletes the generated completion transaction when present
 
+### PlaidController
+- `linkToken(Request)` — `GET /plaid/link-token`; returns `{link_token}`; `503` when credentials missing
+- `exchange(ExchangePlaidTokenRequest)` — `POST /plaid/exchange`; exchanges `public_token`, persists `PlaidItem` with encrypted access token, hydrates institution metadata, runs initial `PlaidTransactionSyncService::syncItem` (returns JSON `pull` including raw Plaid rows; creates `plaid_pending_imports` for new `added` transactions and may auto-create ledger rows when `PlaidMerchantRule` qualifies)
+- `items(Request)` — lists auth user’s linked items (no secrets)
+- `sync(Request, PlaidItem)` — `POST /plaid/items/{plaidItem}/sync`; same as exchange pull; route binding scopes `{plaidItem}` to the owner
+- `destroy(Request, PlaidItem)` — calls Plaid `/item/remove`, deletes local row
+
+### PlaidImportController
+- `index(Request)` — `GET /plaid/pending-imports`; default JSON `{ pending, transfers, recently_auto_created }` (`pending` = `status=pending` and `is_transfer=false`, `transfers` = `status=pending` and `is_transfer=true`; both include `suggestedCategory` and `plaidItem`; 30-day count of `status=auto_created`). When `count_only` is true (`?count_only=1`), JSON `{ count }` only — number of `status=pending` rows for the auth user (nav badge).
+- `confirm(StoreImportConfirmRequest, PlaidPendingImport)` — `POST /plaid/pending-imports/{pendingImport}/confirm`; owner-only; `TransactionService::createTransaction` + `plaid_transaction_id` / `import_source=plaid`, optional `fund_id` via `forceFill`, `learnFromConfirmation`, pending `confirmed` + `transaction_id`; `ClosedMonthGuard` on payload; `403` without `family_id`.
+- `dismiss(Request, PlaidPendingImport)` — `POST /plaid/pending-imports/{pendingImport}/dismiss`; `status=dismissed`, `recordSeen` on matching merchant rule; `204`.
+- `dismissAsTransfer(Request, PlaidPendingImport)` — `POST /plaid/pending-imports/{pendingImport}/dismiss-as-transfer`; owner-only (`auth()->id()`); pending only; sets `status=dismissed`; optional `?learn=true` calls `learnDismissRule` from `merchant_name` / `raw_name`; `204`.
+- `calibrationData(Request, PlaidItem)` — `GET /plaid/items/{plaidItem}/calibrate`; owner-only; `PlaidCalibrationService::buildCalibrationMatches` with ledger rows serialized to `{id, date, amount, description, type, fund_id, category}`.
+- `applyCalibration(ApplyPlaidCalibrationRequest, PlaidItem)` — `POST /plaid/items/{plaidItem}/calibrate`; `applyCalibrationResults`; JSON counts `{ confirmed_linked, imported_pending }`.
+- `syncMonth(Request, PlaidItem)` — `POST /plaid/items/{plaidItem}/sync-month`; current month `fetchByDateRange` + `ingestPlaidRowsAsPending`; JSON `{ pending_created, auto_created }` or `502` on Plaid errors.
+
+### PlaidWebhookController
+- `__invoke(Request)` — `POST /plaid/webhook` (CSRF-excluded); on `webhook_type=TRANSACTIONS`, loads `PlaidItem` by `item_id` and runs `PlaidTransactionSyncService::syncItem` to advance the sync cursor and process `added` / `modified` / `removed` into pending imports (and optional auto-ledger creates)
+
 ### MonthCloseoutController
 - `status(Request)` — `POST /closeout/status`; accepts `{year, month}`; returns `{soft_closes, hard_close, all_soft_closed, family_user_count}` via `MonthCloseoutService::getMonthStatus`
 - `softClose(Request)` — `POST /closeout/soft-close`; creates a `MonthSoftClose` record; auto-triggers `hardClose` for single-member families; returns `{message, data, hard_close?, auto_hard_closed?}`
@@ -166,6 +203,35 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - Shared guard for transaction-producing write paths. A month is locked when the family has a `MonthHardClose` for that year/month or any affected user has a `MonthSoftClose`.
 - Transaction creates/updates/deletes include affected users: transaction owner, split participants, and mirrored debt-payment creditor rows. Debt-payment writes include payer, optional split participant, and creditor. Fund borrow/repay checks the current month for the acting user.
 - Throws `InvalidArgumentException`; controllers return `422` JSON with the guard message.
+
+### PlaidClient (`app/Services/PlaidClient.php`)
+- Registers as a singleton (`AppServiceProvider`) built from `config/plaid.php`; POSTs JSON to Plaid with `Plaid-Version` header (`config('plaid.api_version')`, default `2020-09-14` — must be a released date from Plaid's versioning docs, not an arbitrary ISO date) and injects `client_id` / `secret` into each body.
+
+### PlaidTransactionSyncService (`app/Services/PlaidTransactionSyncService.php`)
+- Constructor: `PlaidClient`, `PlaidMatchingService`, `TransactionService`.
+- `hydrateInstitution(PlaidItem)` — `/item/get` plus `/institutions/get_by_id` for display name.
+- `syncItem(PlaidItem)` — loops `/transactions/sync` using stored cursor; persists `transactions_cursor`; then `processSyncedTransactions` for the accumulated `added` / `modified` / `removed` arrays. Returns aggregated `counts`, `added`, `modified`, `removed`, and deduped `accounts` (raw Plaid shapes).
+- `processSyncedTransactions(PlaidItem, added, modified, removed)` — **Added:** skip if `plaid_pending_imports` already holds `plaid_transaction_id` (any status) or the family already has a `transactions` row with that Plaid id; `getSuggestion`; if the matching `PlaidMerchantRule` has `action=dismiss`, insert a `PlaidPendingImport` with `status=dismissed` (dedupes future syncs), optional Plaid PFC columns, `recordSeen`, then skip the normal pending + auto-create path; otherwise create `PlaidPendingImport` (`status=pending`, suggested fields, `raw_payload`, PFC columns when present); if `is_auto_eligible` and user has `family_id`, `TransactionService::createTransaction` then set `plaid_transaction_id` + `import_source=plaid`, mark pending `auto_created` and link `transaction_id` (failures leave pending); `recordSeen` on matching `PlaidMerchantRule` when present. **Modified:** pending rows (`status=pending`) get `amount`/`date`/`raw_payload` refresh and linked `transaction_id` row amount/date when set; also updates `transactions` for the user’s family with that Plaid id. **Removed:** deletes still-`pending` `plaid_pending_imports` for that Plaid id.
+- `fetchByDateRange(PlaidItem, startDate, endDate)` — paginated `POST /transactions/get` (`options.count` 500 + `offset`) until `total_transactions` is satisfied; returns merged `transactions` rows (calibration).
+- `ingestPlaidRowsAsPending(PlaidItem, rows)` — for each Plaid row array, reuses the same skip + `processAddedRow` path as sync **added**; returns `{ pending_created, auto_created }` (counts by resulting `PlaidPendingImport.status`).
+
+### PlaidDailySyncCommand (`app/Console/Commands/PlaidDailySyncCommand.php`)
+
+- Signature: `plaid:daily-sync {--item=}` — when `--item` is set, syncs that `PlaidItem` id only; otherwise all rows. Each item: `PlaidTransactionSyncService::syncItem` (cursor + `processSyncedTransactions`); failures are `report`ed and the loop continues. Stdout line: `Synced {institution}: {n} added, {auto_created} auto-created, {pending} queued for review` where `added` is Plaid’s added count for the pull and the other two counts come from `PlaidPendingImport` rows for this `plaid_item_id` among the returned `added` transaction ids (`pending` vs `auto_created`).
+
+### PlaidMatchingService (`app/Services/PlaidMatchingService.php`)
+- `findLedgerMatch(plaidRow, familyId)` — same as `findLedgerMatchWithScore` but returns only the `Transaction` or null.
+- `findLedgerMatchWithScore(plaidRow, familyId)` — same matching rules and **≥ 0.3** threshold; returns `['transaction' => Transaction, 'score' => float]` or null (used by calibration). Candidate ledger rows: same `family_id`, `plaid_transaction_id` null, expected type from Plaid amount sign, `transaction_date` within ±1 day of the Plaid date, and `amount` within **±0.01** of the normalized ledger amount (`whereBetween`, equivalent to the prior `ABS(amount - x) < 0.01` intent; avoids SQLite/Laravel binding quirks with two adjacent `?` placeholders in `whereRaw`).
+- `normalizeMerchantKey` — delegates to `PlaidMerchantRule::normalizeKey`.
+- `getSuggestion(plaidRow, userId)` — loads `PlaidMerchantRule` by normalized merchant; returns `category_id`, `type`, fund fields, `is_non_necessity`, `confidence_score` (`PlaidMerchantRule::confidenceScore`), `is_auto_eligible` (`false` when `action=dismiss`, otherwise `isAutoCreateEligible`); without a rule, returns nulls / false with `type` from Plaid sign (`>= 0` → expense, negative → income).
+- `recordConfirmation` / `recordSeen` — increment merchant-rule counters (`confirmation_count` + `total_seen_count`, or `total_seen_count` only).
+- `learnFromConfirmation` — `firstOrNew` by `user_id` + normalized key, merges whitelisted settings (`category_id`, `type`, `fund_id`, `advance_fund_id`, `is_non_necessity`, `is_split`, `action`), defaults `action` to `categorize` when not supplied, then increments both counters and saves.
+- `learnDismissRule` — normalizes merchant key, `firstOrNew` by `user_id` + `merchant_key`, sets `action=dismiss`, increments `total_seen_count` only, saves, returns the rule.
+
+### PlaidCalibrationService (`app/Services/PlaidCalibrationService.php`)
+- Constructor: `PlaidTransactionSyncService`, `PlaidMatchingService`, `TransactionService`.
+- `buildCalibrationMatches(PlaidItem)` — Uses `Carbon::now()` to compute **start** = first day of the calendar month **two months before** the current month, **end** = last day of the **previous** calendar month; calls `fetchByDateRange`; loads family `Transaction` rows in that inclusive date range with `plaid_transaction_id` null; for each Plaid row runs `findLedgerMatchWithScore` to populate `matched` (`plaid`, `ledger`, `score`) or `unmatched_plaid` (`plaid`, `suggestion` from `getSuggestion`). `unmatched_ledger` lists in-window ledger rows not paired to any Plaid row. Users without `family_id` get all Plaid rows in `unmatched_plaid` and empty matched / unmatched_ledger.
+- `applyCalibrationResults(PlaidItem, confirmedPairs, importAsNew)` — DB transaction; loads a Plaid id → row map from `fetchByDateRange` over the calibration window. **Structured pairs** (`plaid_transaction_id`, `ledger_transaction_id`, `category_id`, `type`, optional funds / `is_non_necessity`): `TransactionService::updateTransaction` on the ledger row, optional `fund_id` `forceFill`, `learnFromConfirmation`, then `plaid_transaction_id` + `import_source=plaid`. **Legacy pairs** `['plaid' => array, 'ledger' => Transaction|int]`: `learnFromConfirmation` from Plaid merchant + ledger-mirrored settings, then link Plaid id on the transaction. **`import_as_new`**: each string id (resolved from the window map) or full row array runs `createPendingImportFromPlaidRow` when not already imported. Returns `{ confirmed_linked: int, imported_pending: int }`.
 
 ### TransactionService (`app/Services/TransactionService.php`)
 - `createTransaction(array, User): Transaction` — wraps everything in `DB::transaction`; for `type=income`, forces `is_split=false`, clears `split_data` and `advance_fund_id`, and optionally links debt via `income_debt_mode`:

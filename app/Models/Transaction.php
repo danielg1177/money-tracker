@@ -30,6 +30,8 @@ class Transaction extends Model
         'paid_by_user_id',
         'is_closeout_initiated',
         'mirror_transaction_id',
+        'plaid_transaction_id',
+        'import_source',
     ];
 
     protected $casts = [

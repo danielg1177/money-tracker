@@ -4,7 +4,7 @@
 
 **Money Tracker** is a family-oriented personal finance web application. It allows household members to:
 
-- Record income and expense transactions shared across a family group
+- Record income and expense transactions shared across a family group (optional **Plaid** under Bank connections: sync creates `plaid_pending_imports` and may auto-create ledger transactions when merchant rules qualify)
 - Split costs between family members (auto-generating inter-member debt records)
 - Manage personal savings "funds" with closeout-driven allocation rules and optional starting balances
 - Borrow from personal funds and track repayment
@@ -35,15 +35,15 @@ money-tracker/
 ├── app/
 │   ├── Actions/Fortify/       # Fortify action overrides (user creation, password update)
 │   ├── Http/
-│   │   ├── Controllers/       # 8 controllers (Admin, Category, Dashboard, Debt, Fund, MonthCloseout, MonthSummary, Transaction) + base Controller
-│   │   └── Requests/          # 8 Form Request classes (several partially unused)
-│   ├── Models/                # 12 Eloquent models
+│   │   ├── Controllers/       # Admin, BankBalance, Category, Dashboard, Debt, Fund, MonthCloseout, MonthSummary, Plaid (+ webhook), Transaction + base Controller
+│   │   └── Requests/          # Form Request classes (incl. ExchangePlaidTokenRequest)
+│   ├── Models/                # 15 Eloquent models
 │   ├── Policies/              # FundPolicy, DebtPolicy
-│   ├── Providers/             # AppServiceProvider (Gates), FortifyServiceProvider
-│   └── Services/              # DebtService, FundService, MonthCloseoutService, SplitCalculator, TransactionService
+│   ├── Providers/             # AppServiceProvider (Gates, Plaid client singleton), FortifyServiceProvider
+│   └── Services/              # DebtService, FundService, MonthCloseoutService, PlaidCalibrationService, PlaidClient, PlaidMatchingService, PlaidTransactionSyncService, SplitCalculator, TransactionService
 ├── database/
 │   ├── factories/             # 7 factories
-│   ├── migrations/            # 30 migrations (initial set 2026-04-30; ongoing additions 2026-05-03/04/05)
+│   ├── migrations/            # 31+ migrations (initial set 2026-04-30; ongoing additions)
 │   └── seeders/               # DatabaseSeeder (creates one admin user + family, no factories)
 ├── resources/
 │   ├── css/app.css            # Tailwind v4 entry
@@ -52,7 +52,7 @@ money-tracker/
 │   │   ├── AppShell.vue       # Root layout (nav wrapper)
 │   │   ├── components/        # AppNav, TransactionForm, SplitEditor, IconPicker, App.vue (legacy)
 │   │   ├── composables/       # useApi.js, useAuth.js
-│   │   ├── pages/             # 9 user pages + 3 admin pages
+│   │   ├── pages/             # user pages incl. BankConnections + admin pages
 │   │   ├── router/index.js    # Vue Router config + beforeEach guards
 │   │   └── support/           # authUser.js (normalizeAuthUser), debtPaymentLabel.js (debt label helper)
 │   └── views/
@@ -60,11 +60,11 @@ money-tracker/
 │       └── welcome.blade.php  # Default Laravel welcome (not used in app flow)
 ├── routes/
 │   ├── web.php                # All application routes (SPA views + JSON endpoints)
-│   └── console.php            # Artisan `inspire` command only
+│   └── console.php            # Artisan `inspire` + `Schedule` (`plaid:daily-sync` daily 02:00)
 ├── tests/
-│   ├── Feature/               # AdminUserManagementTest, CategoryTest, CloseoutRulesApiTest, DebtRepaymentTransactionTest, ExampleTest, FinancialIntegrityTest, FundAllocationTest, FundIndexTest, MonthCloseoutTransactionDateTest, MonthSummaryViewerCategoryTotalsTest, PreviewHardCloseConsistencyTest, SplitDebtSummaryTest, TransactionTest
+│   ├── Feature/               # 19 PHPUnit feature classes (see `tests/Feature/`; includes `PlaidIntegrationTest`, `PlaidImportTest`, `PlaidMatchingServiceTest`, `PlaidCalibrationServiceTest`)
 │   └── Unit/                  # ExampleTest stub
-├── config/                    # Standard Laravel config files + fortify.php
+├── config/                    # Standard Laravel config files + fortify.php + plaid.php
 ├── Caddyfile                  # FrankenPHP/Caddy runtime config (binds to `$PORT`, serves `/app/public`)
 ├── docs/ai/                   # This documentation folder
 ├── AGENTS.md / CLAUDE.md      # AI agent rules (identical content)

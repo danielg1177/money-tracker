@@ -8,6 +8,9 @@ use App\Http\Controllers\DebtController;
 use App\Http\Controllers\FundController;
 use App\Http\Controllers\MonthCloseoutController;
 use App\Http\Controllers\MonthSummaryController;
+use App\Http\Controllers\PlaidController;
+use App\Http\Controllers\PlaidImportController;
+use App\Http\Controllers\PlaidWebhookController;
 use App\Http\Controllers\TransactionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -15,6 +18,8 @@ use Illuminate\Support\Facades\Route;
 Route::view('/', 'app');
 
 Route::view('/login', 'app')->name('login');
+
+Route::post('/plaid/webhook', PlaidWebhookController::class);
 
 Route::view('/dashboard', 'app');
 
@@ -25,6 +30,12 @@ Route::view('/admin/categories', 'app');
 Route::view('/my-family', 'app');
 
 Route::view('/debts', 'app');
+
+Route::view('/bank-connections', 'app');
+
+// SPA shells (Plaid import & calibration)
+Route::view('/plaid/import-review', 'app');
+Route::view('/plaid/calibrate/{itemId}', 'app');
 
 Route::view('/month-summary/{yearMonth}', 'app');
 
@@ -118,6 +129,22 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/bank-balance', [BankBalanceController::class, 'update']);
     Route::post('/title-savings/{id}/complete', [BankBalanceController::class, 'completeTitleSaving']);
     Route::delete('/title-savings/{id}/complete', [BankBalanceController::class, 'incompleteTitleSaving']);
+
+    Route::prefix('plaid')->group(function (): void {
+        // Link, items, sync, import review, calibration (auth JSON under /plaid/*)
+        Route::get('/link-token', [PlaidController::class, 'linkToken']);
+        Route::post('/exchange', [PlaidController::class, 'exchange']);
+        Route::get('/items', [PlaidController::class, 'items']);
+        Route::get('/pending-imports', [PlaidImportController::class, 'index']);
+        Route::post('/pending-imports/{pendingImport}/confirm', [PlaidImportController::class, 'confirm']);
+        Route::post('/pending-imports/{pendingImport}/dismiss', [PlaidImportController::class, 'dismiss']);
+        Route::post('/pending-imports/{pendingImport}/dismiss-as-transfer', [PlaidImportController::class, 'dismissAsTransfer']);
+        Route::get('/items/{plaidItem}/calibrate', [PlaidImportController::class, 'calibrationData']);
+        Route::post('/items/{plaidItem}/calibrate', [PlaidImportController::class, 'applyCalibration']);
+        Route::post('/items/{plaidItem}/sync-month', [PlaidImportController::class, 'syncMonth']);
+        Route::post('/items/{plaidItem}/sync', [PlaidController::class, 'sync']);
+        Route::delete('/items/{plaidItem}', [PlaidController::class, 'destroy']);
+    });
 
     Route::post('/closeout/status', [MonthCloseoutController::class, 'status']);
     Route::post('/closeout/soft-close', [MonthCloseoutController::class, 'softClose']);
