@@ -102,17 +102,44 @@ class PlaidImportController extends Controller
             $description = 'Plaid import';
         }
 
+        $isSplit = (bool) ($validated['is_split'] ?? false);
+        $payTowardDebt = ($validated['type'] ?? '') === 'expense' && ! empty($validated['debt_id']);
+
         $payload = [
             'type' => $validated['type'],
             'amount' => (float) $pendingImport->amount,
             'transaction_date' => $pendingImport->date->format('Y-m-d'),
             'description' => $description,
             'category_id' => $validated['category_id'],
-            'is_split' => false,
-            'split_data' => null,
-            'advance_fund_id' => $validated['advance_fund_id'] ?? null,
+            'is_split' => $isSplit,
+            'split_data' => $isSplit && ! empty($validated['split_data']) ? $validated['split_data'] : null,
+            'advance_fund_id' => ($validated['type'] === 'expense' && ! $payTowardDebt) ? ($validated['advance_fund_id'] ?? null) : null,
             'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
         ];
+
+        if ($validated['type'] === 'expense' && $payTowardDebt) {
+            $payload['debt_id'] = (int) $validated['debt_id'];
+        }
+
+        if ($validated['type'] === 'income') {
+            $payload['income_debt_mode'] = $validated['income_debt_mode'] ?? 'none';
+            $payload['income_existing_debt_id'] = ($payload['income_debt_mode'] === 'existing') ? ($validated['income_existing_debt_id'] ?? null) : null;
+            $payload['income_new_is_family_debt'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($validated['income_new_is_family_debt'] ?? false) : false;
+            $payload['income_new_is_interfamily'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($validated['income_new_is_interfamily'] ?? false) : false;
+            $payload['income_new_creditor_id'] = ($payload['income_debt_mode'] === 'new' && ($payload['income_new_is_interfamily'] ?? false))
+                ? ($validated['income_new_creditor_id'] ?? null)
+                : null;
+            $payload['income_new_creditor_name'] = ($payload['income_debt_mode'] === 'new' && ! ($payload['income_new_is_interfamily'] ?? false))
+                ? ($validated['income_new_creditor_name'] ?? null)
+                : null;
+            $payload['income_new_description'] = ($payload['income_debt_mode'] === 'new' && ! empty($validated['income_new_description']))
+                ? $validated['income_new_description']
+                : null;
+            $payload['income_new_interest_enabled'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($validated['income_new_interest_enabled'] ?? false) : false;
+            $payload['income_new_interest_rate'] = ($payload['income_debt_mode'] === 'new' && ($payload['income_new_interest_enabled'] ?? false))
+                ? ($validated['income_new_interest_rate'] ?? null)
+                : null;
+        }
 
         try {
             $this->closedMonthGuard->assertTransactionPayloadOpen($user, $payload);
@@ -143,7 +170,7 @@ class PlaidImportController extends Controller
             'fund_id' => $validated['fund_id'] ?? null,
             'advance_fund_id' => $validated['advance_fund_id'] ?? null,
             'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
-            'is_split' => false,
+            'is_split' => $isSplit,
             'action' => 'categorize',
         ]);
 

@@ -175,6 +175,7 @@
                   v-model="formFor(row).category_id"
                   class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
                   :disabled="actionId === row.id"
+                  @change="onCategoryChange(row)"
                 >
                   <option disabled value="">Select a category</option>
                   <option v-for="cat in categoriesForType(formFor(row).type)" :key="cat.id" :value="String(cat.id)">
@@ -208,6 +209,308 @@
                     {{ fund.name }}{{ fund.scope === 'family' ? ' (family)' : '' }}
                   </option>
                 </select>
+              </div>
+
+              <div
+                v-if="formFor(row).type === 'income'"
+                class="space-y-3 rounded-lg border border-gray-700 bg-gray-900/40 p-3"
+              >
+                <div>
+                  <p class="text-sm font-medium text-gray-300">Income from taking debt?</p>
+                  <p class="mt-0.5 text-xs text-gray-500">Optional — attach to an existing loan or record new debt</p>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    class="min-h-[40px] rounded-lg px-2 py-2 text-xs font-medium transition-colors"
+                    :class="
+                      formFor(row).income_debt_mode === 'none'
+                        ? 'bg-gray-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    "
+                    :disabled="actionId === row.id"
+                    @click="setIncomeDebtMode(row, 'none')"
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-[40px] rounded-lg px-2 py-2 text-xs font-medium transition-colors"
+                    :class="
+                      formFor(row).income_debt_mode === 'existing'
+                        ? 'bg-sky-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    "
+                    :disabled="actionId === row.id"
+                    @click="setIncomeDebtMode(row, 'existing')"
+                  >
+                    Existing
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-[40px] rounded-lg px-2 py-2 text-xs font-medium transition-colors"
+                    :class="
+                      formFor(row).income_debt_mode === 'new'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    "
+                    :disabled="actionId === row.id"
+                    @click="setIncomeDebtMode(row, 'new')"
+                  >
+                    New
+                  </button>
+                </div>
+                <div v-if="formFor(row).income_debt_mode === 'existing'" class="space-y-1">
+                  <label class="block text-xs font-medium text-gray-400" :for="`inc-debt-${row.id}`">Attach to debt</label>
+                  <select
+                    :id="`inc-debt-${row.id}`"
+                    v-model.number="formFor(row).income_existing_debt_id"
+                    class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-sky-500 focus:outline-none disabled:opacity-50"
+                    :disabled="actionId === row.id"
+                  >
+                    <option :value="null" disabled>Select a debt</option>
+                    <option v-for="d in incomeAttachableDebts" :key="d.id" :value="d.id">
+                      {{ incomeDebtSelectLabel(d) }} — {{ formatCurrency(Number(d.balance) || 0) }}
+                    </option>
+                  </select>
+                  <p v-if="incomeAttachableDebts.length === 0" class="text-xs text-amber-400">
+                    No debts available to attach.
+                  </p>
+                </div>
+                <div v-if="formFor(row).income_debt_mode === 'new'" class="space-y-3">
+                  <div class="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      class="min-h-[40px] rounded-lg px-3 py-2 text-xs font-medium transition-colors"
+                      :class="
+                        !formFor(row).income_new_is_interfamily
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      "
+                      :disabled="actionId === row.id"
+                      @click="formFor(row).income_new_is_interfamily = false"
+                    >
+                      External
+                    </button>
+                    <button
+                      type="button"
+                      class="min-h-[40px] rounded-lg px-3 py-2 text-xs font-medium transition-colors"
+                      :class="
+                        formFor(row).income_new_is_interfamily
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      "
+                      :disabled="actionId === row.id"
+                      @click="formFor(row).income_new_is_interfamily = true"
+                    >
+                      Family
+                    </button>
+                  </div>
+                  <div v-if="formFor(row).income_new_is_interfamily">
+                    <label class="mb-1 block text-xs font-medium text-gray-400">Family creditor</label>
+                    <select
+                      v-model.number="formFor(row).income_new_creditor_id"
+                      class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-50"
+                      :disabled="actionId === row.id"
+                    >
+                      <option :value="null" disabled>Select member</option>
+                      <option v-for="member in familyUsers" :key="member.id" :value="member.id">
+                        {{ member.name }}
+                      </option>
+                    </select>
+                  </div>
+                  <div v-else>
+                    <label class="mb-1 block text-xs font-medium text-gray-400">Creditor name</label>
+                    <input
+                      v-model="formFor(row).income_new_creditor_name"
+                      type="text"
+                      placeholder="e.g., Bank"
+                      class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none disabled:opacity-50"
+                      :disabled="actionId === row.id"
+                    />
+                  </div>
+                  <label class="flex items-center gap-2 text-xs text-gray-300">
+                    <input
+                      v-model="formFor(row).income_new_is_family_debt"
+                      type="checkbox"
+                      class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600"
+                      :disabled="actionId === row.id"
+                    />
+                    Visible to all family members
+                  </label>
+                  <div>
+                    <label class="mb-1 block text-xs font-medium text-gray-400">Debt note (optional)</label>
+                    <input
+                      v-model="formFor(row).income_new_description"
+                      type="text"
+                      class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-50"
+                      :disabled="actionId === row.id"
+                    />
+                  </div>
+                  <div class="space-y-2 rounded-lg border border-gray-700 bg-gray-900/30 p-3">
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-xs font-medium text-gray-300">Monthly interest at closeout</span>
+                      <button
+                        type="button"
+                        class="relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200"
+                        :class="formFor(row).income_new_interest_enabled ? 'bg-amber-600' : 'bg-gray-600'"
+                        :disabled="actionId === row.id"
+                        @click="formFor(row).income_new_interest_enabled = !formFor(row).income_new_interest_enabled"
+                      >
+                        <span
+                          class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200"
+                          :class="formFor(row).income_new_interest_enabled ? 'translate-x-4' : 'translate-x-0'"
+                        />
+                      </button>
+                    </div>
+                    <div v-if="formFor(row).income_new_interest_enabled">
+                      <label class="mb-1 block text-xs font-medium text-gray-400">APR %</label>
+                      <input
+                        v-model.number="formFor(row).income_new_interest_rate"
+                        v-bind="mobileDecimalNumberAttrs"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none disabled:opacity-50"
+                        :disabled="actionId === row.id"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="formFor(row).type === 'expense'" class="space-y-2">
+                <div
+                  class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
+                  role="button"
+                  tabindex="0"
+                  @click="actionId !== row.id && togglePayTowardDebt(row)"
+                  @keydown.enter.prevent="actionId !== row.id && togglePayTowardDebt(row)"
+                  @keydown.space.prevent="actionId !== row.id && togglePayTowardDebt(row)"
+                >
+                  <div>
+                    <p class="text-sm font-medium text-gray-300">Pay toward a tracked debt</p>
+                    <p class="mt-0.5 text-xs text-gray-500">Links this expense to a debt</p>
+                  </div>
+                  <div
+                    class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"
+                    :class="formFor(row).pay_toward_debt ? 'bg-sky-600' : 'bg-gray-700'"
+                  >
+                    <div
+                      class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                      :class="formFor(row).pay_toward_debt ? 'translate-x-5' : 'translate-x-1'"
+                    />
+                  </div>
+                </div>
+                <div v-if="formFor(row).pay_toward_debt" class="space-y-1">
+                  <label class="block text-xs font-medium text-gray-400" :for="`debt-${row.id}`">Which debt?</label>
+                  <select
+                    :id="`debt-${row.id}`"
+                    v-model.number="formFor(row).debt_id"
+                    class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-sky-500 focus:outline-none disabled:opacity-50"
+                    :disabled="actionId === row.id"
+                  >
+                    <option :value="null" disabled>Select a debt</option>
+                    <option v-for="d in payableDebts" :key="d.id" :value="d.id">
+                      {{ debtSelectLabel(d) }} — {{ formatCurrency(Number(d.balance) || 0) }} left
+                    </option>
+                  </select>
+                  <p v-if="payableDebts.length === 0" class="text-xs text-amber-400">No payable debts found.</p>
+                </div>
+              </div>
+
+              <div
+                v-if="formFor(row).type === 'expense'"
+                class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
+                role="button"
+                tabindex="0"
+                @click="actionId !== row.id && toggleSplit(row)"
+                @keydown.enter.prevent="actionId !== row.id && toggleSplit(row)"
+                @keydown.space.prevent="actionId !== row.id && toggleSplit(row)"
+              >
+                <div>
+                  <p class="text-sm font-medium text-gray-300">Split between family members</p>
+                  <p class="mt-0.5 text-xs text-gray-500">Divide this expense</p>
+                </div>
+                <div
+                  class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"
+                  :class="formFor(row).is_split ? 'bg-blue-600' : 'bg-gray-700'"
+                >
+                  <div
+                    class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    :class="formFor(row).is_split ? 'translate-x-5' : 'translate-x-1'"
+                  />
+                </div>
+              </div>
+
+              <div v-if="formFor(row).type === 'expense' && formFor(row).is_split">
+                <SplitEditor
+                  :family-users="familyUsers"
+                  :total-amount="importAbsAmount(row)"
+                  :initial-splits="formFor(row).split_data"
+                  @update:splits="formFor(row).split_data = $event"
+                />
+              </div>
+
+              <div v-if="formFor(row).type === 'expense' && !formFor(row).pay_toward_debt" class="space-y-2">
+                <div
+                  class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
+                  role="button"
+                  tabindex="0"
+                  @click="actionId !== row.id && toggleAdvanceFund(row)"
+                  @keydown.enter.prevent="actionId !== row.id && toggleAdvanceFund(row)"
+                  @keydown.space.prevent="actionId !== row.id && toggleAdvanceFund(row)"
+                >
+                  <div>
+                    <p class="text-sm font-medium text-gray-300">Advance against fund</p>
+                    <p class="mt-0.5 text-xs text-gray-500">Deduct from a fund at month close</p>
+                  </div>
+                  <div
+                    class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"
+                    :class="formFor(row).advance_fund_id !== null ? 'bg-amber-600' : 'bg-gray-700'"
+                  >
+                    <div
+                      class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                      :class="formFor(row).advance_fund_id !== null ? 'translate-x-5' : 'translate-x-1'"
+                    />
+                  </div>
+                </div>
+                <select
+                  v-if="formFor(row).advance_fund_id !== null"
+                  v-model.number="formFor(row).advance_fund_id"
+                  class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none disabled:opacity-50"
+                  :disabled="actionId === row.id"
+                  @change="onAdvanceFundChange(row)"
+                >
+                  <option :value="null" disabled>Select a fund</option>
+                  <option v-for="fund in funds" :key="fund.id" :value="fund.id">
+                    {{ fund.name }}{{ fund.scope === 'family' ? ' (family)' : '' }}
+                  </option>
+                </select>
+                <div
+                  v-if="formFor(row).advance_fund_id !== null && selectedFundHasNonNecessityRule(formFor(row))"
+                  class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
+                  role="button"
+                  tabindex="0"
+                  @click="actionId !== row.id && (formFor(row).is_non_necessity = !formFor(row).is_non_necessity)"
+                  @keydown.enter.prevent="actionId !== row.id && (formFor(row).is_non_necessity = !formFor(row).is_non_necessity)"
+                  @keydown.space.prevent="actionId !== row.id && (formFor(row).is_non_necessity = !formFor(row).is_non_necessity)"
+                >
+                  <div>
+                    <p class="text-sm font-medium text-gray-300">Mark as non-necessity</p>
+                    <p class="mt-0.5 text-xs text-gray-500">Excluded from expense basis when the fund allows it</p>
+                  </div>
+                  <div
+                    class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"
+                    :class="formFor(row).is_non_necessity ? 'bg-violet-600' : 'bg-gray-700'"
+                  >
+                    <div
+                      class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                      :class="formFor(row).is_non_necessity ? 'translate-x-5' : 'translate-x-1'"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div class="rounded-lg border border-gray-700/80 bg-gray-900/40 px-3 py-3">
@@ -384,6 +687,12 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
+import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
+import SplitEditor from '../components/SplitEditor.vue';
+import {
+  equalSplitPayloadForFamilyUsers,
+  hasPositiveSplitShares,
+} from '../support/equalFamilySplit.js';
 
 const { post } = useApi();
 
@@ -394,6 +703,8 @@ const transferImports = ref([]);
 const activeTab = ref('review');
 const categories = ref([]);
 const funds = ref([]);
+const debtsPayload = ref({ owed: [], owing: [], family_debts: [] });
+const familyUsers = ref([]);
 const recentlyAutoCreated = ref(0);
 const expandedId = ref(null);
 const forms = reactive({});
@@ -418,6 +729,18 @@ const allEmpty = computed(
 const showTabs = computed(
   () => !loading.value && !pageError.value && (pendingImports.value.length > 0 || transferImports.value.length > 0),
 );
+
+const payableDebts = computed(() => {
+  const list = [...(debtsPayload.value?.owed || []), ...(debtsPayload.value?.family_debts || [])];
+
+  return list.filter((d) => !d.is_pending_closeout && Number(d.balance) > 0);
+});
+
+const incomeAttachableDebts = computed(() => {
+  const list = debtsPayload.value?.owed || [];
+
+  return list.filter((d) => !d.is_pending_closeout && Number(d.balance) >= 0);
+});
 
 function showToast(message, variant = 'success') {
   if (toastTimer) {
@@ -450,6 +773,14 @@ function formatMoney(amount) {
     return String(amount);
   }
   return Math.abs(n).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+}
+
+function formatCurrency(amount) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+  }).format(amount);
 }
 
 function formatLinkOptionLabel(c) {
@@ -508,6 +839,69 @@ function categoriesForType(type) {
   return categories.value.filter((c) => (type === 'income' ? c.is_income : c.is_expense));
 }
 
+function debtSelectLabel(d) {
+  if (d.creditor?.name) {
+    return `To ${d.creditor.name}`;
+  }
+  if (d.creditor_name) {
+    return `To ${d.creditor_name}`;
+  }
+  if (d.fund?.name) {
+    return `Borrowed: ${d.fund.name}`;
+  }
+  if (d.description) {
+    return d.description;
+  }
+  return `Debt #${d.id}`;
+}
+
+function incomeDebtSelectLabel(d) {
+  if (d.creditor?.name) {
+    return `Owed to ${d.creditor.name}`;
+  }
+  if (d.creditor_name) {
+    return `Owed to ${d.creditor_name}`;
+  }
+  if (d.description) {
+    return d.description;
+  }
+  return `Debt #${d.id}`;
+}
+
+function importAbsAmount(row) {
+  return Math.abs(Number(row.amount) || 0);
+}
+
+function selectedFundHasNonNecessityRule(f) {
+  if (f.advance_fund_id === null || f.advance_fund_id === undefined) {
+    return false;
+  }
+  const fund = funds.value.find((x) => Number(x.id) === Number(f.advance_fund_id));
+
+  return fund?.has_non_necessity_rule === true;
+}
+
+function resetIncomeDebtFields(f) {
+  f.income_debt_mode = 'none';
+  f.income_existing_debt_id = null;
+  f.income_new_is_family_debt = false;
+  f.income_new_is_interfamily = false;
+  f.income_new_creditor_id = null;
+  f.income_new_creditor_name = '';
+  f.income_new_description = '';
+  f.income_new_interest_enabled = false;
+  f.income_new_interest_rate = 0;
+}
+
+function resetExpenseOnlyFields(f) {
+  f.pay_toward_debt = false;
+  f.debt_id = null;
+  f.is_split = false;
+  f.split_data = [];
+  f.advance_fund_id = null;
+  f.is_non_necessity = false;
+}
+
 function ensureForm(row) {
   if (forms[row.id]) {
     return;
@@ -531,7 +925,23 @@ function ensureForm(row) {
     category_id: catId,
     description: '',
     fund_id: row.suggested_fund_id != null ? String(row.suggested_fund_id) : '',
+    pay_toward_debt: false,
+    debt_id: null,
+    is_split: false,
+    split_data: [],
+    advance_fund_id: null,
+    is_non_necessity: false,
+    income_debt_mode: 'none',
+    income_existing_debt_id: null,
+    income_new_is_family_debt: false,
+    income_new_is_interfamily: false,
+    income_new_creditor_id: null,
+    income_new_creditor_name: '',
+    income_new_description: '',
+    income_new_interest_enabled: false,
+    income_new_interest_rate: 0,
   };
+  applyCategoryDefaults(row, { onlyIfExpense: true });
 }
 
 function formFor(row) {
@@ -540,12 +950,128 @@ function formFor(row) {
   return forms[row.id];
 }
 
+function applyCategoryDefaults(row, { onlyIfExpense = false } = {}) {
+  const f = forms[row.id];
+  if (!f) {
+    return;
+  }
+  if (onlyIfExpense && f.type !== 'expense') {
+    return;
+  }
+  if (f.type !== 'expense' || f.pay_toward_debt) {
+    return;
+  }
+  const cat = categories.value.find((c) => String(c.id) === String(f.category_id));
+  if (!cat) {
+    return;
+  }
+  if (cat.is_split_default && cat.split_default?.length) {
+    f.is_split = true;
+    f.split_data = familyUsers.value.length ? equalSplitPayloadForFamilyUsers(familyUsers.value) : [];
+  }
+  if (cat.advance_fund_id) {
+    f.advance_fund_id = cat.advance_fund_id;
+  }
+  if (cat.is_non_necessity_default && selectedFundHasNonNecessityRule(f)) {
+    f.is_non_necessity = true;
+  } else {
+    f.is_non_necessity = false;
+  }
+}
+
+function onCategoryChange(row) {
+  applyCategoryDefaults(row);
+}
+
+function setIncomeDebtMode(row, mode) {
+  const f = formFor(row);
+  f.income_debt_mode = mode;
+  if (mode === 'existing') {
+    f.income_new_is_family_debt = false;
+    f.income_new_is_interfamily = false;
+    f.income_new_creditor_id = null;
+    f.income_new_creditor_name = '';
+    f.income_new_description = '';
+    f.income_new_interest_enabled = false;
+    f.income_new_interest_rate = 0;
+    if (incomeAttachableDebts.value.length === 1) {
+      f.income_existing_debt_id = incomeAttachableDebts.value[0].id;
+    } else {
+      f.income_existing_debt_id = null;
+    }
+    return;
+  }
+  f.income_existing_debt_id = null;
+  if (mode !== 'new') {
+    resetIncomeDebtFields(f);
+    f.income_debt_mode = 'none';
+  }
+}
+
+function togglePayTowardDebt(row) {
+  const f = formFor(row);
+  f.pay_toward_debt = !f.pay_toward_debt;
+  if (f.pay_toward_debt) {
+    f.advance_fund_id = null;
+    f.is_non_necessity = false;
+    const pd = payableDebts.value;
+    if (pd.length === 1) {
+      f.debt_id = pd[0].id;
+    } else if (!pd.some((d) => Number(d.id) === Number(f.debt_id))) {
+      f.debt_id = null;
+    }
+  } else {
+    f.debt_id = null;
+  }
+}
+
+function toggleSplit(row) {
+  const f = formFor(row);
+  f.is_split = !f.is_split;
+  if (!f.is_split) {
+    f.split_data = [];
+    f.is_non_necessity = false;
+
+    return;
+  }
+  if (!familyUsers.value.length || !hasPositiveSplitShares(f.split_data)) {
+    f.split_data = equalSplitPayloadForFamilyUsers(familyUsers.value);
+  }
+}
+
+function toggleAdvanceFund(row) {
+  const f = formFor(row);
+  if (f.advance_fund_id !== null) {
+    f.advance_fund_id = null;
+    f.is_non_necessity = false;
+  } else {
+    f.advance_fund_id = funds.value.length > 0 ? funds.value[0].id : null;
+  }
+}
+
+function onAdvanceFundChange(row) {
+  const f = formFor(row);
+  if (f.advance_fund_id === null) {
+    f.is_non_necessity = false;
+  } else if (!selectedFundHasNonNecessityRule(f)) {
+    f.is_non_necessity = false;
+  }
+}
+
 function setType(row, type) {
   const f = formFor(row);
   f.type = type;
   const pool = categories.value.filter((c) => (type === 'income' ? c.is_income : c.is_expense));
   if (!pool.some((c) => String(c.id) === String(f.category_id))) {
     f.category_id = pool[0] ? String(pool[0].id) : '';
+  }
+  if (type === 'income') {
+    resetExpenseOnlyFields(f);
+    resetIncomeDebtFields(f);
+  } else {
+    resetIncomeDebtFields(f);
+    f.pay_toward_debt = false;
+    f.debt_id = null;
   }
 }
 
@@ -588,20 +1114,110 @@ function applyDefaultTab() {
   }
 }
 
+function validateConfirmForm(row, f) {
+  if (f.type === 'expense' && f.pay_toward_debt) {
+    if (!f.debt_id) {
+      return 'Select which debt you are paying toward.';
+    }
+  }
+  if (f.type === 'income') {
+    if (f.income_debt_mode === 'existing' && !f.income_existing_debt_id) {
+      return 'Select which existing debt this income belongs to.';
+    }
+    if (f.income_debt_mode === 'new') {
+      if (f.income_new_is_interfamily && !f.income_new_creditor_id) {
+        return 'Select which family member is the creditor.';
+      }
+      if (!f.income_new_is_interfamily && !String(f.income_new_creditor_name || '').trim()) {
+        return 'Enter the creditor name for the new debt.';
+      }
+      if (f.income_new_interest_enabled) {
+        const interestRate = Number(f.income_new_interest_rate);
+        if (!Number.isFinite(interestRate) || interestRate < 0 || interestRate > 100) {
+          return 'Interest rate must be between 0 and 100.';
+        }
+      }
+    }
+  }
+  if (f.type === 'expense' && f.is_split && !hasPositiveSplitShares(f.split_data)) {
+    return 'Add split shares for each family member.';
+  }
+
+  return '';
+}
+
+function buildConfirmPayload(row, f) {
+  const payTowardDebt = f.type === 'expense' && f.pay_toward_debt;
+  const payload = {
+    category_id: Number(f.category_id),
+    type: f.type,
+    description: f.description?.trim() || undefined,
+    is_split: f.type === 'expense' && f.is_split,
+    advance_fund_id: f.type === 'expense' && !payTowardDebt ? f.advance_fund_id || null : null,
+    is_non_necessity:
+      f.type === 'expense' &&
+      !payTowardDebt &&
+      !f.is_split &&
+      f.advance_fund_id !== null &&
+      selectedFundHasNonNecessityRule(f)
+        ? Boolean(f.is_non_necessity)
+        : false,
+    ...(f.type === 'expense' && f.is_split ? { split_data: f.split_data } : {}),
+    ...(f.type === 'expense' && payTowardDebt && f.debt_id ? { debt_id: f.debt_id } : {}),
+    ...(f.type === 'income'
+      ? {
+          income_debt_mode: f.income_debt_mode,
+          income_existing_debt_id: f.income_debt_mode === 'existing' ? f.income_existing_debt_id : null,
+          income_new_is_family_debt: f.income_debt_mode === 'new' ? Boolean(f.income_new_is_family_debt) : false,
+          income_new_is_interfamily: f.income_debt_mode === 'new' ? Boolean(f.income_new_is_interfamily) : false,
+          income_new_creditor_id:
+            f.income_debt_mode === 'new' && f.income_new_is_interfamily ? f.income_new_creditor_id : null,
+          income_new_creditor_name:
+            f.income_debt_mode === 'new' && !f.income_new_is_interfamily ? f.income_new_creditor_name : null,
+          income_new_description:
+            f.income_debt_mode === 'new' && String(f.income_new_description || '').trim()
+              ? f.income_new_description
+              : null,
+          income_new_interest_enabled: f.income_debt_mode === 'new' ? Boolean(f.income_new_interest_enabled) : false,
+          income_new_interest_rate:
+            f.income_debt_mode === 'new' && f.income_new_interest_enabled ? f.income_new_interest_rate : null,
+        }
+      : {}),
+  };
+  const fundId = f.fund_id === '' || f.fund_id === null ? undefined : Number(f.fund_id);
+  if (fundId !== undefined && !Number.isNaN(fundId)) {
+    payload.fund_id = fundId;
+  }
+
+  return payload;
+}
+
 async function loadAll() {
   loading.value = true;
   pageError.value = '';
   try {
-    const [pendingRes, catRes, fundRes] = await Promise.all([
+    const [pendingRes, catRes, fundRes, debtsRes, usersRes] = await Promise.all([
       window.axios.get('/plaid/pending-imports'),
       window.axios.get('/categories'),
       window.axios.get('/funds'),
+      window.axios.get('/debts'),
+      window.axios.get('/family/users'),
     ]);
     pendingImports.value = Array.isArray(pendingRes.data?.pending) ? pendingRes.data.pending : [];
     transferImports.value = Array.isArray(pendingRes.data?.transfers) ? pendingRes.data.transfers : [];
     recentlyAutoCreated.value = Number(pendingRes.data?.recently_auto_created ?? 0);
     categories.value = Array.isArray(catRes.data) ? catRes.data : [];
     funds.value = Array.isArray(fundRes.data) ? fundRes.data : [];
+    const db = debtsRes.data;
+    debtsPayload.value =
+      db && typeof db === 'object'
+        ? {
+            owed: Array.isArray(db.owed) ? db.owed : [],
+            owing: Array.isArray(db.owing) ? db.owing : [],
+            family_debts: Array.isArray(db.family_debts) ? db.family_debts : [],
+          }
+        : { owed: [], owing: [], family_debts: [] };
+    familyUsers.value = Array.isArray(usersRes.data) ? usersRes.data : [];
     applyDefaultTab();
   } catch (err) {
     console.error(err);
@@ -621,17 +1237,15 @@ async function confirmRow(row) {
 
     return;
   }
+  const validationMessage = validateConfirmForm(row, f);
+  if (validationMessage) {
+    rowErrors[row.id] = validationMessage;
+
+    return;
+  }
   actionId.value = row.id;
   try {
-    const payload = {
-      category_id: Number(f.category_id),
-      type: f.type,
-      description: f.description?.trim() || undefined,
-    };
-    const fundId = f.fund_id === '' || f.fund_id === null ? undefined : Number(f.fund_id);
-    if (fundId !== undefined && !Number.isNaN(fundId)) {
-      payload.fund_id = fundId;
-    }
+    const payload = buildConfirmPayload(row, f);
     await post(`/plaid/pending-imports/${row.id}/confirm`, payload);
     removePendingRow(row.id);
   } catch (err) {

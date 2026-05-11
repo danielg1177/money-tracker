@@ -11,7 +11,11 @@ Format:
 
 ---
 
-## 2026-05-11 — Plaid Link: `financekit_supported` (Apple Card / Wallet)
+## 2026-05-11 — Import confirm: full transaction options (API + Import Review UI)
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `app/Http/Requests/StoreTransactionRequest.php`, `app/Http/Requests/StoreImportConfirmRequest.php`, `resources/js/pages/PlaidImportReview.vue`, `tests/Feature/PlaidImportTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Confirming a pending bank import accepts the **same transaction settings** as creating a transaction manually (splits, debt payment, advance fund + non-necessity, income debt association). **Import Review** loads debts and family users and exposes matching controls per expanded row. `learnFromConfirmation` records **`is_split`** from the confirmed payload. Shared validation lives in **`TransactionPayloadValidationRules`**; `description` max length remains on the per-request rules (not duplicated in the shared trait).
+
 
 - Files touched: `config/plaid.php`, `app/Http/Controllers/PlaidController.php`, `.env.example`, `resources/js/pages/BankConnections.vue`, `tests/Feature/PlaidIntegrationTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
 - Behavioral impact: Link token creation optionally sends **`financekit_supported: true`** (on by default via `PLAID_FINANCEKIT_SUPPORTED`); Bank Connections includes a short note that Apple Card depends on Plaid/Apple support and is typically completed on a compatible iPhone with Wallet access.

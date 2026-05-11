@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\Debt;
 use App\Models\Family;
 use App\Models\PlaidItem;
 use App\Models\PlaidMerchantRule;
@@ -227,6 +228,67 @@ class PlaidImportTest extends TestCase
             'plaid_transaction_id' => $import->plaid_transaction_id,
             'import_source' => 'plaid',
         ]);
+    }
+
+    public function test_confirm_pending_import_with_debt_id_creates_debt_payment_expense(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 100.00,
+            'balance' => 100.00,
+            'is_pending_closeout' => false,
+        ]);
+        $item = $this->createPlaidItem($debtor);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $debtor->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-debt-pay-import-1',
+            'plaid_account_id' => 'acc1',
+            'amount' => 25.0,
+            'date' => now()->toDateString(),
+            'merchant_name' => 'Debt Pay',
+            'raw_name' => 'DEBT PAY',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'suggested_fund_id' => null,
+            'suggested_advance_fund_id' => null,
+            'suggested_is_non_necessity' => false,
+            'confidence_score' => 0.5,
+            'status' => 'pending',
+            'transaction_id' => null,
+            'raw_payload' => [],
+            'is_transfer' => false,
+        ]);
+
+        $this->actingAs($debtor)->postJson(
+            "/plaid/pending-imports/{$import->id}/confirm",
+            [
+                'category_id' => $category->id,
+                'type' => 'expense',
+                'debt_id' => $debt->id,
+                'is_split' => false,
+            ]
+        )->assertOk();
+
+        $debt->refresh();
+        $this->assertSame('75.00', (string) $debt->balance);
+
+        $import->refresh();
+        $this->assertSame('confirmed', $import->status);
+        $expense = Transaction::query()->findOrFail($import->transaction_id);
+        $this->assertTrue($expense->is_debt_payment);
+        $this->assertSame($debt->id, (int) $expense->debt_id);
     }
 
     public function test_dismiss_pending_import_sets_status_to_dismissed(): void

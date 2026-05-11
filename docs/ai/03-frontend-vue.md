@@ -44,7 +44,7 @@ History mode (`createWebHistory`). Route definitions:
 | `/dashboard` | `Dashboard.vue` | `requiresAuth` |
 | `/transactions` | `Transactions.vue` | `requiresAuth` |
 | `/bank-connections` | `BankConnections.vue` | `requiresAuth` — Plaid Link (`financekit_supported` on link token when enabled for Apple Card / Wallet where Plaid allows), pending-import banner, sync-this-month, calibrate navigation, disconnect; short Apple Card note under Connect |
-| `/plaid/import-review` | `PlaidImportReview.vue` | `requiresAuth` — `GET /plaid/pending-imports` returns `pending` and `transfers` separately; **To Review** vs **Transfers** (amber badge) tabs; review tab: expand / **Suggest matches** + **Link to selected** (`GET …/ledger-candidates`, `POST …/link`) for duplicates already on the ledger, **Always ignore** / **Dismiss once** card-payment dismiss (`POST …/dismiss-as-transfer`), plus Confirm / Dismiss; transfers tab unchanged |
+| `/plaid/import-review` | `PlaidImportReview.vue` | `requiresAuth` — loads `GET /plaid/pending-imports`, `GET /categories`, `GET /funds`, `GET /debts`, `GET /family/users`. **To Review** vs **Transfers** tabs; expanded row mirrors main transaction options: income debt (none / existing / new), expense pay-toward-debt, split + `SplitEditor`, advance fund + non-necessity when the fund allows it; confirm POST sends the same payload shape as `TransactionForm`. Also **Suggest matches** / **Link**, card-payment dismiss, Confirm / Dismiss |
 | `/plaid/calibrate/:itemId` | `PlaidCalibrate.vue` | `requiresAuth` — matched / unmatched bank / unmatched ledger tabs, apply `POST /plaid/items/{id}/calibrate` |
 | `/funds` | `Funds.vue` | `requiresAuth` |
 | `/closeout-rules` | `CloseoutRules.vue` | `requiresAuth` |
