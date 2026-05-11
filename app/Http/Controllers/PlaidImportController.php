@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ApplyPlaidCalibrationRequest;
+use App\Http\Requests\LinkPlaidPendingImportRequest;
 use App\Http\Requests\StoreImportConfirmRequest;
 use App\Models\Category;
 use App\Models\PlaidItem;
@@ -18,6 +19,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Throwable;
 
@@ -200,6 +202,146 @@ class PlaidImportController extends Controller
         }
 
         return response()->noContent();
+    }
+
+    public function ledgerLinkCandidates(Request $request, PlaidPendingImport $pendingImport): JsonResponse
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'pending') {
+            return response()->json(['message' => 'This import is not pending.'], 422);
+        }
+
+        $user = $request->user();
+        if ($user->family_id === null) {
+            return response()->json([
+                'candidates' => [],
+                'message' => 'You must belong to a family to link imports to existing transactions.',
+            ]);
+        }
+
+        if ($pendingImport->is_transfer) {
+            return response()->json([
+                'candidates' => [],
+                'message' => 'For transfer-style rows, use the Transfers tab.',
+            ]);
+        }
+
+        $scored = $this->matchingService->findLedgerLinkCandidatesForPendingImport(
+            $pendingImport,
+            (int) $user->family_id,
+        );
+
+        $candidates = [];
+        foreach ($scored as $row) {
+            $tx = $row['transaction'];
+            $candidates[] = [
+                'id' => $tx->id,
+                'date' => $tx->transaction_date?->format('Y-m-d'),
+                'amount' => $tx->amount,
+                'description' => $tx->description,
+                'type' => $tx->type,
+                'fund_id' => $tx->fund_id,
+                'category' => $tx->category ? [
+                    'id' => $tx->category->id,
+                    'name' => $tx->category->name,
+                    'icon' => $tx->category->icon,
+                ] : null,
+                'match_score' => round($row['score'], 4),
+            ];
+        }
+
+        return response()->json(['candidates' => $candidates]);
+    }
+
+    public function linkToLedger(LinkPlaidPendingImportRequest $request, PlaidPendingImport $pendingImport): JsonResponse
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'pending') {
+            return response()->json(['message' => 'This import is not pending.'], 422);
+        }
+
+        if ($pendingImport->is_transfer) {
+            return response()->json(['message' => 'Use the Transfers tab for this row.'], 422);
+        }
+
+        $user = $request->user();
+        if ($user->family_id === null) {
+            return response()->json(['message' => 'You must belong to a family to link imports.'], 403);
+        }
+
+        $ledgerId = (int) $request->validated('transaction_id');
+
+        try {
+            $ledger = DB::transaction(function () use ($pendingImport, $ledgerId, $user): Transaction {
+                $ledger = Transaction::query()->whereKey($ledgerId)->lockForUpdate()->first();
+                if ($ledger === null) {
+                    throw new InvalidArgumentException('Transaction not found.');
+                }
+
+                if ((int) $ledger->family_id !== (int) $user->family_id) {
+                    throw new InvalidArgumentException('That transaction is not in your family.');
+                }
+
+                if (! $this->matchingService->canLinkPendingImportToLedger($pendingImport, $ledger)) {
+                    throw new InvalidArgumentException(
+                        'That transaction does not match this import (same amount and type within 60 days, and not already linked to Plaid).'
+                    );
+                }
+
+                $plaidTid = (string) $pendingImport->plaid_transaction_id;
+                if ($plaidTid !== '') {
+                    $duplicate = Transaction::query()
+                        ->where('family_id', $ledger->family_id)
+                        ->where('plaid_transaction_id', $plaidTid)
+                        ->whereKeyNot($ledger->id)
+                        ->exists();
+
+                    if ($duplicate) {
+                        throw new InvalidArgumentException('This Plaid transaction is already linked to another ledger row.');
+                    }
+                }
+
+                $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
+
+                $this->matchingService->learnFromConfirmation($user->id, $merchantName, [
+                    'category_id' => $ledger->category_id,
+                    'type' => $ledger->type,
+                    'fund_id' => $ledger->fund_id,
+                    'advance_fund_id' => $ledger->advance_fund_id,
+                    'is_non_necessity' => (bool) $ledger->is_non_necessity,
+                    'is_split' => (bool) $ledger->is_split,
+                    'action' => 'categorize',
+                ]);
+
+                $ledger->forceFill([
+                    'plaid_transaction_id' => $pendingImport->plaid_transaction_id,
+                    'import_source' => 'plaid',
+                ])->save();
+
+                $pendingImport->forceFill([
+                    'status' => 'confirmed',
+                    'transaction_id' => $ledger->id,
+                ])->save();
+
+                return $ledger->fresh();
+            });
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not link this import. Try again.'], 500);
+        }
+
+        return response()->json(
+            $ledger->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
+        );
     }
 
     public function calibrationData(Request $request, PlaidItem $plaidItem): JsonResponse

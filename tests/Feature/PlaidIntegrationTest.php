@@ -9,6 +9,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Services\PlaidTransactionSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -55,6 +56,48 @@ class PlaidIntegrationTest extends TestCase
         $this->actingAs($user)->getJson('/plaid/link-token')
             ->assertOk()
             ->assertJson(['link_token' => 'link-sandbox-test']);
+    }
+
+    public function test_link_token_create_sends_financekit_supported_when_enabled(): void
+    {
+        config(['plaid.financekit_supported' => true]);
+
+        Http::fake(function (Request $request) {
+            if (! str_contains($request->url(), 'link/token/create')) {
+                return Http::response([], 404);
+            }
+            $body = json_decode($request->body(), true);
+            $this->assertIsArray($body);
+            $this->assertTrue($body['financekit_supported'] ?? false);
+
+            return Http::response(['link_token' => 'link-fk-on'], 200);
+        });
+
+        $user = $this->familyUser();
+        $this->actingAs($user)->getJson('/plaid/link-token')
+            ->assertOk()
+            ->assertJson(['link_token' => 'link-fk-on']);
+    }
+
+    public function test_link_token_create_omits_financekit_supported_when_disabled(): void
+    {
+        config(['plaid.financekit_supported' => false]);
+
+        Http::fake(function (Request $request) {
+            if (! str_contains($request->url(), 'link/token/create')) {
+                return Http::response([], 404);
+            }
+            $body = json_decode($request->body(), true);
+            $this->assertIsArray($body);
+            $this->assertArrayNotHasKey('financekit_supported', $body);
+
+            return Http::response(['link_token' => 'link-fk-off'], 200);
+        });
+
+        $user = $this->familyUser();
+        $this->actingAs($user)->getJson('/plaid/link-token')
+            ->assertOk()
+            ->assertJson(['link_token' => 'link-fk-off']);
     }
 
     public function test_exchange_creates_item_and_returns_pull_payload_without_creating_ledger_transactions(): void

@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\PlaidMerchantRule;
+use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 
 class PlaidMatchingService
 {
@@ -218,6 +220,93 @@ class PlaidMatchingService
         $rule->refresh();
 
         return $rule;
+    }
+
+    /**
+     * Ledger rows that plausibly match a pending import (wider date window than auto-calibration matching).
+     *
+     * @return list<array{transaction: Transaction, score: float}>
+     */
+    public function findLedgerLinkCandidatesForPendingImport(
+        PlaidPendingImport $import,
+        int $familyId,
+        int $dayRadius = 45,
+        int $limit = 25,
+    ): array {
+        $expectedType = $import->suggested_type === 'income' ? 'income' : 'expense';
+        $ledgerAmount = (float) $import->amount;
+
+        $center = $import->date instanceof CarbonInterface
+            ? $import->date->copy()->startOfDay()
+            : Carbon::parse((string) $import->date)->startOfDay();
+
+        $merchantRaw = (string) ($import->merchant_name ?? $import->raw_name ?? '');
+        $merchantLower = mb_strtolower(trim($merchantRaw));
+
+        $candidates = Transaction::query()
+            ->with('category')
+            ->where('family_id', $familyId)
+            ->whereNull('plaid_transaction_id')
+            ->where('type', $expectedType)
+            ->whereBetween('transaction_date', [
+                $center->copy()->subDays($dayRadius)->toDateString(),
+                $center->copy()->addDays($dayRadius)->toDateString(),
+            ])
+            ->whereBetween('amount', [
+                $ledgerAmount - 0.01,
+                $ledgerAmount + 0.01,
+            ])
+            ->orderByDesc('transaction_date')
+            ->limit(200)
+            ->get();
+
+        $scored = [];
+        foreach ($candidates as $transaction) {
+            $scored[] = [
+                'transaction' => $transaction,
+                'score' => $this->merchantSimilarityScore($merchantLower, (string) ($transaction->description ?? '')),
+            ];
+        }
+
+        usort($scored, fn (array $a, array $b): int => $b['score'] <=> $a['score']);
+
+        return array_slice($scored, 0, $limit);
+    }
+
+    /**
+     * Whether a ledger row is safe to link to this pending import (type, amount, date drift, unlinked).
+     */
+    public function canLinkPendingImportToLedger(
+        PlaidPendingImport $import,
+        Transaction $ledger,
+        int $maxDateDriftDays = 60,
+    ): bool {
+        if (filled($ledger->plaid_transaction_id)) {
+            return false;
+        }
+
+        $expectedType = $import->suggested_type === 'income' ? 'income' : 'expense';
+        if ($ledger->type !== $expectedType) {
+            return false;
+        }
+
+        if (abs((float) $ledger->amount - (float) $import->amount) > 0.01) {
+            return false;
+        }
+
+        $pendingDay = $import->date instanceof CarbonInterface
+            ? $import->date->copy()->startOfDay()
+            : Carbon::parse((string) $import->date)->startOfDay();
+
+        $ledgerDay = $ledger->transaction_date instanceof CarbonInterface
+            ? $ledger->transaction_date->copy()->startOfDay()
+            : Carbon::parse((string) $ledger->transaction_date)->startOfDay();
+
+        if ($pendingDay->diffInDays($ledgerDay) > $maxDateDriftDays) {
+            return false;
+        }
+
+        return true;
     }
 
     private function merchantSimilarityScore(string $merchantLower, string $description): float

@@ -37,4 +37,17 @@ return [
     */
     'transactions_days_requested' => (int) env('PLAID_TRANSACTIONS_DAYS_REQUESTED', 90),
 
+    /*
+    |--------------------------------------------------------------------------
+    | FinanceKit / Apple Card in Link
+    |--------------------------------------------------------------------------
+    |
+    | When true, `/link/token/create` includes `financekit_supported: true` so Plaid
+    | Link can offer FinanceKit-backed institutions (e.g. Apple Card) where your
+    | Plaid contract and the end user's device support it. Disable if Plaid rejects
+    | the flag for your API version.
+    |
+    */
+    'financekit_supported' => (bool) env('PLAID_FINANCEKIT_SUPPORTED', true),
+
 ];

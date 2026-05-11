@@ -45,12 +45,18 @@
 
     <button
       type="button"
-      class="w-full rounded-xl bg-blue-600 py-3.5 px-4 text-center text-base font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 mb-6 min-h-[48px]"
+      class="w-full rounded-xl bg-blue-600 py-3.5 px-4 text-center text-base font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 mb-3 min-h-[48px]"
       :disabled="connecting"
       @click="openPlaidLink"
     >
       {{ connecting ? 'Opening…' : 'Connect a Bank' }}
     </button>
+    <p class="mb-6 text-xs leading-relaxed text-gray-500">
+      <span class="font-medium text-gray-400">Apple Card:</span>
+      Plaid only lists it when your Plaid account supports FinanceKit / Apple Card and you complete the flow on a compatible
+      <span class="text-gray-400">iPhone</span>
+      with a recent iOS—often with Wallet permission for this site. It may not appear in desktop browsers or if Apple or Plaid has not enabled the integration for your region.
+    </p>
 
     <h2 class="text-lg font-semibold text-white mb-3">Connected banks</h2>
     <p v-if="loadingItems" class="text-gray-400 text-sm">Loading…</p>

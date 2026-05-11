@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-05-11 — Plaid Link: `financekit_supported` (Apple Card / Wallet)
+
+- Files touched: `config/plaid.php`, `app/Http/Controllers/PlaidController.php`, `.env.example`, `resources/js/pages/BankConnections.vue`, `tests/Feature/PlaidIntegrationTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Link token creation optionally sends **`financekit_supported: true`** (on by default via `PLAID_FINANCEKIT_SUPPORTED`); Bank Connections includes a short note that Apple Card depends on Plaid/Apple support and is typically completed on a compatible iPhone with Wallet access.
+
+## 2026-05-11 — Import review: link to ledger + card dismiss on “To Review”
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `app/Http/Requests/LinkPlaidPendingImportRequest.php`, `app/Services/PlaidMatchingService.php`, `routes/web.php`, `resources/js/pages/PlaidImportReview.vue`, `tests/Feature/PlaidImportTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`GET /plaid/pending-imports/{id}/ledger-candidates`** returns scored family ledger matches (±45 days, same amount/type, no `plaid_transaction_id`). **`POST …/link`** attaches the pending Plaid id to the chosen transaction, runs **`learnFromConfirmation`** from the pending merchant string, marks the pending import **`confirmed`**, and intentionally **skips `ClosedMonthGuard`** so closed-month history can be linked. **To Review** UI adds suggest/link and card-payment dismiss (same **`dismiss-as-transfer`** endpoint as the Transfers tab, including **`?learn=true`**).
+
 ## 2026-05-11 — Import review tabs + transfer cards + `plaidItem` on pending JSON
 
 - Files touched: `app/Http/Controllers/PlaidImportController.php`, `resources/js/pages/PlaidImportReview.vue`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

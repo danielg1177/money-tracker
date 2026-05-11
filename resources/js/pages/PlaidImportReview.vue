@@ -210,6 +210,73 @@
                 </select>
               </div>
 
+              <div class="rounded-lg border border-gray-700/80 bg-gray-900/40 px-3 py-3">
+                <p class="text-xs font-medium text-gray-300">Already in your books?</p>
+                <p class="mt-1 text-xs text-gray-500">
+                  Link this bank line to an existing transaction (same amount and type, within about 60 days). The app learns the merchant from your ledger row.
+                </p>
+                <div class="mt-2 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    class="min-h-[44px] w-full rounded-lg border border-gray-600 bg-gray-800/80 px-3 py-2 text-sm font-medium text-gray-100 transition-colors hover:bg-gray-700 disabled:opacity-50"
+                    :disabled="actionId === row.id || loadingLinkCandidatesId === row.id"
+                    @click="loadLinkCandidates(row)"
+                  >
+                    {{ loadingLinkCandidatesId === row.id ? 'Loading…' : (linkCandidatesMap[row.id]?.length ? 'Refresh suggestions' : 'Suggest matches') }}
+                  </button>
+                  <template v-if="linkCandidatesMap[row.id]?.length">
+                    <label class="text-xs font-medium text-gray-400" :for="`link-${row.id}`">Pick transaction</label>
+                    <select
+                      :id="`link-${row.id}`"
+                      v-model="linkSelectedId[row.id]"
+                      class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                      :disabled="actionId === row.id"
+                    >
+                      <option value="">Select…</option>
+                      <option v-for="c in linkCandidatesMap[row.id]" :key="c.id" :value="String(c.id)">
+                        {{ formatLinkOptionLabel(c) }}
+                      </option>
+                    </select>
+                    <button
+                      type="button"
+                      class="min-h-[44px] w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      :disabled="actionId === row.id || !linkSelectedId[row.id]"
+                      @click="linkPendingToLedger(row)"
+                    >
+                      {{ actionId === row.id ? 'Linking…' : 'Link to selected' }}
+                    </button>
+                  </template>
+                  <p v-else-if="linkCandidatesLoaded[row.id] && !linkCandidatesMap[row.id]?.length" class="text-xs text-gray-500">
+                    No close matches found. Adjust the ledger transaction date or amount, or use Confirm / Dismiss below.
+                  </p>
+                </div>
+              </div>
+
+              <div class="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-3">
+                <p class="text-xs font-medium text-amber-100">Bank payment to a credit card?</p>
+                <p class="mt-1 text-xs text-amber-100/80">
+                  If this is paying Apple Card, Discover, etc. (not a new purchase), dismiss it here. “Always ignore” teaches the app to skip similar payments later.
+                </p>
+                <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <button
+                    type="button"
+                    class="min-h-[44px] w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:opacity-50 sm:w-auto"
+                    :disabled="actionId === row.id"
+                    @click="dismissPendingAsTransfer(row, true)"
+                  >
+                    {{ actionId === row.id ? 'Working…' : 'Always ignore' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-[44px] w-full rounded-lg border border-gray-600 bg-transparent px-3 py-2 text-sm font-semibold text-gray-200 transition-colors hover:bg-gray-800/80 disabled:opacity-50 sm:w-auto"
+                    :disabled="actionId === row.id"
+                    @click="dismissPendingAsTransfer(row, false)"
+                  >
+                    Dismiss once
+                  </button>
+                </div>
+              </div>
+
               <p v-if="rowErrors[row.id]" class="text-sm text-red-300">
                 {{ rowErrors[row.id] }}
               </p>
@@ -333,6 +400,10 @@ const forms = reactive({});
 const rowErrors = reactive({});
 const actionId = ref(null);
 const toast = ref({ message: '', variant: 'success' });
+const linkCandidatesMap = reactive({});
+const linkCandidatesLoaded = reactive({});
+const linkSelectedId = reactive({});
+const loadingLinkCandidatesId = ref(null);
 
 let toastTimer = null;
 
@@ -379,6 +450,13 @@ function formatMoney(amount) {
     return String(amount);
   }
   return Math.abs(n).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+}
+
+function formatLinkOptionLabel(c) {
+  const desc = (c.description || 'No description').slice(0, 48);
+  const cat = c.category ? ` (${c.category.name})` : '';
+
+  return `${formatDate(c.date)} — ${formatMoney(c.amount)} — ${desc}${cat}`;
 }
 
 function formatPlaidCategoryLabel(row) {
@@ -487,6 +565,9 @@ function removePendingRow(id) {
   }
   delete forms[id];
   delete rowErrors[id];
+  delete linkCandidatesMap[id];
+  delete linkCandidatesLoaded[id];
+  delete linkSelectedId[id];
   if (expandedId.value === id) {
     expandedId.value = null;
   }
@@ -570,6 +651,65 @@ async function dismissRow(row) {
   } catch (err) {
     console.error(err);
     rowErrors[row.id] = err.response?.data?.message || 'Could not dismiss.';
+  } finally {
+    actionId.value = null;
+  }
+}
+
+async function loadLinkCandidates(row) {
+  rowErrors[row.id] = '';
+  loadingLinkCandidatesId.value = row.id;
+  try {
+    const { data } = await window.axios.get(`/plaid/pending-imports/${row.id}/ledger-candidates`);
+    const list = Array.isArray(data?.candidates) ? data.candidates : [];
+    linkCandidatesMap[row.id] = list;
+    linkCandidatesLoaded[row.id] = true;
+    if (!linkSelectedId[row.id] && list.length === 1) {
+      linkSelectedId[row.id] = String(list[0].id);
+    }
+  } catch (err) {
+    console.error(err);
+    rowErrors[row.id] = err.response?.data?.message || 'Could not load suggestions.';
+    linkCandidatesMap[row.id] = [];
+    linkCandidatesLoaded[row.id] = true;
+  } finally {
+    loadingLinkCandidatesId.value = null;
+  }
+}
+
+async function linkPendingToLedger(row) {
+  rowErrors[row.id] = '';
+  const tid = linkSelectedId[row.id];
+  if (!tid) {
+    rowErrors[row.id] = 'Select a transaction to link.';
+
+    return;
+  }
+  actionId.value = row.id;
+  try {
+    await post(`/plaid/pending-imports/${row.id}/link`, { transaction_id: Number(tid) });
+    removePendingRow(row.id);
+    showToast('Linked to your existing transaction. Merchant rule updated.', 'success');
+  } catch (err) {
+    console.error(err);
+    rowErrors[row.id] = err.response?.data?.message || 'Could not link.';
+  } finally {
+    actionId.value = null;
+  }
+}
+
+async function dismissPendingAsTransfer(row, learn) {
+  actionId.value = row.id;
+  try {
+    const qs = learn ? '?learn=true' : '';
+    await post(`/plaid/pending-imports/${row.id}/dismiss-as-transfer${qs}`, {});
+    removePendingRow(row.id);
+    if (learn) {
+      showToast(`Future payments from ${merchantDisplayName(row)} will be automatically ignored`, 'success');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast(err.response?.data?.message || 'Could not dismiss.', 'error');
   } finally {
     actionId.value = null;
   }

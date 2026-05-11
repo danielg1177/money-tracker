@@ -43,8 +43,8 @@ History mode (`createWebHistory`). Route definitions:
 | `/` | redirect → `/dashboard` | — |
 | `/dashboard` | `Dashboard.vue` | `requiresAuth` |
 | `/transactions` | `Transactions.vue` | `requiresAuth` |
-| `/bank-connections` | `BankConnections.vue` | `requiresAuth` — Plaid Link, pending-import banner, sync-this-month, calibrate navigation, disconnect |
-| `/plaid/import-review` | `PlaidImportReview.vue` | `requiresAuth` — `GET /plaid/pending-imports` returns `pending` and `transfers` separately; **To Review** (badged) vs **Transfers** (amber badge) tabs; review tab keeps expand/confirm/dismiss; transfers tab shows explainer, Plaid category + institution, **Always Ignore** (`dismiss-as-transfer?learn=true` + toast) / **Dismiss Once** (`dismiss-as-transfer`); default tab is Transfers when only transfers remain |
+| `/bank-connections` | `BankConnections.vue` | `requiresAuth` — Plaid Link (`financekit_supported` on link token when enabled for Apple Card / Wallet where Plaid allows), pending-import banner, sync-this-month, calibrate navigation, disconnect; short Apple Card note under Connect |
+| `/plaid/import-review` | `PlaidImportReview.vue` | `requiresAuth` — `GET /plaid/pending-imports` returns `pending` and `transfers` separately; **To Review** vs **Transfers** (amber badge) tabs; review tab: expand / **Suggest matches** + **Link to selected** (`GET …/ledger-candidates`, `POST …/link`) for duplicates already on the ledger, **Always ignore** / **Dismiss once** card-payment dismiss (`POST …/dismiss-as-transfer`), plus Confirm / Dismiss; transfers tab unchanged |
 | `/plaid/calibrate/:itemId` | `PlaidCalibrate.vue` | `requiresAuth` — matched / unmatched bank / unmatched ledger tabs, apply `POST /plaid/items/{id}/calibrate` |
 | `/funds` | `Funds.vue` | `requiresAuth` |
 | `/closeout-rules` | `CloseoutRules.vue` | `requiresAuth` |

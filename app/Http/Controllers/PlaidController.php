@@ -22,7 +22,7 @@ class PlaidController extends Controller
 
         $user = $request->user();
 
-        $json = $plaidClient->post('/link/token/create', [
+        $payload = [
             'user' => [
                 'client_user_id' => (string) $user->id,
             ],
@@ -33,7 +33,13 @@ class PlaidController extends Controller
             'transactions' => [
                 'days_requested' => config('plaid.transactions_days_requested'),
             ],
-        ]);
+        ];
+
+        if (config('plaid.financekit_supported')) {
+            $payload['financekit_supported'] = true;
+        }
+
+        $json = $plaidClient->post('/link/token/create', $payload);
 
         return response()->json([
             'link_token' => $json['link_token'] ?? null,

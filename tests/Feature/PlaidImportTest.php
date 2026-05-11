@@ -352,4 +352,116 @@ class PlaidImportTest extends TestCase
 
         $this->assertSame(0, $exitCode);
     }
+
+    public function test_ledger_link_candidates_returns_matching_family_transactions(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import] = $this->createPendingImportForUser($user, 'txn-cand-1');
+
+        Transaction::factory()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 42.5,
+            'description' => 'Corner Store weekly',
+            'transaction_date' => $import->date->format('Y-m-d'),
+        ]);
+
+        $response = $this->actingAs($user)->getJson("/plaid/pending-imports/{$import->id}/ledger-candidates");
+
+        $response->assertOk();
+        $ids = collect($response->json('candidates'))->pluck('id')->all();
+        $this->assertNotEmpty($ids);
+    }
+
+    public function test_link_pending_import_to_existing_ledger_row_sets_plaid_id_and_learns_merchant_rule(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import, 'category' => $category] = $this->createPendingImportForUser($user, 'txn-link-1');
+
+        $ledger = Transaction::factory()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 42.5,
+            'description' => 'Corner Store purchase',
+            'transaction_date' => $import->date->format('Y-m-d'),
+        ]);
+
+        $response = $this->actingAs($user)->postJson("/plaid/pending-imports/{$import->id}/link", [
+            'transaction_id' => $ledger->id,
+        ]);
+
+        $response->assertOk();
+        $ledger->refresh();
+        $this->assertSame('txn-link-1', $ledger->plaid_transaction_id);
+        $this->assertSame('plaid', $ledger->import_source);
+
+        $import->refresh();
+        $this->assertSame('confirmed', $import->status);
+        $this->assertSame($ledger->id, $import->transaction_id);
+
+        $key = app(PlaidMatchingService::class)->normalizeMerchantKey(
+            (string) ($import->merchant_name ?? $import->raw_name ?? '')
+        );
+        $this->assertDatabaseHas('plaid_merchant_rules', [
+            'user_id' => $user->id,
+            'merchant_key' => $key,
+            'category_id' => $category->id,
+            'confirmation_count' => 1,
+        ]);
+    }
+
+    public function test_link_pending_import_returns_422_when_amounts_differ(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import, 'category' => $category] = $this->createPendingImportForUser($user, 'txn-link-bad');
+
+        $ledger = Transaction::factory()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 99.99,
+            'description' => 'Other',
+            'transaction_date' => $import->date->format('Y-m-d'),
+        ]);
+
+        $this->actingAs($user)->postJson("/plaid/pending-imports/{$import->id}/link", [
+            'transaction_id' => $ledger->id,
+        ])->assertStatus(422);
+    }
+
+    public function test_link_pending_import_returns_422_when_plaid_id_already_on_another_row(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import, 'category' => $category] = $this->createPendingImportForUser($user, 'txn-dup-plaid');
+
+        Transaction::factory()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 42.5,
+            'description' => 'Already linked row',
+            'transaction_date' => $import->date->format('Y-m-d'),
+            'plaid_transaction_id' => 'txn-dup-plaid',
+            'import_source' => 'plaid',
+        ]);
+
+        $ledger = Transaction::factory()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 42.5,
+            'description' => 'Target row',
+            'transaction_date' => $import->date->format('Y-m-d'),
+        ]);
+
+        $this->actingAs($user)->postJson("/plaid/pending-imports/{$import->id}/link", [
+            'transaction_id' => $ledger->id,
+        ])->assertStatus(422);
+    }
 }

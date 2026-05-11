@@ -136,6 +136,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/exchange', [PlaidController::class, 'exchange']);
         Route::get('/items', [PlaidController::class, 'items']);
         Route::get('/pending-imports', [PlaidImportController::class, 'index']);
+        Route::get('/pending-imports/{pendingImport}/ledger-candidates', [PlaidImportController::class, 'ledgerLinkCandidates']);
+        Route::post('/pending-imports/{pendingImport}/link', [PlaidImportController::class, 'linkToLedger']);
         Route::post('/pending-imports/{pendingImport}/confirm', [PlaidImportController::class, 'confirm']);
         Route::post('/pending-imports/{pendingImport}/dismiss', [PlaidImportController::class, 'dismiss']);
         Route::post('/pending-imports/{pendingImport}/dismiss-as-transfer', [PlaidImportController::class, 'dismissAsTransfer']);
