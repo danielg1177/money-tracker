@@ -219,7 +219,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 
 ### PlaidDailySyncCommand (`app/Console/Commands/PlaidDailySyncCommand.php`)
 
-- Signature: `plaid:daily-sync {--item=}` — when `--item` is set, syncs that `PlaidItem` id only; otherwise all rows. Each item: `PlaidTransactionSyncService::syncItem` (cursor + `processSyncedTransactions`); failures are `report`ed and the loop continues. Stdout line: `Synced {institution}: {n} added, {auto_created} auto-created, {pending} queued for review` where `added` is Plaid’s added count for the pull and the other two counts come from `PlaidPendingImport` rows for this `plaid_item_id` among the returned `added` transaction ids (`pending` vs `auto_created`).
+- Signature: `plaid:daily-sync {--item=}` — when `--item` is set, syncs that `PlaidItem` id only; otherwise all rows. Each item: `PlaidTransactionSyncService::syncItem` (cursor + `processSyncedTransactions`); failures are `report`ed and the loop continues. Stdout line: `Synced {institution}: {n} added, {auto_created} auto-created, {pending} queued for review` where `added` is Plaid’s added count for the pull and the other two counts come from `PlaidPendingImport` rows for this `plaid_item_id` among the returned `added` transaction ids (`pending` vs `auto_created`). **Scheduler:** the daily 02:00 registration in `routes/console.php` is currently **commented out** until production bank accounts are finalized; run the command manually or uncomment + restore `Schedule` import when ready.
 
 ### PlaidMatchingService (`app/Services/PlaidMatchingService.php`)
 - `findLedgerMatch(plaidRow, familyId)` — same as `findLedgerMatchWithScore` but returns only the `Transaction` or null.

@@ -134,4 +134,4 @@ These Form Request classes exist in `app/Http/Requests/` but are not used by the
 - `resources/js/components/App.vue` — legacy, orphaned
 - `resources/views/welcome.blade.php` — default Laravel welcome page, not in app flow
 - `database/seeders/DatabaseSeeder.php` seeds one admin user and one family without factories/fake data (production-safe with `--no-dev`)
-- `routes/console.php` — default `inspire` command and `Schedule::command('plaid:daily-sync')->dailyAt('02:00')` (requires a scheduler worker / cron calling `schedule:run`)
+- `routes/console.php` — default `inspire` command; **`plaid:daily-sync` is not scheduled** (commented out) until ops re-enables daily sync; the Artisan command still exists for manual `php artisan plaid:daily-sync` / `--item=`. When scheduled again, add `use Illuminate\Support\Facades\Schedule` and a cron/`schedule:run` worker.

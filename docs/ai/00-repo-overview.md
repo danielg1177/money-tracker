@@ -60,7 +60,7 @@ money-tracker/
 │       └── welcome.blade.php  # Default Laravel welcome (not used in app flow)
 ├── routes/
 │   ├── web.php                # All application routes (SPA views + JSON endpoints)
-│   └── console.php            # Artisan `inspire` + `Schedule` (`plaid:daily-sync` daily 02:00)
+│   └── console.php            # Artisan `inspire`; optional commented `Schedule` for `plaid:daily-sync` when enabled
 ├── tests/
 │   ├── Feature/               # 19 PHPUnit feature classes (see `tests/Feature/`; includes `PlaidIntegrationTest`, `PlaidImportTest`, `PlaidMatchingServiceTest`, `PlaidCalibrationServiceTest`)
 │   └── Unit/                  # ExampleTest stub
