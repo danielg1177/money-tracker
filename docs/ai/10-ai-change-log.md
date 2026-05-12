@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-11 — Ledger link suggestions scoped to importer’s own transactions
+
+- Files touched: `app/Services/PlaidMatchingService.php`, `app/Http/Requests/LinkPlaidPendingImportRequest.php`, `tests/Feature/PlaidImportTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`GET …/ledger-candidates`** only returns `transactions` where **`user_id`** matches the **pending import owner** (the bank-linked user). **`POST …/link`** validates `transaction_id` the same way, and **`canLinkPendingImportToLedger`** rejects another member’s row even if amount/date/type match. Other matching (`findLedgerMatch` for calibration/tests) is unchanged.
+
 ## 2026-05-11 — Disable scheduled `plaid:daily-sync` (manual sync only for now)
 
 - Files touched: `routes/console.php`, `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`

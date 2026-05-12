@@ -24,7 +24,9 @@ class LinkPlaidPendingImportRequest extends FormRequest
                 'required',
                 'integer',
                 Rule::exists('transactions', 'id')->where(
-                    fn ($query) => $query->where('family_id', $user?->family_id ?? 0)
+                    fn ($query) => $query
+                        ->where('family_id', $user?->family_id ?? 0)
+                        ->where('user_id', $user?->id ?? 0)
                 ),
             ],
         ];

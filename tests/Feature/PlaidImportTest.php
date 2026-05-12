@@ -415,7 +415,7 @@ class PlaidImportTest extends TestCase
         $this->assertSame(0, $exitCode);
     }
 
-    public function test_ledger_link_candidates_returns_matching_family_transactions(): void
+    public function test_ledger_link_candidates_returns_matching_transactions_for_importer(): void
     {
         $user = $this->familyUser();
         ['import' => $import] = $this->createPendingImportForUser($user, 'txn-cand-1');
@@ -434,6 +434,113 @@ class PlaidImportTest extends TestCase
         $response->assertOk();
         $ids = collect($response->json('candidates'))->pluck('id')->all();
         $this->assertNotEmpty($ids);
+    }
+
+    public function test_ledger_link_candidates_excludes_other_family_members_transactions(): void
+    {
+        $family = Family::factory()->create();
+        $userA = User::factory()->create(['family_id' => $family->id]);
+        $userB = User::factory()->create(['family_id' => $family->id]);
+        $item = $this->createPlaidItem($userA);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $userA->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-cand-owner-scope',
+            'plaid_account_id' => 'acc1',
+            'amount' => 42.5,
+            'date' => now()->toDateString(),
+            'merchant_name' => 'Shared Merchant',
+            'raw_name' => 'SHARED MERCHANT',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'suggested_fund_id' => null,
+            'suggested_advance_fund_id' => null,
+            'suggested_is_non_necessity' => false,
+            'confidence_score' => 0.5,
+            'status' => 'pending',
+            'transaction_id' => null,
+            'raw_payload' => [],
+            'is_transfer' => false,
+        ]);
+        $dateStr = $import->date->format('Y-m-d');
+
+        Transaction::factory()->create([
+            'family_id' => $family->id,
+            'user_id' => $userB->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 42.5,
+            'description' => 'Spouse entry',
+            'transaction_date' => $dateStr,
+        ]);
+
+        $own = Transaction::factory()->create([
+            'family_id' => $family->id,
+            'user_id' => $userA->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 42.5,
+            'description' => 'My manual entry',
+            'transaction_date' => $dateStr,
+        ]);
+
+        $response = $this->actingAs($userA)->getJson("/plaid/pending-imports/{$import->id}/ledger-candidates");
+        $response->assertOk();
+        $ids = collect($response->json('candidates'))->pluck('id')->all();
+        $this->assertContains($own->id, $ids);
+        $this->assertCount(1, $ids);
+    }
+
+    public function test_link_pending_import_rejects_ledger_row_not_owned_by_importer(): void
+    {
+        $family = Family::factory()->create();
+        $userA = User::factory()->create(['family_id' => $family->id]);
+        $userB = User::factory()->create(['family_id' => $family->id]);
+        $item = $this->createPlaidItem($userA);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $userA->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-link-spouse-row',
+            'plaid_account_id' => 'acc1',
+            'amount' => 42.5,
+            'date' => now()->toDateString(),
+            'merchant_name' => 'Store',
+            'raw_name' => 'STORE',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'suggested_fund_id' => null,
+            'suggested_advance_fund_id' => null,
+            'suggested_is_non_necessity' => false,
+            'confidence_score' => 0.5,
+            'status' => 'pending',
+            'transaction_id' => null,
+            'raw_payload' => [],
+            'is_transfer' => false,
+        ]);
+
+        $ledgerB = Transaction::factory()->create([
+            'family_id' => $family->id,
+            'user_id' => $userB->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 42.5,
+            'description' => 'Spouse manual',
+            'transaction_date' => $import->date->format('Y-m-d'),
+        ]);
+
+        $this->actingAs($userA)->postJson("/plaid/pending-imports/{$import->id}/link", [
+            'transaction_id' => $ledgerB->id,
+        ])->assertStatus(422)->assertJsonValidationErrors('transaction_id');
     }
 
     public function test_link_pending_import_to_existing_ledger_row_sets_plaid_id_and_learns_merchant_rule(): void

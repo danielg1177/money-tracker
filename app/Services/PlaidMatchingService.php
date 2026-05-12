@@ -225,6 +225,9 @@ class PlaidMatchingService
     /**
      * Ledger rows that plausibly match a pending import (wider date window than auto-calibration matching).
      *
+     * Only transactions **recorded by the pending import's user** (`transactions.user_id` = `PlaidPendingImport.user_id`)
+     * are considered: the bank feed is per linked account owner, so suggestions must not list other family members' ledger rows.
+     *
      * @return list<array{transaction: Transaction, score: float}>
      */
     public function findLedgerLinkCandidatesForPendingImport(
@@ -246,6 +249,7 @@ class PlaidMatchingService
         $candidates = Transaction::query()
             ->with('category')
             ->where('family_id', $familyId)
+            ->where('user_id', $import->user_id)
             ->whereNull('plaid_transaction_id')
             ->where('type', $expectedType)
             ->whereBetween('transaction_date', [
@@ -274,7 +278,7 @@ class PlaidMatchingService
     }
 
     /**
-     * Whether a ledger row is safe to link to this pending import (type, amount, date drift, unlinked).
+     * Whether a ledger row is safe to link to this pending import (type, amount, date drift, unlinked, same recorder).
      */
     public function canLinkPendingImportToLedger(
         PlaidPendingImport $import,
@@ -282,6 +286,10 @@ class PlaidMatchingService
         int $maxDateDriftDays = 60,
     ): bool {
         if (filled($ledger->plaid_transaction_id)) {
+            return false;
+        }
+
+        if ((int) $ledger->user_id !== (int) $import->user_id) {
             return false;
         }
 
