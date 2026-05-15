@@ -52,6 +52,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_05_08_020419_add_is_non_necessity_default_to_categories_table` | (Historical) added `is_non_necessity_default` boolean to `categories` |
 | `2026_05_08_122741_create_category_user_defaults_table` | Creates `category_user_defaults`, migrates category-level advance/non-necessity defaults to head-of-household users, and removes those columns from `categories` |
 | `2026_05_08_020419_add_is_non_necessity_to_transactions_table` | Adds `is_non_necessity` boolean (default false) to `transactions` |
+|| `2026_05_15_164512_add_dismiss_source_reviewed_at_to_plaid_pending_imports` | Adds `dismiss_source` varchar(16) nullable and `reviewed_at` timestamp nullable to `plaid_pending_imports` |
 
 ## Table schemas
 
@@ -219,6 +220,63 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `year` | integer | Closeout year (YYYY) |
 | `timestamps` | | |
 
+### `plaid_items`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint PK | |
+| `user_id` | bigint FK | → `users.id` |
+| `item_id` | varchar | Plaid item identifier |
+| `access_token` | varchar | Encrypted at rest |
+| `institution_id` | varchar nullable | |
+| `institution_name` | varchar nullable | Human-readable bank name (e.g. "Chase") |
+| `transactions_cursor` | varchar nullable | Plaid `/transactions/sync` cursor |
+| `timestamps` | | |
+
+### `plaid_pending_imports`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint PK | |
+| `user_id` | bigint FK | → `users.id` |
+| `plaid_item_id` | bigint FK | → `plaid_items.id` |
+| `plaid_transaction_id` | varchar | Plaid transaction identifier |
+| `plaid_account_id` | varchar nullable | |
+| `amount` | decimal(15,2) | Absolute value of transaction amount |
+| `date` | date | Transaction date from Plaid |
+| `merchant_name` | varchar nullable | Cleaned merchant name from Plaid |
+| `raw_name` | varchar | Raw `name` field from Plaid payload |
+| `suggested_category_id` | bigint FK nullable | → `categories.id` |
+| `suggested_type` | varchar nullable | `income` or `expense` |
+| `suggested_fund_id` | bigint FK nullable | → `funds.id` |
+| `suggested_advance_fund_id` | bigint FK nullable | → `funds.id` |
+| `suggested_is_non_necessity` | boolean | default false |
+| `confidence_score` | decimal(6,4) nullable | Merchant rule confidence (0.0–1.0) |
+| `status` | varchar | `pending` \| `auto_created` \| `confirmed` \| `dismissed` |
+| `transaction_id` | bigint FK nullable | → `transactions.id`; set when confirmed or auto-created |
+| `raw_payload` | json nullable | Full Plaid transaction payload |
+| `is_transfer` | boolean | default false; true when Plaid classified as transfer |
+| `plaid_category_primary` | varchar nullable | Plaid PFC primary category |
+| `plaid_category_detailed` | varchar nullable | Plaid PFC detailed category |
+| `dismiss_source` | varchar(16) nullable | `'auto'` (merchant rule dismiss during sync) \| `'manual'` (user dismissed in UI); null for non-dismissed rows |
+| `reviewed_at` | timestamp nullable | Set when user reviews/audits an auto-dismissed entry; once set, row is excluded from the Ignored review queue |
+| `timestamps` | | |
+
+### `plaid_merchant_rules`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint PK | |
+| `user_id` | bigint FK | → `users.id` |
+| `merchant_key` | varchar | Normalized merchant lookup key (lowercase, alphanumeric + spaces) |
+| `category_id` | bigint FK nullable | → `categories.id` |
+| `type` | varchar nullable | `income` or `expense` |
+| `fund_id` | bigint FK nullable | → `funds.id` |
+| `advance_fund_id` | bigint FK nullable | → `funds.id` |
+| `is_non_necessity` | boolean | default false |
+| `is_split` | boolean | default false |
+| `confirmation_count` | integer | Explicit confirmations; `≥ 3` + score `≥ 0.80` = auto-create eligible |
+| `total_seen_count` | integer | Total times rule was matched; used for confidence scoring |
+| `action` | varchar | `categorize` (create pending or auto-create) \| `dismiss` (auto-dismiss on sync) |
+| `timestamps` | | |
+
 ## Entity relationship summary
 
 ```
@@ -226,8 +284,11 @@ families ──< users ──< funds ──< fund_rules
                 │             └──< fund_movements
                 │             └──< debts (fund_id)
                 ├──< categories
-                └──< transactions ──< transaction_splits
-                                  └──< debts (transaction_id)
+                ├──< transactions ──< transaction_splits
+                │                 └──< debts (transaction_id)
+                │                 └──< plaid_pending_imports (transaction_id)
+                └──< plaid_items ──< plaid_pending_imports
+users ──< plaid_merchant_rules
 debts: debtor_id → users, creditor_id → users (nullable)
 ```
 

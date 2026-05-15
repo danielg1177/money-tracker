@@ -38,7 +38,7 @@
 - `debt_id` links a payment transaction to the debt it settles
 - `paid_by_user_id` tracks which user initiated the payment (may differ from `user_id` for creditor income rows)
 - `is_closeout_initiated` distinguishes manual rows (`false`) from backend-generated closeout movement rows (`true`) across debt payments, fund allocations, and title-completion expenses
-- Relations: `belongsTo(Family)`, `belongsTo(User)`, `belongsTo(User, 'paid_by_user_id')` as `paidByUser`, `belongsTo(Category)`, `belongsTo(Fund)`, `belongsTo(Fund, 'advance_fund_id')` as `advanceFund`, `belongsTo(Debt)` via `debt_id`, `belongsTo(Transaction, 'mirror_transaction_id')` as `mirrorTransaction`, `hasMany(TransactionSplit)` as `splits`, `hasMany(Debt)` as `debts` (split-linked debts)
+- Relations: `belongsTo(Family)`, `belongsTo(User)`, `belongsTo(User, 'paid_by_user_id')` as `paidByUser`, `belongsTo(Category)`, `belongsTo(Fund)`, `belongsTo(Fund, 'advance_fund_id')` as `advanceFund`, `belongsTo(Debt)` via `debt_id`, `belongsTo(Transaction, 'mirror_transaction_id')` as `mirrorTransaction`, `hasMany(TransactionSplit)` as `splits`, `hasMany(Debt)` as `debts` (split-linked debts), `hasOne(PlaidPendingImport, 'transaction_id')` as `plaidPendingImport`
 
 ### PlaidItem (`app/Models/PlaidItem.php`)
 - Fields: `user_id`, `item_id` (Plaid), `access_token` (encrypted at rest), `institution_id`, `institution_name`, `transactions_cursor` (for `/transactions/sync`)
@@ -47,7 +47,9 @@
 ### PlaidPendingImport (`app/Models/PlaidPendingImport.php`)
 - Staging row for a Plaid transaction before ledger confirm; table `plaid_pending_imports` (see migration `2026_05_11_210000_add_plaid_import_infrastructure.php`).
 - `resolveRouteBinding` scopes `{pendingImport}` routes to `user_id` = authenticated user.
-- Casts: `amount` decimal:2, `date` date, `raw_payload` array, `suggested_is_non_necessity` bool, `confidence_score` decimal:4.
+- Casts: `amount` decimal:2, `date` date, `raw_payload` array, `suggested_is_non_necessity` bool, `confidence_score` decimal:4, `reviewed_at` datetime.
+- `dismiss_source` — nullable varchar(16); `'auto'` when dismissed by a merchant rule during sync, `'manual'` when dismissed by the user via the UI (dismiss / always-ignore). Null on non-dismissed rows.
+- `reviewed_at` — nullable timestamp; set when a user reviews/audits an auto-dismissed entry so it stops appearing in the review queue.
 - Relations: `belongsTo(User)`, `belongsTo(PlaidItem)` as `plaidItem`, `belongsTo(Transaction)` as `transaction`.
 - `scopePending` — `status = pending`. `isAutoCreateEligible()` always `false` (merchant rules gate auto-create).
 
@@ -111,7 +113,7 @@
 All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRequests`).
 
 ### TransactionController
-- `index(Request)` — returns viewer-scoped family transactions (`user_id` or `transaction_splits` participation), filtered by `start_date`/`end_date`, eager-loads `user`, `category`, `splits.user`, `debt` (+ nested relations), `advanceFund`; excludes split debt-payment expenses for the creditor when they duplicate that creditor’s repayment income row
+- `index(Request)` — returns viewer-scoped family transactions (`user_id` or `transaction_splits` participation), filtered by `start_date`/`end_date`, eager-loads `user`, `category`, `splits.user`, `debt` (+ nested relations), `advanceFund`, `plaidPendingImport.plaidItem` (null for non-Plaid rows; provides `institution_name`); excludes split debt-payment expenses for the creditor when they duplicate that creditor’s repayment income row
 - `store(StoreTransactionRequest)` — validates closed-month status via `ClosedMonthGuard`, then delegates to `TransactionService::createTransaction`
 - `update(StoreTransactionRequest, Transaction)` — checks ownership or same family, validates both the existing row month and target payload month via `ClosedMonthGuard`, then delegates to `TransactionService::updateTransaction`
 - `destroy(Transaction)` — checks ownership or same family; validates closed-month status via `ClosedMonthGuard`; delegates `TransactionService::deleteTransaction()` (paired debt-payment cleanup + mirror rows)
@@ -225,7 +227,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - Constructor: `PlaidClient`, `PlaidMatchingService`, `TransactionService`.
 - `hydrateInstitution(PlaidItem)` — `/item/get` plus `/institutions/get_by_id` for display name.
 - `syncItem(PlaidItem)` — loops `/transactions/sync` using stored cursor; persists `transactions_cursor`; then `processSyncedTransactions` for the accumulated `added` / `modified` / `removed` arrays. Returns aggregated `counts`, `added`, `modified`, `removed`, and deduped `accounts` (raw Plaid shapes).
-- `processSyncedTransactions(PlaidItem, added, modified, removed)` — **Added:** skip if `plaid_pending_imports` already holds `plaid_transaction_id` (any status) or the family already has a `transactions` row with that Plaid id; `getSuggestion`; if the matching `PlaidMerchantRule` has `action=dismiss`, insert a `PlaidPendingImport` with `status=dismissed` (dedupes future syncs), optional Plaid PFC columns, `recordSeen`, then skip the normal pending + auto-create path; otherwise create `PlaidPendingImport` (`status=pending`, suggested fields, `raw_payload`, PFC columns when present); if `is_auto_eligible` and user has `family_id`, `TransactionService::createTransaction` then set `plaid_transaction_id` + `import_source=plaid`, mark pending `auto_created` and link `transaction_id` (failures leave pending); `recordSeen` on matching `PlaidMerchantRule` when present. **Modified:** pending rows (`status=pending`) get `amount`/`date`/`raw_payload` refresh and linked `transaction_id` row amount/date when set; also updates `transactions` for the user’s family with that Plaid id. **Removed:** deletes still-`pending` `plaid_pending_imports` for that Plaid id.
+- `processSyncedTransactions(PlaidItem, added, modified, removed)` — **Added:** skip if `plaid_pending_imports` already holds `plaid_transaction_id` (any status) or the family already has a `transactions` row with that Plaid id; `getSuggestion`; if the matching `PlaidMerchantRule` has `action=dismiss`, insert a `PlaidPendingImport` with `status=dismissed`, `dismiss_source='auto'` (dedupes future syncs), optional Plaid PFC columns, `recordSeen`, then skip the normal pending + auto-create path; otherwise create `PlaidPendingImport` (`status=pending`, suggested fields, `raw_payload`, PFC columns when present); if `is_auto_eligible` and user has `family_id`, `TransactionService::createTransaction` then set `plaid_transaction_id` + `import_source=plaid`, mark pending `auto_created` and link `transaction_id` (failures leave pending); `recordSeen` on matching `PlaidMerchantRule` when present. **Modified:** pending rows (`status=pending`) get `amount`/`date`/`raw_payload` refresh and linked `transaction_id` row amount/date when set; also updates `transactions` for the user’s family with that Plaid id. **Removed:** deletes still-`pending` `plaid_pending_imports` for that Plaid id.
 - `fetchByDateRange(PlaidItem, startDate, endDate)` — paginated `POST /transactions/get` (`options.count` 500 + `offset`) until `total_transactions` is satisfied; returns merged `transactions` rows (calibration).
 - `ingestPlaidRowsAsPending(PlaidItem, rows)` — for each Plaid row array, reuses the same skip + `processAddedRow` path as sync **added**; returns `{ pending_created, auto_created }` (counts by resulting `PlaidPendingImport.status`).
 

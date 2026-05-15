@@ -272,6 +272,7 @@ class PlaidTransactionSyncService
                 'suggested_is_non_necessity' => $suggestion['is_non_necessity'],
                 'confidence_score' => $suggestion['confidence_score'],
                 'status' => 'dismissed',
+                'dismiss_source' => 'auto',
                 'transaction_id' => null,
                 'raw_payload' => $row,
                 'is_transfer' => false,

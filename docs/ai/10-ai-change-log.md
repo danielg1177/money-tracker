@@ -11,6 +11,53 @@ Format:
 
 ---
 
+## 2026-05-15 — Plaid import review: full auto-created & auto-dismissed workflow (Prompts 1–7)
+
+Combined summary of a 7-prompt development series:
+
+- **New columns** on `plaid_pending_imports`: `dismiss_source` varchar(16) nullable (`'auto'` / `'manual'`) and `reviewed_at` timestamp nullable.
+- **New relationship** `Transaction::plaidPendingImport(): HasOne`; `TransactionController::index` eager-loads `plaidPendingImport.plaidItem` — adds `institution_name` to `GET /transactions` JSON.
+- **Four new API endpoints** in `PlaidImportController`: `approve-auto-created` (204, reinforces rule), `correct-auto-created` (updates transaction + rule, returns JSON), `acknowledge-auto-dismiss` (204, increments `total_seen_count`, sets `reviewed_at`), `restore-from-dismiss` (creates transaction, retrains rule to `categorize`, returns JSON).
+- **`GET /plaid/pending-imports`** upgraded: returns `auto_created` array (was integer count) and new `dismissed` array (`dismiss_source=auto`, `reviewed_at` null); `?count_only=1` adds `auto_created_count` and `dismissed_count`.
+- **PlaidImportReview.vue** gains two new tabs: **Auto-Created** (approve or inline-correct) and **Ignored** (confirm dismiss or restore with form); tab bar compacted to 4 short labels for mobile. Institution name badge added to "To Review" cards.
+- **Transactions.vue** shows blue institution name badge for Plaid-imported transactions.
+- Files touched: migration `2026_05_15_164512_add_dismiss_source_reviewed_at_to_plaid_pending_imports`, `app/Models/PlaidPendingImport.php`, `app/Models/Transaction.php`, `app/Services/PlaidTransactionSyncService.php`, `app/Http/Controllers/PlaidImportController.php`, `app/Http/Controllers/TransactionController.php`, `routes/web.php`, `resources/js/pages/PlaidImportReview.vue`, `resources/js/pages/Transactions.vue`, `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`.
+
+## 2026-05-15 — Show Plaid institution name in To Review cards and Transactions list
+
+- Files touched: `resources/js/pages/PlaidImportReview.vue`, `resources/js/pages/Transactions.vue`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **To Review** tab cards now show a blue institution badge (e.g. "Chase") when `plaid_item.institution_name` is present — the wrapper `v-if` was widened to include `institutionName(row)` so the badge row renders even when category/confidence are absent. **Transactions** list items now show the same blue institution badge inline below the description for any transaction where `import_source === 'plaid'` and the nested `plaid_pending_import.plaid_item.institution_name` is truthy (data comes from the `plaidPendingImport.plaidItem` eager-load added in an earlier session).
+
+## 2026-05-15 — PlaidImportReview: Ignored tab (acknowledge / restore)
+
+- Files touched: `resources/js/pages/PlaidImportReview.vue`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Import Review page gains a fourth **Ignored** tab (loaded from the new `dismissed` array in `GET /plaid/pending-imports` — `dismiss_source='auto'`, `reviewed_at` null). **Correct to Ignore** calls `POST …/acknowledge-auto-dismiss` (204) and removes the row. **Shouldn't Be Ignored** expands an inline restore form (type/category/fund) that calls `POST …/restore-from-dismiss` to create the transaction and retrain the rule. Tab bar refactored to 4 compact tabs with shortened labels (Review / Transfers / Auto / Ignored) and `aria-label` for accessibility.
+
+## 2026-05-15 — PlaidImportReview: Auto-Created tab (approve / correct)
+
+- Files touched: `resources/js/pages/PlaidImportReview.vue`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Import Review page gains a third **Auto-Created** tab. Tab shows all `auto_created` pending imports (loaded from the new `auto_created` array in `GET /plaid/pending-imports`). **✓ Looks Correct** calls `POST …/approve-auto-created` (204) and removes the row; **Correct It** expands an inline form (type/category/fund) that calls `POST …/correct-auto-created` to update the transaction and retrain the rule. Old `recentlyAutoCreated` banner removed.
+
+## 2026-05-15 — Plaid auto-dismissed: acknowledge/restore endpoints + index returns dismissed rows
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `routes/web.php`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `GET /plaid/pending-imports` now includes `dismissed` (auto-dismissed rows with `reviewed_at` null, with `plaidItem`); `?count_only=1` adds `dismissed_count`. Two new endpoints: `POST /plaid/pending-imports/{id}/acknowledge-auto-dismiss` (204 — calls `recordSeen`, sets `reviewed_at`, removes from queue) and `POST /plaid/pending-imports/{id}/restore-from-dismiss` (creates ledger transaction, retrains rule to `categorize`, marks import `confirmed`, returns transaction JSON).
+
+## 2026-05-15 — Plaid auto-created: approve/correct endpoints + index returns full rows
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `routes/web.php`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `GET /plaid/pending-imports` now returns `auto_created` (full rows with `suggestedCategory`, `plaidItem`, `transaction.category`) instead of the `recently_auto_created` integer count; `?count_only=1` now also includes `auto_created_count`. Two new endpoints: `POST /plaid/pending-imports/{id}/approve-auto-created` (204 — reinforces merchant rule) and `POST /plaid/pending-imports/{id}/correct-auto-created` (returns updated transaction — updates transaction fields and retrains merchant rule).
+
+## 2026-05-15 — Transaction model: reverse HasOne to PlaidPendingImport; eager-load institution_name
+
+- Files touched: `app/Models/Transaction.php`, `app/Http/Controllers/TransactionController.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `Transaction` now has a `plaidPendingImport()` `HasOne` relationship (FK `transaction_id`). `GET /transactions` eager-loads `plaidPendingImport.plaidItem` so each Plaid-imported transaction includes `plaid_pending_import.plaid_item.institution_name` in the JSON response; non-Plaid transactions have `plaid_pending_import: null`.
+
+## 2026-05-15 — Track dismiss source and reviewed_at on plaid_pending_imports
+
+- Files touched: `database/migrations/2026_05_15_164512_add_dismiss_source_reviewed_at_to_plaid_pending_imports.php` (new), `app/Models/PlaidPendingImport.php`, `app/Services/PlaidTransactionSyncService.php`, `app/Http/Controllers/PlaidImportController.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: New `dismiss_source` column (varchar 16, nullable) on `plaid_pending_imports` — set to `'auto'` when `PlaidTransactionSyncService` auto-dismisses via merchant rule, and `'manual'` when the user dismisses via `PlaidImportController::dismiss()` or `dismissAsTransfer()`. New `reviewed_at` timestamp column (nullable) reserved for marking an auto-dismissed entry as audited so it can be excluded from a future review queue.
+
 ## 2026-05-15 — Month summary: fund advance transaction drill-down on closeout rules
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

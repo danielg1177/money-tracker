@@ -142,6 +142,10 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/pending-imports/{pendingImport}/confirm', [PlaidImportController::class, 'confirm']);
         Route::post('/pending-imports/{pendingImport}/dismiss', [PlaidImportController::class, 'dismiss']);
         Route::post('/pending-imports/{pendingImport}/dismiss-as-transfer', [PlaidImportController::class, 'dismissAsTransfer']);
+        Route::post('/pending-imports/{pendingImport}/approve-auto-created', [PlaidImportController::class, 'approveAutoCreated']);
+        Route::post('/pending-imports/{pendingImport}/correct-auto-created', [PlaidImportController::class, 'correctAutoCreated']);
+        Route::post('/pending-imports/{pendingImport}/acknowledge-auto-dismiss', [PlaidImportController::class, 'acknowledgeAutoDismiss']);
+        Route::post('/pending-imports/{pendingImport}/restore-from-dismiss', [PlaidImportController::class, 'restoreFromDismiss']);
         Route::get('/items/{plaidItem}/calibrate', [PlaidImportController::class, 'calibrationData']);
         Route::post('/items/{plaidItem}/calibrate', [PlaidImportController::class, 'applyCalibration']);
         Route::post('/items/{plaidItem}/sync-month', [PlaidImportController::class, 'syncMonth']);

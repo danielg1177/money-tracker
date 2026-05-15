@@ -295,6 +295,11 @@
                 <p v-if="transaction.description" class="hidden sm:block text-gray-400 text-xs truncate">
                   {{ transaction.description }}
                 </p>
+                <div v-if="transaction.import_source === 'plaid' && transaction.plaid_pending_import?.plaid_item?.institution_name" class="mt-1 flex flex-wrap items-center gap-1.5">
+                  <span class="inline-flex items-center rounded-full border border-blue-800/40 bg-blue-950/30 px-2 py-0.5 text-xs text-blue-300">
+                    {{ transaction.plaid_pending_import.plaid_item.institution_name }}
+                  </span>
+                </div>
                 <div v-if="transaction.user?.name" class="hidden sm:block text-xs text-gray-500 mt-1.5">
                   {{ transaction.user.name }}
                 </div>

@@ -18,8 +18,9 @@
       <button
         type="button"
         role="tab"
+        aria-label="To Review"
         :aria-selected="activeTab === 'review'"
-        class="flex min-h-[44px] min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold transition-colors"
+        class="flex min-h-[44px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-1 py-2 text-xs font-semibold transition-colors"
         :class="
           activeTab === 'review'
             ? 'bg-gray-800 text-white shadow-sm'
@@ -27,9 +28,9 @@
         "
         @click="activeTab = 'review'"
       >
-        <span>To Review</span>
+        <span>Review</span>
         <span
-          class="inline-flex h-6 min-w-[1.5rem] shrink-0 items-center justify-center rounded-full bg-gray-700 px-2 text-xs font-bold text-white"
+          class="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-gray-700 px-1.5 text-xs font-bold text-white"
         >
           {{ pendingImports.length }}
         </span>
@@ -37,8 +38,9 @@
       <button
         type="button"
         role="tab"
+        aria-label="Transfers"
         :aria-selected="activeTab === 'transfers'"
-        class="flex min-h-[44px] min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold transition-colors"
+        class="flex min-h-[44px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-1 py-2 text-xs font-semibold transition-colors"
         :class="
           activeTab === 'transfers'
             ? 'bg-gray-800 text-white shadow-sm'
@@ -48,22 +50,53 @@
       >
         <span>Transfers</span>
         <span
-          class="inline-flex h-6 min-w-[1.5rem] shrink-0 items-center justify-center rounded-full bg-amber-900/80 px-2 text-xs font-bold text-amber-100 ring-1 ring-amber-700/50"
+          class="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-amber-900/80 px-1.5 text-xs font-bold text-amber-100 ring-1 ring-amber-700/50"
         >
           {{ transferImports.length }}
         </span>
       </button>
+      <button
+        type="button"
+        role="tab"
+        aria-label="Auto-Created"
+        :aria-selected="activeTab === 'auto-created'"
+        class="flex min-h-[44px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-1 py-2 text-xs font-semibold transition-colors"
+        :class="
+          activeTab === 'auto-created'
+            ? 'bg-gray-800 text-white shadow-sm'
+            : 'text-gray-400 hover:text-gray-200'
+        "
+        @click="activeTab = 'auto-created'"
+      >
+        <span>Auto</span>
+        <span
+          class="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-emerald-900/80 px-1.5 text-xs font-bold text-emerald-100 ring-1 ring-emerald-700/50"
+        >
+          {{ autoCreatedImports.length }}
+        </span>
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-label="Ignored"
+        :aria-selected="activeTab === 'ignored'"
+        class="flex min-h-[44px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-1 py-2 text-xs font-semibold transition-colors"
+        :class="
+          activeTab === 'ignored'
+            ? 'bg-gray-800 text-white shadow-sm'
+            : 'text-gray-400 hover:text-gray-200'
+        "
+        @click="activeTab = 'ignored'"
+      >
+        <span>Ignored</span>
+        <span
+          v-if="dismissedImports.length > 0"
+          class="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-gray-700 px-1.5 text-xs font-bold text-gray-300 ring-1 ring-gray-600/50"
+        >
+          {{ dismissedImports.length }}
+        </span>
+      </button>
     </div>
-
-    <p
-      v-if="recentlyAutoCreated > 0"
-      class="mb-4 rounded-xl border border-gray-700/80 bg-gray-800/60 px-3 py-2.5 text-sm text-gray-300"
-    >
-      We auto-imported
-      {{ recentlyAutoCreated }}
-      {{ recentlyAutoCreated === 1 ? 'transaction' : 'transactions' }}
-      in the last 30 days based on your history.
-    </p>
 
     <p v-if="noFamilyCategories" class="mb-4 rounded-xl border border-amber-700/50 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
       You need a family and categories before you can confirm imports. Ask an admin to assign your account to a family.
@@ -103,7 +136,7 @@
                     {{ displayType(row) === 'income' ? '+' : '−' }}{{ formatMoney(row.amount) }}
                   </span>
                 </p>
-                <div v-if="row.suggested_category || hasConfidence(row)" class="mt-2 flex flex-wrap items-center gap-2">
+                <div v-if="row.suggested_category || hasConfidence(row) || institutionName(row)" class="mt-2 flex flex-wrap items-center gap-2">
                   <span
                     v-if="row.suggested_category"
                     class="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-gray-600 bg-gray-900/80 px-2.5 py-0.5 text-xs text-gray-200"
@@ -116,6 +149,12 @@
                     class="inline-flex rounded-full border border-gray-600 bg-gray-900/60 px-2.5 py-0.5 text-xs text-gray-400"
                   >
                     {{ formatConfidence(row.confidence_score) }} confidence
+                  </span>
+                  <span
+                    v-if="institutionName(row)"
+                    class="inline-flex rounded-full border border-blue-800/40 bg-blue-950/30 px-2.5 py-0.5 text-xs text-blue-300"
+                  >
+                    {{ institutionName(row) }}
                   </span>
                 </div>
               </div>
@@ -658,6 +697,293 @@
           </li>
         </ul>
       </div>
+
+      <div v-show="activeTab === 'auto-created'">
+        <p class="mb-3 text-sm text-gray-400 leading-relaxed">
+          These transactions were created automatically based on your past history. Approve them if correct, or correct them to improve future accuracy.
+        </p>
+        <p v-if="autoCreatedImports.length === 0" class="text-sm text-gray-500">
+          No auto-created transactions to review.
+        </p>
+        <ul v-else class="space-y-3">
+          <li
+            v-for="row in autoCreatedImports"
+            :key="'ac-' + row.id"
+            class="overflow-hidden rounded-xl border border-gray-700 bg-gray-800/80"
+          >
+            <div class="px-4 py-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="font-bold text-white truncate">
+                    {{ row.merchant_name || row.raw_name || 'Transaction' }}
+                  </p>
+                  <p class="mt-1 text-sm text-gray-400">
+                    {{ formatDate(row.date) }}
+                    <span class="mx-1.5 text-gray-600">·</span>
+                    <span :class="(row.transaction?.type ?? row.suggested_type) === 'income' ? 'text-emerald-400' : 'text-red-400'">
+                      {{ (row.transaction?.type ?? row.suggested_type) === 'income' ? '+' : '−' }}{{ formatMoney(row.amount) }}
+                    </span>
+                  </p>
+                  <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <span
+                      v-if="row.transaction?.category"
+                      class="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-emerald-700/50 bg-emerald-950/40 px-2.5 py-0.5 text-xs text-emerald-200"
+                    >
+                      <span v-if="row.transaction.category.icon" class="shrink-0">{{ row.transaction.category.icon }}</span>
+                      <span class="truncate">{{ row.transaction.category.name }}</span>
+                    </span>
+                    <span
+                      v-if="institutionName(row)"
+                      class="inline-flex rounded-full border border-gray-600 bg-gray-900/60 px-2.5 py-0.5 text-xs text-gray-400"
+                    >
+                      {{ institutionName(row) }}
+                    </span>
+                    <span
+                      v-if="row.confidence_score"
+                      class="inline-flex rounded-full border border-gray-600 bg-gray-900/60 px-2.5 py-0.5 text-xs text-gray-400"
+                    >
+                      {{ formatConfidence(row.confidence_score) }} confidence
+                    </span>
+                  </div>
+                </div>
+                <span class="inline-flex items-center rounded-full bg-emerald-900/40 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-emerald-700/50 shrink-0 mt-0.5">
+                  Auto
+                </span>
+              </div>
+              <!-- Actions -->
+              <div v-if="!autoCreatedFormFor(row).correcting" class="mt-3 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  class="min-h-[44px] flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+                  :disabled="actionId === row.id"
+                  @click="approveAutoCreated(row)"
+                >
+                  {{ actionId === row.id ? 'Saving…' : '✓ Looks Correct' }}
+                </button>
+                <button
+                  type="button"
+                  class="min-h-[44px] flex-1 rounded-xl border border-gray-600 bg-transparent px-4 py-2.5 text-sm font-semibold text-gray-200 transition-colors hover:bg-gray-800 disabled:opacity-50"
+                  :disabled="actionId === row.id"
+                  @click="() => { ensureAutoCreatedForm(row); autoCreatedFormFor(row).correcting = true; }"
+                >
+                  Correct It
+                </button>
+              </div>
+              <!-- Correction form -->
+              <div v-else class="mt-3 space-y-3 border-t border-gray-700/80 pt-3">
+                <div>
+                  <label class="mb-1.5 block text-xs font-medium text-gray-400">Type</label>
+                  <div class="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      class="min-h-[44px] rounded-lg py-2.5 text-sm font-medium transition-colors"
+                      :class="autoCreatedFormFor(row).type === 'expense' ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                      @click="autoCreatedFormFor(row).type = 'expense'"
+                    >
+                      Expense
+                    </button>
+                    <button
+                      type="button"
+                      class="min-h-[44px] rounded-lg py-2.5 text-sm font-medium transition-colors"
+                      :class="autoCreatedFormFor(row).type === 'income' ? 'bg-emerald-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                      @click="autoCreatedFormFor(row).type = 'income'"
+                    >
+                      Income
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label class="mb-1.5 block text-xs font-medium text-gray-400" :for="`ac-cat-${row.id}`">Category</label>
+                  <select
+                    :id="`ac-cat-${row.id}`"
+                    v-model="autoCreatedFormFor(row).category_id"
+                    class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option disabled value="">Select a category</option>
+                    <option
+                      v-for="cat in categoriesForType(autoCreatedFormFor(row).type)"
+                      :key="cat.id"
+                      :value="String(cat.id)"
+                    >
+                      {{ cat.icon ? `${cat.icon} ` : '' }}{{ cat.name }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="mb-1.5 block text-xs font-medium text-gray-400" :for="`ac-fund-${row.id}`">Fund (optional)</label>
+                  <select
+                    :id="`ac-fund-${row.id}`"
+                    v-model="autoCreatedFormFor(row).fund_id"
+                    class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">None</option>
+                    <option v-for="fund in funds" :key="fund.id" :value="String(fund.id)">
+                      {{ fund.name }}{{ fund.scope === 'family' ? ' (family)' : '' }}
+                    </option>
+                  </select>
+                </div>
+                <p v-if="rowErrors[row.id]" class="text-sm text-red-300">{{ rowErrors[row.id] }}</p>
+                <div class="flex flex-col gap-2 sm:flex-row-reverse sm:justify-end">
+                  <button
+                    type="button"
+                    class="min-h-[48px] w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:opacity-50 sm:w-auto sm:min-w-[10rem]"
+                    :disabled="actionId === row.id || !autoCreatedFormFor(row).category_id"
+                    @click="submitAutoCreatedCorrection(row)"
+                  >
+                    {{ actionId === row.id ? 'Saving…' : 'Save Correction' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-[48px] w-full rounded-xl border border-gray-600 bg-transparent px-4 py-3 text-sm font-semibold text-gray-300 transition-colors hover:bg-gray-800 sm:w-auto"
+                    :disabled="actionId === row.id"
+                    @click="autoCreatedFormFor(row).correcting = false"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <div v-show="activeTab === 'ignored'">
+        <p class="mb-3 text-sm text-gray-400 leading-relaxed">
+          These transactions were automatically skipped based on rules you've set. Confirm they're correct, or restore them if the app made a mistake.
+        </p>
+        <p v-if="dismissedImports.length === 0" class="text-sm text-gray-500">
+          No auto-ignored transactions to review.
+        </p>
+        <ul v-else class="space-y-3">
+          <li
+            v-for="row in dismissedImports"
+            :key="'di-' + row.id"
+            class="overflow-hidden rounded-xl border border-gray-700 bg-gray-800/80"
+          >
+            <div class="px-4 py-3">
+              <div class="flex items-start gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="font-bold text-white truncate">
+                    {{ row.merchant_name || row.raw_name || 'Transaction' }}
+                  </p>
+                  <p class="mt-1 text-sm text-gray-400">
+                    {{ formatDate(row.date) }}
+                    <span class="mx-1.5 text-gray-600">·</span>
+                    <span :class="row.suggested_type === 'income' ? 'text-emerald-400' : 'text-red-400'">
+                      {{ row.suggested_type === 'income' ? '+' : '−' }}{{ formatMoney(row.amount) }}
+                    </span>
+                  </p>
+                  <p class="mt-1.5 text-xs text-gray-500">
+                    <span v-if="formatPlaidCategoryLabel(row)">{{ formatPlaidCategoryLabel(row) }}</span>
+                    <template v-if="institutionName(row)">
+                      <span class="mx-1.5 text-gray-600">·</span>
+                      <span>{{ institutionName(row) }}</span>
+                    </template>
+                  </p>
+                </div>
+                <span class="inline-flex items-center rounded-full bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-400 shrink-0 mt-0.5">
+                  Ignored
+                </span>
+              </div>
+              <!-- Actions when not restoring -->
+              <div v-if="!dismissedFormFor(row).restoring" class="mt-3 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  class="min-h-[44px] flex-1 rounded-xl border border-gray-600 bg-transparent px-4 py-2.5 text-sm font-semibold text-gray-200 transition-colors hover:bg-gray-800 disabled:opacity-50"
+                  :disabled="actionId === row.id"
+                  @click="acknowledgeAutoDismiss(row)"
+                >
+                  {{ actionId === row.id ? 'Working…' : 'Correct to Ignore' }}
+                </button>
+                <button
+                  type="button"
+                  class="min-h-[44px] flex-1 rounded-xl border border-amber-700/60 bg-amber-950/20 px-4 py-2.5 text-sm font-semibold text-amber-200 transition-colors hover:bg-amber-950/40 disabled:opacity-50"
+                  :disabled="actionId === row.id"
+                  @click="() => { ensureDismissedForm(row); dismissedFormFor(row).restoring = true; }"
+                >
+                  Shouldn't Be Ignored
+                </button>
+              </div>
+              <!-- Restore form -->
+              <div v-else class="mt-3 space-y-3 border-t border-gray-700/80 pt-3">
+                <p class="text-xs text-gray-400">
+                  Categorize this transaction. The rule will be updated so future transactions from this merchant appear for review instead of being ignored.
+                </p>
+                <div>
+                  <label class="mb-1.5 block text-xs font-medium text-gray-400">Type</label>
+                  <div class="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      class="min-h-[44px] rounded-lg py-2.5 text-sm font-medium transition-colors"
+                      :class="dismissedFormFor(row).type === 'expense' ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                      @click="dismissedFormFor(row).type = 'expense'"
+                    >
+                      Expense
+                    </button>
+                    <button
+                      type="button"
+                      class="min-h-[44px] rounded-lg py-2.5 text-sm font-medium transition-colors"
+                      :class="dismissedFormFor(row).type === 'income' ? 'bg-emerald-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                      @click="dismissedFormFor(row).type = 'income'"
+                    >
+                      Income
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label class="mb-1.5 block text-xs font-medium text-gray-400" :for="`di-cat-${row.id}`">Category</label>
+                  <select
+                    :id="`di-cat-${row.id}`"
+                    v-model="dismissedFormFor(row).category_id"
+                    class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option disabled value="">Select a category</option>
+                    <option
+                      v-for="cat in categoriesForType(dismissedFormFor(row).type)"
+                      :key="cat.id"
+                      :value="String(cat.id)"
+                    >
+                      {{ cat.icon ? `${cat.icon} ` : '' }}{{ cat.name }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="mb-1.5 block text-xs font-medium text-gray-400" :for="`di-fund-${row.id}`">Fund (optional)</label>
+                  <select
+                    :id="`di-fund-${row.id}`"
+                    v-model="dismissedFormFor(row).fund_id"
+                    class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">None</option>
+                    <option v-for="fund in funds" :key="fund.id" :value="String(fund.id)">
+                      {{ fund.name }}{{ fund.scope === 'family' ? ' (family)' : '' }}
+                    </option>
+                  </select>
+                </div>
+                <p v-if="rowErrors[row.id]" class="text-sm text-red-300">{{ rowErrors[row.id] }}</p>
+                <div class="flex flex-col gap-2 sm:flex-row-reverse sm:justify-end">
+                  <button
+                    type="button"
+                    class="min-h-[48px] w-full rounded-xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-amber-500 disabled:opacity-50 sm:w-auto sm:min-w-[10rem]"
+                    :disabled="actionId === row.id || !dismissedFormFor(row).category_id"
+                    @click="restoreFromDismiss(row)"
+                  >
+                    {{ actionId === row.id ? 'Creating…' : 'Create Transaction' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-[48px] w-full rounded-xl border border-gray-600 bg-transparent px-4 py-3 text-sm font-semibold text-gray-300 transition-colors hover:bg-gray-800 sm:w-auto"
+                    :disabled="actionId === row.id"
+                    @click="dismissedFormFor(row).restoring = false"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </div>
     </template>
 
     <Transition
@@ -705,7 +1031,10 @@ const categories = ref([]);
 const funds = ref([]);
 const debtsPayload = ref({ owed: [], owing: [], family_debts: [] });
 const familyUsers = ref([]);
-const recentlyAutoCreated = ref(0);
+const autoCreatedImports = ref([]);
+const autoCreatedForms = reactive({});
+const dismissedImports = ref([]);
+const dismissedForms = reactive({});
 const expandedId = ref(null);
 const forms = reactive({});
 const rowErrors = reactive({});
@@ -723,11 +1052,23 @@ const noFamilyCategories = computed(
 );
 
 const allEmpty = computed(
-  () => !loading.value && !pageError.value && pendingImports.value.length === 0 && transferImports.value.length === 0,
+  () =>
+    !loading.value &&
+    !pageError.value &&
+    pendingImports.value.length === 0 &&
+    transferImports.value.length === 0 &&
+    autoCreatedImports.value.length === 0 &&
+    dismissedImports.value.length === 0,
 );
 
 const showTabs = computed(
-  () => !loading.value && !pageError.value && (pendingImports.value.length > 0 || transferImports.value.length > 0),
+  () =>
+    !loading.value &&
+    !pageError.value &&
+    (pendingImports.value.length > 0 ||
+      transferImports.value.length > 0 ||
+      autoCreatedImports.value.length > 0 ||
+      dismissedImports.value.length > 0),
 );
 
 const payableDebts = computed(() => {
@@ -1106,6 +1447,143 @@ function removeTransferRow(id) {
   }
 }
 
+function ensureAutoCreatedForm(row) {
+  if (autoCreatedForms[row.id]) {
+    return;
+  }
+  const tx = row.transaction;
+  autoCreatedForms[row.id] = {
+    type: tx?.type ?? 'expense',
+    category_id: tx?.category_id ? String(tx.category_id) : '',
+    fund_id: tx?.fund_id ? String(tx.fund_id) : '',
+    advance_fund_id: tx?.advance_fund_id ?? null,
+    is_non_necessity: Boolean(tx?.is_non_necessity),
+    correcting: false,
+  };
+}
+
+function autoCreatedFormFor(row) {
+  ensureAutoCreatedForm(row);
+  return autoCreatedForms[row.id];
+}
+
+function removeAutoCreatedRow(id) {
+  const i = autoCreatedImports.value.findIndex((r) => r.id === id);
+  if (i !== -1) {
+    autoCreatedImports.value.splice(i, 1);
+  }
+  delete autoCreatedForms[id];
+  delete rowErrors[id];
+}
+
+function ensureDismissedForm(row) {
+  if (dismissedForms[row.id]) {
+    return;
+  }
+  dismissedForms[row.id] = {
+    type: row.suggested_type === 'income' ? 'income' : 'expense',
+    category_id: '',
+    fund_id: '',
+    advance_fund_id: null,
+    is_non_necessity: false,
+    description: '',
+    restoring: false,
+  };
+}
+
+function dismissedFormFor(row) {
+  ensureDismissedForm(row);
+  return dismissedForms[row.id];
+}
+
+function removeDismissedRow(id) {
+  const i = dismissedImports.value.findIndex((r) => r.id === id);
+  if (i !== -1) {
+    dismissedImports.value.splice(i, 1);
+  }
+  delete dismissedForms[id];
+  delete rowErrors[id];
+}
+
+async function approveAutoCreated(row) {
+  rowErrors[row.id] = '';
+  actionId.value = row.id;
+  try {
+    await post(`/plaid/pending-imports/${row.id}/approve-auto-created`, {});
+    removeAutoCreatedRow(row.id);
+    showToast('Marked as correct. Confidence updated.', 'success');
+  } catch (err) {
+    rowErrors[row.id] = err.response?.data?.message || 'Could not approve.';
+  } finally {
+    actionId.value = null;
+  }
+}
+
+async function submitAutoCreatedCorrection(row) {
+  rowErrors[row.id] = '';
+  const f = autoCreatedFormFor(row);
+  if (!f.category_id) {
+    rowErrors[row.id] = 'Choose a category.';
+    return;
+  }
+  actionId.value = row.id;
+  try {
+    await post(`/plaid/pending-imports/${row.id}/correct-auto-created`, {
+      category_id: Number(f.category_id),
+      type: f.type,
+      fund_id: f.fund_id ? Number(f.fund_id) : null,
+      advance_fund_id: f.advance_fund_id ?? null,
+      is_non_necessity: Boolean(f.is_non_necessity),
+    });
+    removeAutoCreatedRow(row.id);
+    showToast('Transaction corrected. Rule updated.', 'success');
+  } catch (err) {
+    rowErrors[row.id] = err.response?.data?.message || 'Could not correct.';
+  } finally {
+    actionId.value = null;
+  }
+}
+
+async function acknowledgeAutoDismiss(row) {
+  rowErrors[row.id] = '';
+  actionId.value = row.id;
+  try {
+    await post(`/plaid/pending-imports/${row.id}/acknowledge-auto-dismiss`, {});
+    removeDismissedRow(row.id);
+    showToast('Confirmed — this merchant will continue to be auto-ignored.', 'success');
+  } catch (err) {
+    rowErrors[row.id] = err.response?.data?.message || 'Could not acknowledge.';
+  } finally {
+    actionId.value = null;
+  }
+}
+
+async function restoreFromDismiss(row) {
+  rowErrors[row.id] = '';
+  const f = dismissedFormFor(row);
+  if (!f.category_id) {
+    rowErrors[row.id] = 'Choose a category first.';
+    return;
+  }
+  actionId.value = row.id;
+  try {
+    await post(`/plaid/pending-imports/${row.id}/restore-from-dismiss`, {
+      category_id: Number(f.category_id),
+      type: f.type,
+      fund_id: f.fund_id ? Number(f.fund_id) : null,
+      advance_fund_id: f.advance_fund_id ?? null,
+      is_non_necessity: Boolean(f.is_non_necessity),
+      description: f.description?.trim() || undefined,
+    });
+    removeDismissedRow(row.id);
+    showToast('Transaction created. Merchant rule updated — future imports will appear for review.', 'success');
+  } catch (err) {
+    rowErrors[row.id] = err.response?.data?.message || 'Could not restore.';
+  } finally {
+    actionId.value = null;
+  }
+}
+
 function applyDefaultTab() {
   if (transferImports.value.length > 0 && pendingImports.value.length === 0) {
     activeTab.value = 'transfers';
@@ -1205,7 +1683,8 @@ async function loadAll() {
     ]);
     pendingImports.value = Array.isArray(pendingRes.data?.pending) ? pendingRes.data.pending : [];
     transferImports.value = Array.isArray(pendingRes.data?.transfers) ? pendingRes.data.transfers : [];
-    recentlyAutoCreated.value = Number(pendingRes.data?.recently_auto_created ?? 0);
+    autoCreatedImports.value = Array.isArray(pendingRes.data?.auto_created) ? pendingRes.data.auto_created : [];
+    dismissedImports.value = Array.isArray(pendingRes.data?.dismissed) ? pendingRes.data.dismissed : [];
     categories.value = Array.isArray(catRes.data) ? catRes.data : [];
     funds.value = Array.isArray(fundRes.data) ? fundRes.data : [];
     const db = debtsRes.data;

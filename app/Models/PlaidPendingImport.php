@@ -29,6 +29,8 @@ class PlaidPendingImport extends Model
         'is_transfer',
         'plaid_category_primary',
         'plaid_category_detailed',
+        'dismiss_source',
+        'reviewed_at',
     ];
 
     /**
@@ -43,6 +45,7 @@ class PlaidPendingImport extends Model
             'suggested_is_non_necessity' => 'bool',
             'confidence_score' => 'decimal:4',
             'is_transfer' => 'bool',
+            'reviewed_at' => 'datetime',
         ];
     }
 

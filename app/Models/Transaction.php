@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Transaction extends Model
 {
@@ -94,5 +95,10 @@ class Transaction extends Model
     public function debts(): HasMany
     {
         return $this->hasMany(Debt::class);
+    }
+
+    public function plaidPendingImport(): HasOne
+    {
+        return $this->hasOne(PlaidPendingImport::class, 'transaction_id');
     }
 }

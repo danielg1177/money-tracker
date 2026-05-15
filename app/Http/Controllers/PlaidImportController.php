@@ -43,8 +43,22 @@ class PlaidImportController extends Controller
                 ->pending()
                 ->count();
 
+            $autoCreatedCount = PlaidPendingImport::query()
+                ->where('user_id', $user->id)
+                ->where('status', 'auto_created')
+                ->count();
+
+            $dismissedCount = PlaidPendingImport::query()
+                ->where('user_id', $user->id)
+                ->where('status', 'dismissed')
+                ->where('dismiss_source', 'auto')
+                ->whereNull('reviewed_at')
+                ->count();
+
             return response()->json([
                 'count' => $count,
+                'auto_created_count' => $autoCreatedCount,
+                'dismissed_count' => $dismissedCount,
             ]);
         }
 
@@ -64,17 +78,213 @@ class PlaidImportController extends Controller
             ->orderByDesc('date')
             ->get();
 
-        $recentlyAutoCreated = PlaidPendingImport::query()
+        $autoCreated = PlaidPendingImport::query()
             ->where('user_id', $user->id)
             ->where('status', 'auto_created')
-            ->where('created_at', '>=', now()->subDays(30))
-            ->count();
+            ->with(['suggestedCategory', 'plaidItem', 'transaction.category'])
+            ->orderByDesc('date')
+            ->get();
+
+        $dismissed = PlaidPendingImport::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'dismissed')
+            ->where('dismiss_source', 'auto')
+            ->whereNull('reviewed_at')
+            ->with(['plaidItem'])
+            ->orderByDesc('date')
+            ->get();
 
         return response()->json([
             'pending' => $pending,
             'transfers' => $transfers,
-            'recently_auto_created' => $recentlyAutoCreated,
+            'auto_created' => $autoCreated,
+            'dismissed' => $dismissed,
         ]);
+    }
+
+    public function approveAutoCreated(Request $request, PlaidPendingImport $pendingImport): Response
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'auto_created') {
+            abort(422, 'This import was not auto-created.');
+        }
+
+        $transaction = $pendingImport->transaction;
+        if ($transaction === null) {
+            abort(422, 'No linked transaction found.');
+        }
+
+        $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
+        $this->matchingService->learnFromConfirmation($request->user()->id, $merchantName, [
+            'category_id' => $transaction->category_id,
+            'type' => $transaction->type,
+            'fund_id' => $transaction->fund_id,
+            'advance_fund_id' => $transaction->advance_fund_id,
+            'is_non_necessity' => (bool) $transaction->is_non_necessity,
+            'is_split' => (bool) $transaction->is_split,
+            'action' => 'categorize',
+        ]);
+
+        return response()->noContent();
+    }
+
+    public function correctAutoCreated(Request $request, PlaidPendingImport $pendingImport): JsonResponse
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'auto_created') {
+            abort(422, 'This import was not auto-created.');
+        }
+
+        $transaction = $pendingImport->transaction;
+        if ($transaction === null) {
+            abort(422, 'No linked transaction found.');
+        }
+
+        $validated = $request->validate([
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'type' => ['required', 'string', 'in:expense,income'],
+            'fund_id' => ['nullable', 'integer', 'exists:funds,id'],
+            'advance_fund_id' => ['nullable', 'integer', 'exists:funds,id'],
+            'is_non_necessity' => ['boolean'],
+        ]);
+
+        $transaction->forceFill([
+            'category_id' => $validated['category_id'],
+            'type' => $validated['type'],
+            'fund_id' => $validated['fund_id'] ?? null,
+            'advance_fund_id' => $validated['advance_fund_id'] ?? null,
+            'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
+        ])->save();
+
+        $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
+        $this->matchingService->learnFromConfirmation($request->user()->id, $merchantName, [
+            'category_id' => $validated['category_id'],
+            'type' => $validated['type'],
+            'fund_id' => $validated['fund_id'] ?? null,
+            'advance_fund_id' => $validated['advance_fund_id'] ?? null,
+            'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
+            'is_split' => (bool) $transaction->is_split,
+            'action' => 'categorize',
+        ]);
+
+        return response()->json(
+            $transaction->fresh()->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
+        );
+    }
+
+    public function acknowledgeAutoDismiss(Request $request, PlaidPendingImport $pendingImport): Response
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'dismissed' || $pendingImport->dismiss_source !== 'auto') {
+            abort(422, 'This import is not an auto-dismissed entry.');
+        }
+
+        $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
+        $key = $this->matchingService->normalizeMerchantKey($merchantName);
+        $rule = PlaidMerchantRule::query()
+            ->where('user_id', $pendingImport->user_id)
+            ->where('merchant_key', $key)
+            ->first();
+
+        if ($rule !== null) {
+            $this->matchingService->recordSeen($rule);
+        }
+
+        $pendingImport->forceFill(['reviewed_at' => now()])->save();
+
+        return response()->noContent();
+    }
+
+    public function restoreFromDismiss(Request $request, PlaidPendingImport $pendingImport): JsonResponse
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'dismissed' || $pendingImport->dismiss_source !== 'auto') {
+            abort(422, 'This import is not an auto-dismissed entry.');
+        }
+
+        $user = $request->user();
+        if ($user->family_id === null) {
+            return response()->json(['message' => 'You must belong to a family to create transactions.'], 403);
+        }
+
+        $validated = $request->validate([
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'type' => ['required', 'string', 'in:expense,income'],
+            'fund_id' => ['nullable', 'integer', 'exists:funds,id'],
+            'advance_fund_id' => ['nullable', 'integer', 'exists:funds,id'],
+            'is_non_necessity' => ['boolean'],
+            'description' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $description = $validated['description'] ?? null;
+        if ($description === null || $description === '') {
+            $description = trim((string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? ''));
+        }
+        if ($description === '') {
+            $description = 'Plaid import';
+        }
+
+        $payload = [
+            'type' => $validated['type'],
+            'amount' => (float) $pendingImport->amount,
+            'transaction_date' => $pendingImport->date->format('Y-m-d'),
+            'description' => $description,
+            'category_id' => $validated['category_id'],
+            'fund_id' => $validated['fund_id'] ?? null,
+            'advance_fund_id' => $validated['advance_fund_id'] ?? null,
+            'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
+            'is_split' => false,
+        ];
+
+        try {
+            $this->closedMonthGuard->assertTransactionPayloadOpen($user, $payload);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $transaction = $this->transactionService->createTransaction($payload, $user);
+
+        if (! empty($validated['fund_id'])) {
+            $transaction->forceFill(['fund_id' => $validated['fund_id']])->save();
+        }
+
+        $transaction->forceFill([
+            'plaid_transaction_id' => $pendingImport->plaid_transaction_id,
+            'import_source' => 'plaid',
+        ])->save();
+
+        $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
+        $this->matchingService->learnFromConfirmation($user->id, $merchantName, [
+            'category_id' => $validated['category_id'],
+            'type' => $validated['type'],
+            'fund_id' => $validated['fund_id'] ?? null,
+            'advance_fund_id' => $validated['advance_fund_id'] ?? null,
+            'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
+            'is_split' => false,
+            'action' => 'categorize',
+        ]);
+
+        $pendingImport->forceFill([
+            'status' => 'confirmed',
+            'transaction_id' => $transaction->id,
+            'reviewed_at' => now(),
+        ])->save();
+
+        return response()->json(
+            $transaction->fresh()->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
+        );
     }
 
     public function confirm(StoreImportConfirmRequest $request, PlaidPendingImport $pendingImport): JsonResponse
@@ -194,7 +404,7 @@ class PlaidImportController extends Controller
             abort(422, 'This import is not pending.');
         }
 
-        $pendingImport->forceFill(['status' => 'dismissed'])->save();
+        $pendingImport->forceFill(['status' => 'dismissed', 'dismiss_source' => 'manual'])->save();
 
         $merchantRaw = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
         $key = $this->matchingService->normalizeMerchantKey($merchantRaw);
@@ -220,8 +430,7 @@ class PlaidImportController extends Controller
             abort(422, 'This import is not pending.');
         }
 
-        $pendingImport->status = 'dismissed';
-        $pendingImport->save();
+        $pendingImport->forceFill(['status' => 'dismissed', 'dismiss_source' => 'manual'])->save();
 
         if ($request->boolean('learn')) {
             $merchantLabel = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
