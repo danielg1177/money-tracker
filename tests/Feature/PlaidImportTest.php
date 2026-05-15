@@ -3,14 +3,17 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\CategoryUserDefault;
 use App\Models\Debt;
 use App\Models\Family;
+use App\Models\Fund;
 use App\Models\PlaidItem;
 use App\Models\PlaidMerchantRule;
 use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\PlaidMatchingService;
+use App\Services\PlaidTransactionSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
@@ -632,5 +635,531 @@ class PlaidImportTest extends TestCase
         $this->actingAs($user)->postJson("/plaid/pending-imports/{$import->id}/link", [
             'transaction_id' => $ledger->id,
         ])->assertStatus(422);
+    }
+
+    public function test_plaid_auto_create_applies_category_split_default_equal_shares(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        User::factory()->create(['family_id' => $family->id]);
+
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+            'is_split_default' => true,
+            'split_default' => [
+                ['user_id' => 1, 'share_percentage' => 50],
+                ['user_id' => 2, 'share_percentage' => 50],
+            ],
+        ]);
+
+        PlaidMerchantRule::query()->create([
+            'user_id' => $user->id,
+            'merchant_key' => 'splitcat cafe',
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'is_split' => false,
+            'confirmation_count' => 4,
+            'total_seen_count' => 4,
+        ]);
+
+        $item = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-auto-split',
+            'access_token' => 'tok',
+        ]);
+
+        $sync = app(PlaidTransactionSyncService::class);
+        $counts = $sync->ingestPlaidRowsAsPending($item, [[
+            'transaction_id' => 'txn-auto-split-cat',
+            'amount' => 20,
+            'date' => '2026-05-10',
+            'merchant_name' => 'SplitCat Cafe',
+        ]]);
+
+        $this->assertSame(1, $counts['auto_created']);
+        $tx = Transaction::query()->where('plaid_transaction_id', 'txn-auto-split-cat')->first();
+        $this->assertNotNull($tx);
+        $this->assertTrue($tx->is_split);
+        $this->assertCount(2, $tx->splits);
+    }
+
+    public function test_plaid_auto_create_applies_category_user_default_advance_over_merchant_rule(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+
+        $fundA = Fund::factory()->create(['user_id' => $user->id, 'family_id' => null]);
+        $fundB = Fund::factory()->create(['user_id' => $user->id, 'family_id' => null]);
+
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        CategoryUserDefault::query()->create([
+            'category_id' => $category->id,
+            'user_id' => $user->id,
+            'advance_fund_id' => $fundA->id,
+            'is_non_necessity_default' => false,
+        ]);
+
+        PlaidMerchantRule::query()->create([
+            'user_id' => $user->id,
+            'merchant_key' => 'advance cat',
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'advance_fund_id' => $fundB->id,
+            'confirmation_count' => 4,
+            'total_seen_count' => 4,
+        ]);
+
+        $item = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-auto-adv',
+            'access_token' => 'tok',
+        ]);
+
+        app(PlaidTransactionSyncService::class)->ingestPlaidRowsAsPending($item, [[
+            'transaction_id' => 'txn-auto-adv',
+            'amount' => 15,
+            'date' => '2026-05-11',
+            'merchant_name' => 'Advance Cat',
+        ]]);
+
+        $tx = Transaction::query()->where('plaid_transaction_id', 'txn-auto-adv')->firstOrFail();
+        $this->assertSame($fundA->id, (int) $tx->advance_fund_id);
+        $this->assertSame($fundA->id, (int) $tx->fund_id);
+    }
+
+    public function test_approve_auto_created_sets_reviewed_at_and_row_leaves_auto_created_queue(): void
+    {
+        $user = $this->familyUser();
+        $item = $this->createPlaidItem($user);
+        $category = Category::factory()->create([
+            'family_id' => $user->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $transaction = Transaction::factory()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 30,
+            'transaction_date' => '2026-05-20',
+            'plaid_transaction_id' => 'txn-approve-queue',
+            'import_source' => 'plaid',
+        ]);
+
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $user->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-approve-queue',
+            'plaid_account_id' => 'acc1',
+            'amount' => 30,
+            'date' => '2026-05-20',
+            'merchant_name' => 'Queue Test',
+            'raw_name' => 'QUEUE TEST',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'suggested_fund_id' => null,
+            'suggested_advance_fund_id' => null,
+            'suggested_is_non_necessity' => false,
+            'confidence_score' => 0.9,
+            'status' => 'auto_created',
+            'transaction_id' => $transaction->id,
+            'raw_payload' => [],
+            'is_transfer' => false,
+        ]);
+
+        $this->actingAs($user)->getJson('/plaid/pending-imports')
+            ->assertOk()
+            ->assertJsonCount(1, 'auto_created');
+
+        $this->actingAs($user)->postJson("/plaid/pending-imports/{$import->id}/approve-auto-created", [])
+            ->assertNoContent();
+
+        $import->refresh();
+        $this->assertNotNull($import->reviewed_at);
+
+        $this->actingAs($user)->getJson('/plaid/pending-imports')
+            ->assertOk()
+            ->assertJsonCount(0, 'auto_created');
+
+        $this->actingAs($user)->getJson('/plaid/pending-imports?count_only=1')
+            ->assertOk()
+            ->assertJson(['auto_created_count' => 0]);
+    }
+
+    public function test_learn_from_confirmation_saves_description(): void
+    {
+        $user = $this->familyUser();
+        $service = app(PlaidMatchingService::class);
+
+        $service->learnFromConfirmation($user->id, 'Coffee Shop', [
+            'type' => 'expense',
+            'action' => 'categorize',
+            'description' => 'My Coffee Spot',
+        ]);
+
+        $this->assertDatabaseHas('plaid_merchant_rules', [
+            'user_id' => $user->id,
+            'merchant_key' => $service->normalizeMerchantKey('Coffee Shop'),
+            'description' => 'My Coffee Spot',
+        ]);
+    }
+
+    public function test_learn_from_confirmation_saves_is_debt_payment(): void
+    {
+        $user = $this->familyUser();
+        $service = app(PlaidMatchingService::class);
+
+        $service->learnFromConfirmation($user->id, 'Loan Payment', [
+            'type' => 'expense',
+            'action' => 'categorize',
+            'is_debt_payment' => true,
+        ]);
+
+        $rule = PlaidMerchantRule::query()
+            ->where('user_id', $user->id)
+            ->where('merchant_key', $service->normalizeMerchantKey('Loan Payment'))
+            ->firstOrFail();
+
+        $this->assertTrue((bool) $rule->is_debt_payment);
+    }
+
+    public function test_learn_from_confirmation_saves_split_data(): void
+    {
+        $user = $this->familyUser();
+        $service = app(PlaidMatchingService::class);
+
+        $splitData = [
+            ['user_id' => 1, 'share_percentage' => 70.0],
+            ['user_id' => 2, 'share_percentage' => 30.0],
+        ];
+
+        $service->learnFromConfirmation($user->id, 'Grocery Store', [
+            'type' => 'expense',
+            'action' => 'categorize',
+            'split_data' => $splitData,
+        ]);
+
+        $rule = PlaidMerchantRule::query()
+            ->where('user_id', $user->id)
+            ->where('merchant_key', $service->normalizeMerchantKey('Grocery Store'))
+            ->firstOrFail();
+
+        $this->assertIsArray($rule->split_data);
+        $this->assertEqualsWithDelta(70.0, (float) $rule->split_data[0]['share_percentage'], 0.01);
+        $this->assertEqualsWithDelta(30.0, (float) $rule->split_data[1]['share_percentage'], 0.01);
+    }
+
+    public function test_get_suggestion_returns_new_fields(): void
+    {
+        $user = $this->familyUser();
+        $service = app(PlaidMatchingService::class);
+
+        $merchantKey = $service->normalizeMerchantKey('Test Shop');
+        PlaidMerchantRule::query()->create([
+            'user_id' => $user->id,
+            'merchant_key' => $merchantKey,
+            'type' => 'expense',
+            'description' => 'Test Shop',
+            'is_debt_payment' => false,
+            'split_data' => [['user_id' => 1, 'share_percentage' => 100.0]],
+            'confirmation_count' => 1,
+            'total_seen_count' => 1,
+            'action' => 'categorize',
+        ]);
+
+        $suggestion = $service->getSuggestion([
+            'merchant_name' => 'Test Shop',
+            'amount' => 10.0,
+        ], $user->id);
+
+        $this->assertSame('Test Shop', $suggestion['description']);
+        $this->assertFalse($suggestion['is_debt_payment']);
+        $this->assertIsArray($suggestion['split_data']);
+        $this->assertEqualsWithDelta(100.0, (float) $suggestion['split_data'][0]['share_percentage'], 0.01);
+    }
+
+    public function test_get_suggestion_returns_defaults_when_no_rule(): void
+    {
+        $user = $this->familyUser();
+
+        $suggestion = app(PlaidMatchingService::class)->getSuggestion([
+            'merchant_name' => 'Unknown Merchant No Rule',
+            'amount' => 25.0,
+        ], $user->id);
+
+        $this->assertNull($suggestion['description']);
+        $this->assertFalse($suggestion['is_debt_payment']);
+        $this->assertNull($suggestion['split_data']);
+    }
+
+    public function test_auto_create_skipped_when_rule_has_is_debt_payment(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        PlaidMerchantRule::query()->create([
+            'user_id' => $user->id,
+            'merchant_key' => 'debt pay merchant',
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'is_debt_payment' => true,
+            'confirmation_count' => 3,
+            'total_seen_count' => 3,
+            'action' => 'categorize',
+        ]);
+
+        $item = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-debt-skip',
+            'access_token' => 'tok',
+        ]);
+
+        app(PlaidTransactionSyncService::class)->ingestPlaidRowsAsPending($item, [[
+            'transaction_id' => 'txn-debt-skip-1',
+            'amount' => 50.0,
+            'date' => '2026-05-10',
+            'merchant_name' => 'Debt Pay Merchant',
+        ]]);
+
+        $this->assertDatabaseMissing('transactions', [
+            'plaid_transaction_id' => 'txn-debt-skip-1',
+        ]);
+
+        $import = PlaidPendingImport::query()
+            ->where('plaid_transaction_id', 'txn-debt-skip-1')
+            ->firstOrFail();
+
+        $this->assertSame('pending', $import->status);
+        $this->assertTrue((bool) $import->suggested_is_debt_payment);
+    }
+
+    public function test_auto_create_uses_learned_split_data_percentages(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $otherUser = User::factory()->create(['family_id' => $family->id]);
+
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        PlaidMerchantRule::query()->create([
+            'user_id' => $user->id,
+            'merchant_key' => 'splitlearn shop',
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $user->id, 'share_percentage' => 70.0],
+                ['user_id' => $otherUser->id, 'share_percentage' => 30.0],
+            ],
+            'confirmation_count' => 3,
+            'total_seen_count' => 3,
+            'action' => 'categorize',
+        ]);
+
+        $item = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-split-learn',
+            'access_token' => 'tok',
+        ]);
+
+        $counts = app(PlaidTransactionSyncService::class)->ingestPlaidRowsAsPending($item, [[
+            'transaction_id' => 'txn-split-learn-1',
+            'amount' => 100.0,
+            'date' => '2026-05-10',
+            'merchant_name' => 'SplitLearn Shop',
+        ]]);
+
+        $this->assertSame(1, $counts['auto_created']);
+
+        $tx = Transaction::query()->where('plaid_transaction_id', 'txn-split-learn-1')->firstOrFail();
+        $this->assertTrue((bool) $tx->is_split);
+        $this->assertCount(2, $tx->splits);
+
+        $splits = $tx->splits->keyBy('user_id');
+        $this->assertEqualsWithDelta(70.0, (float) $splits[$user->id]->share_percentage, 0.01);
+        $this->assertEqualsWithDelta(30.0, (float) $splits[$otherUser->id]->share_percentage, 0.01);
+    }
+
+    public function test_auto_create_uses_learned_description(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        PlaidMerchantRule::query()->create([
+            'user_id' => $user->id,
+            'merchant_key' => 'merchant raw',
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'description' => 'My Preferred Name',
+            'confirmation_count' => 3,
+            'total_seen_count' => 3,
+            'action' => 'categorize',
+        ]);
+
+        $item = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-desc-learn',
+            'access_token' => 'tok',
+        ]);
+
+        app(PlaidTransactionSyncService::class)->ingestPlaidRowsAsPending($item, [[
+            'transaction_id' => 'txn-desc-learn-1',
+            'amount' => 20.0,
+            'date' => '2026-05-10',
+            'merchant_name' => 'MERCHANT RAW',
+        ]]);
+
+        $tx = Transaction::query()->where('plaid_transaction_id', 'txn-desc-learn-1')->firstOrFail();
+        $this->assertSame('My Preferred Name', $tx->description);
+    }
+
+    public function test_pending_import_suggested_fields_populated_from_rule(): void
+    {
+        $user = $this->familyUser();
+        $service = app(PlaidMatchingService::class);
+
+        PlaidMerchantRule::query()->create([
+            'user_id' => $user->id,
+            'merchant_key' => $service->normalizeMerchantKey('Foo Bar'),
+            'type' => 'expense',
+            'description' => 'Foo',
+            'is_debt_payment' => true,
+            'split_data' => [['user_id' => $user->id, 'share_percentage' => 100.0]],
+            'confirmation_count' => 1,
+            'total_seen_count' => 1,
+            'action' => 'categorize',
+        ]);
+
+        $item = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-suggested-fields',
+            'access_token' => 'tok',
+        ]);
+
+        app(PlaidTransactionSyncService::class)->ingestPlaidRowsAsPending($item, [[
+            'transaction_id' => 'txn-suggested-fields-1',
+            'amount' => 15.0,
+            'date' => '2026-05-10',
+            'merchant_name' => 'Foo Bar',
+        ]]);
+
+        $import = PlaidPendingImport::query()
+            ->where('plaid_transaction_id', 'txn-suggested-fields-1')
+            ->firstOrFail();
+
+        $this->assertSame('Foo', $import->suggested_description);
+        $this->assertTrue((bool) $import->suggested_is_debt_payment);
+        $this->assertIsArray($import->suggested_split_data);
+        $this->assertEqualsWithDelta(100.0, (float) $import->suggested_split_data[0]['share_percentage'], 0.01);
+    }
+
+    public function test_confirm_endpoint_learns_description(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import, 'category' => $category] = $this->createPendingImportForUser($user, 'txn-confirm-desc-1');
+
+        $this->actingAs($user)->postJson(
+            "/plaid/pending-imports/{$import->id}/confirm",
+            [
+                'category_id' => $category->id,
+                'type' => 'expense',
+                'description' => 'My Confirmed Description',
+                'is_debt_payment' => false,
+            ]
+        )->assertOk();
+
+        $key = app(PlaidMatchingService::class)->normalizeMerchantKey(
+            (string) ($import->merchant_name ?? $import->raw_name ?? '')
+        );
+
+        $this->assertDatabaseHas('plaid_merchant_rules', [
+            'user_id' => $user->id,
+            'merchant_key' => $key,
+            'description' => 'My Confirmed Description',
+        ]);
+    }
+
+    public function test_pending_imports_index_includes_nested_funds_on_auto_created_transaction(): void
+    {
+        $user = $this->familyUser();
+        $item = $this->createPlaidItem($user);
+        $category = Category::factory()->create([
+            'family_id' => $user->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+        $fund = Fund::factory()->create([
+            'user_id' => $user->id,
+            'family_id' => null,
+        ]);
+        $transaction = Transaction::factory()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 12.34,
+            'transaction_date' => '2026-05-21',
+            'plaid_transaction_id' => 'txn-nested-fund',
+            'import_source' => 'plaid',
+            'advance_fund_id' => $fund->id,
+            'fund_id' => $fund->id,
+        ]);
+
+        PlaidPendingImport::query()->create([
+            'user_id' => $user->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-nested-fund',
+            'plaid_account_id' => 'acc1',
+            'amount' => 12.34,
+            'date' => '2026-05-21',
+            'merchant_name' => 'Nested Fund Shop',
+            'raw_name' => 'NESTED',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'suggested_fund_id' => null,
+            'suggested_advance_fund_id' => null,
+            'suggested_is_non_necessity' => false,
+            'confidence_score' => 0.85,
+            'status' => 'auto_created',
+            'transaction_id' => $transaction->id,
+            'raw_payload' => [],
+            'is_transfer' => false,
+        ]);
+
+        $res = $this->actingAs($user)->getJson('/plaid/pending-imports')->assertOk()->json();
+        $row = collect($res['auto_created'])->first();
+        $this->assertNotNull($row);
+        $this->assertSame($transaction->id, (int) $row['transaction']['id']);
+        $advance = $row['transaction']['advance_fund'] ?? $row['transaction']['advanceFund'] ?? null;
+        $tag = $row['transaction']['fund'] ?? null;
+        $this->assertIsArray($advance);
+        $this->assertSame($fund->name, $advance['name']);
+        $this->assertIsArray($tag);
+        $this->assertSame($fund->name, $tag['name']);
     }
 }

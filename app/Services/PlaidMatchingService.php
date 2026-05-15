@@ -121,7 +121,11 @@ class PlaidMatchingService
      *     advance_fund_id: int|null,
      *     is_non_necessity: bool,
      *     confidence_score: float,
-     *     is_auto_eligible: bool
+     *     is_auto_eligible: bool,
+     *     description: string|null,
+     *     is_debt_payment: bool,
+     *     debt_id: int|null,
+     *     split_data: list<array{user_id: int, share_percentage: float}>|null
      * }
      */
     public function getSuggestion(array $plaidRow, int $userId): array
@@ -146,6 +150,10 @@ class PlaidMatchingService
                 'is_non_necessity' => false,
                 'confidence_score' => 0.0,
                 'is_auto_eligible' => false,
+                'description' => null,
+                'is_debt_payment' => false,
+                'debt_id' => null,
+                'split_data' => null,
             ];
         }
 
@@ -157,6 +165,10 @@ class PlaidMatchingService
             'is_non_necessity' => (bool) $rule->is_non_necessity,
             'confidence_score' => $rule->confidenceScore(),
             'is_auto_eligible' => $rule->action === 'dismiss' ? false : $rule->isAutoCreateEligible(),
+            'description' => $rule->description,
+            'is_debt_payment' => (bool) $rule->is_debt_payment,
+            'debt_id' => $rule->debt_id,
+            'split_data' => $rule->split_data,
         ];
     }
 
@@ -183,7 +195,7 @@ class PlaidMatchingService
             'merchant_key' => $key,
         ]);
 
-        $allowed = ['category_id', 'type', 'fund_id', 'advance_fund_id', 'is_non_necessity', 'is_split', 'action'];
+        $allowed = ['category_id', 'type', 'fund_id', 'advance_fund_id', 'is_non_necessity', 'is_split', 'action', 'description', 'is_debt_payment', 'debt_id', 'split_data'];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $confirmedSettings)) {
                 $rule->{$field} = $confirmedSettings[$field];

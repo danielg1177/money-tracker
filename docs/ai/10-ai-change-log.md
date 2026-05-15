@@ -11,6 +11,46 @@ Format:
 
 ---
 
+## 2026-05-15 — PlaidImportTest: 10 new tests for description/is_debt_payment/split_data learning
+
+- Files touched: `tests/Feature/PlaidImportTest.php`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: 10 new PHPUnit test methods added (existing 21 preserved). Tests cover: `learnFromConfirmation` persisting `description`, `is_debt_payment`, and `split_data` to the rule; `getSuggestion` returning new fields from the rule and returning nulls/false when no rule exists; auto-create being skipped when `is_debt_payment=true` with no valid debt; auto-create using learned 70/30 `split_data` percentages instead of equal split; auto-create using the rule's stored description over the raw merchant name; pending import rows receiving `suggested_description`, `suggested_is_debt_payment`, `suggested_split_data` from the rule; and the confirm endpoint persisting `description` to the merchant rule via `learnFromConfirmation`.
+
+## 2026-05-15 — PlaidTransactionSyncService: wire new learned fields into sync + auto-create
+
+- Files touched: `app/Services/PlaidTransactionSyncService.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Both `PlaidPendingImport::create()` calls (dismiss-branch and normal pending) now populate `suggested_description`, `suggested_is_debt_payment`, and `suggested_split_data` from `getSuggestion()`. Auto-create gate expanded: when `is_debt_payment=true` the learned `debt_id` must resolve to an active debt (`debtor_id=user`, `is_pending_closeout=false`, `balance > 0`) otherwise the row stays pending for manual resolution. `buildAutoCreateTransactionPayload` now prefers `rule->description` for the transaction description; split resolution prefers `rule->split_data` (validated) before falling back to equal family split in both category and non-category branches; expense payload gains `is_debt_payment=true` + `debt_id` when the rule is a validated debt-payment rule.
+
+## 2026-05-15 — Wire description/is_debt_payment/debt_id/split_data into PlaidMatchingService and call sites
+
+- Files touched: `app/Services/PlaidMatchingService.php`, `app/Http/Controllers/PlaidImportController.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `learnFromConfirmation` whitelist expanded to include `description`, `is_debt_payment`, `debt_id`, `split_data`; `getSuggestion` return shape updated to include all four fields (nulls/false in the no-rule case). Five controller call sites updated: **confirm** passes `description`, `$payTowardDebt` as `is_debt_payment`, `debt_id` from validated input, and `split_data` when split; **approveAutoCreated** passes all four fields off the linked transaction; **correctAutoCreated** adds `description`/`is_debt_payment` to validation and `forceFill`, plus passes `debt_id` and `split_data`; **restoreFromDismiss** passes `description`, `is_debt_payment=false`, `debt_id=null`, `split_data=null`; **linkToLedger** passes all four from the ledger transaction.
+
+## 2026-05-15 — Plaid merchant rule learning: add description, is_debt_payment, debt_id, split_data fields
+
+- Files touched: `database/migrations/2026_05_15_231529_add_full_settings_to_plaid_merchant_rules.php`, `database/migrations/2026_05_15_231529_add_full_settings_to_plaid_pending_imports.php`, `app/Models/PlaidMerchantRule.php`, `app/Models/PlaidPendingImport.php`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `plaid_merchant_rules` now stores four additional learned fields (`description`, `is_debt_payment`, `debt_id`, `split_data`) after `is_split`. `plaid_pending_imports` stores the corresponding suggested fields (`suggested_description`, `suggested_is_debt_payment`, `suggested_debt_id`, `suggested_split_data`) after `suggested_is_non_necessity`. `debt_id` / `suggested_debt_id` are advisory bigint columns with no FK constraint so they survive debt deletion. Both models updated with `$fillable` entries and `casts()` for the boolean and JSON columns.
+
+## 2026-05-15 — Import review Auto tab: expand full ledger transaction
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php` (eager-load `transaction.*` for index + richer `correct-auto-created` JSON), `resources/js/pages/PlaidImportReview.vue`, `tests/Feature/PlaidImportTest.php`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **Auto** rows use a tappable header (chevron) to expand **On your books** — all major ledger fields for the linked `Transaction` (splits with user/%, funds, debt/payment flags, Plaid metadata). `GET /plaid/pending-imports` now eager-loads the same relation bundle used elsewhere so nested JSON is complete without an extra fetch.
+
+## 2026-05-15 — Plaid auto-created review: persist approval/correction (no re-list)
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `tests/Feature/PlaidImportTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **✓ Looks Correct** and **Save Correction** on auto-created rows now set **`reviewed_at`** on `plaid_pending_imports`. `GET /plaid/pending-imports` **auto_created** (and `?count_only=1` **auto_created_count**) only include rows with **`reviewed_at` null**, matching the Ignored-tab pattern — approved/corrected rows no longer reappear after refresh.
+
+## 2026-05-15 — Plaid auto-create: apply category + user default split/advance/non-necessity
+
+- Files touched: `app/Services/SplitCalculator.php` (`equalShareSplitData`), `app/Services/PlaidTransactionSyncService.php`, `tests/Feature/PlaidImportTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: When a merchant rule is auto-create eligible and sync creates a ledger row, the payload now merges **family category** settings: default **equal split** across family members when `is_split_default` + non-empty `split_default`; per-user **`category_user_defaults.advance_fund_id`** overrides the rule’s advance; **`is_non_necessity`** when the default is set and an active percentage-of-remaining fund rule targets that advance fund (otherwise falls back to the rule flag). `transactions.fund_id` after auto-create mirrors resolved advance when the rule did not set `fund_id`. Split percentages use the same rounding approach as the Vue equal-split helper.
+
+## 2026-05-15 — Plaid import review: one fund control + category defaults on confirm
+
+- Files touched: `resources/js/pages/PlaidImportReview.vue`, `app/Http/Controllers/PlaidImportController.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **To Review** card removed the always-visible “Fund (optional)” `fund_id` select (it duplicated **Advance against fund** / `advance_fund_id`). Category changes, switching to expense, and turning off “Pay toward debt” now re-apply category split/advance/non-necessity defaults from `GET /categories`; first expand also applies Plaid **suggested** advance / non-necessity when the category does not set an advance. **`POST …/confirm`**: if the client omits `fund_id`, `transactions.fund_id` and merchant-rule `fund_id` are set from **`advance_fund_id`** for expenses (unless `fund_id` is still sent explicitly).
+
 ## 2026-05-15 — Plaid import review: full auto-created & auto-dismissed workflow (Prompts 1–7)
 
 Combined summary of a 7-prompt development series:

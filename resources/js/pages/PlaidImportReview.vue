@@ -235,21 +235,6 @@
                 />
               </div>
 
-              <div>
-                <label class="mb-1.5 block text-xs font-medium text-gray-400" :for="`fund-${row.id}`">Fund (optional)</label>
-                <select
-                  :id="`fund-${row.id}`"
-                  v-model="formFor(row).fund_id"
-                  class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
-                  :disabled="actionId === row.id"
-                >
-                  <option value="">None</option>
-                  <option v-for="fund in funds" :key="fund.id" :value="String(fund.id)">
-                    {{ fund.name }}{{ fund.scope === 'family' ? ' (family)' : '' }}
-                  </option>
-                </select>
-              </div>
-
               <div
                 v-if="formFor(row).type === 'income'"
                 class="space-y-3 rounded-lg border border-gray-700 bg-gray-900/40 p-3"
@@ -701,6 +686,7 @@
       <div v-show="activeTab === 'auto-created'">
         <p class="mb-3 text-sm text-gray-400 leading-relaxed">
           These transactions were created automatically based on your past history. Approve them if correct, or correct them to improve future accuracy.
+          <span class="mt-1 block text-gray-500">Tap a row to see the full ledger transaction (splits, funds, debt flags, Plaid link).</span>
         </p>
         <p v-if="autoCreatedImports.length === 0" class="text-sm text-gray-500">
           No auto-created transactions to review.
@@ -712,7 +698,12 @@
             class="overflow-hidden rounded-xl border border-gray-700 bg-gray-800/80"
           >
             <div class="px-4 py-3">
-              <div class="flex items-start justify-between gap-3">
+              <button
+                type="button"
+                class="flex w-full min-h-[48px] items-start gap-3 text-left transition-colors hover:bg-gray-800/40 -mx-1 rounded-lg px-1 py-0.5"
+                :disabled="actionId === row.id"
+                @click="toggleAutoCreatedExpand(row)"
+              >
                 <div class="min-w-0 flex-1">
                   <p class="font-bold text-white truncate">
                     {{ row.merchant_name || row.raw_name || 'Transaction' }}
@@ -746,10 +737,173 @@
                     </span>
                   </div>
                 </div>
-                <span class="inline-flex items-center rounded-full bg-emerald-900/40 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-emerald-700/50 shrink-0 mt-0.5">
-                  Auto
-                </span>
+                <div class="flex shrink-0 flex-col items-end gap-1.5 pt-0.5">
+                  <span class="inline-flex items-center rounded-full bg-emerald-900/40 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-emerald-700/50">
+                    Auto
+                  </span>
+                  <span class="text-gray-500" aria-hidden="true">
+                    <svg
+                      class="h-5 w-5 transition-transform"
+                      :class="{ 'rotate-180': expandedAutoCreatedId === row.id }"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </span>
+                </div>
+              </button>
+
+              <div
+                v-show="expandedAutoCreatedId === row.id"
+                class="mt-3 space-y-3 border-t border-gray-700/80 pt-3"
+              >
+                <template v-if="row.transaction">
+                  <p class="text-xs font-semibold text-gray-300">On your books</p>
+                  <dl class="space-y-2.5 text-xs text-gray-300">
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Ledger ID</dt>
+                      <dd class="min-w-0 break-all text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        #{{ row.transaction.id }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Type</dt>
+                      <dd class="min-w-0 text-right capitalize text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ row.transaction.type }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Ledger date</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ formatLedgerDate(row.transaction) }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Ledger amount</dt>
+                      <dd
+                        class="min-w-0 text-right font-medium tabular-nums sm:max-w-[60%] sm:text-right"
+                        :class="row.transaction.type === 'income' ? 'text-emerald-400' : 'text-red-400'"
+                      >
+                        {{ row.transaction.type === 'income' ? '+' : '−' }}{{ formatMoney(row.transaction.amount) }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Description</dt>
+                      <dd class="min-w-0 break-words text-right text-gray-200 sm:max-w-[70%] sm:text-right">
+                        {{ row.transaction.description || '—' }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Recorded by</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ row.transaction.user?.name || '—' }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Category</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        <template v-if="row.transaction.category">
+                          <span v-if="row.transaction.category.icon">{{ row.transaction.category.icon }} </span>{{ row.transaction.category.name }}
+                        </template>
+                        <template v-else>—</template>
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Split expense</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ yesNoDisplay(row.transaction.is_split) }}
+                      </dd>
+                    </div>
+                    <div v-if="row.transaction.is_split && row.transaction.splits?.length" class="rounded-lg border border-gray-700/80 bg-gray-900/40 p-2">
+                      <p class="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-500">Split shares</p>
+                      <ul class="space-y-1.5">
+                        <li
+                          v-for="sp in row.transaction.splits"
+                          :key="sp.id"
+                          class="flex justify-between gap-2 text-xs text-gray-200"
+                        >
+                          <span class="min-w-0 truncate">{{ sp.user?.name || `User #${sp.user_id}` }}</span>
+                          <span class="shrink-0 tabular-nums text-gray-400">{{ sp.share_percentage }}% · {{ formatCurrency(Number(sp.amount) || 0) }}</span>
+                        </li>
+                      </ul>
+                    </div>
+                    <div v-else-if="splitDataJson(row.transaction)" class="rounded-lg border border-gray-700/80 bg-gray-900/40 p-2">
+                      <p class="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">Split template (stored)</p>
+                      <pre class="max-h-24 overflow-auto whitespace-pre-wrap break-all text-[11px] text-gray-400">{{ splitDataJson(row.transaction) }}</pre>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Fund (tag)</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ tagFundRecord(row.transaction)?.name || '—' }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Advance fund</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ advanceFundRecord(row.transaction)?.name || '—' }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Non-necessity</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ yesNoDisplay(row.transaction.is_non_necessity) }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Borrow (income)</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ yesNoDisplay(row.transaction.is_borrow) }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Debt payment</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ yesNoDisplay(row.transaction.is_debt_payment) }}
+                      </dd>
+                    </div>
+                    <div v-if="row.transaction.debt_id" class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Linked debt</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ autoCreatedDebtSummary(row.transaction) }} <span class="text-gray-500">(#{{ row.transaction.debt_id }})</span>
+                      </dd>
+                    </div>
+                    <div v-if="row.transaction.paid_by_user_id" class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Paid by</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ row.transaction.paid_by_user?.name || `User #${row.transaction.paid_by_user_id}` }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Closeout-generated</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ yesNoDisplay(row.transaction.is_closeout_initiated) }}
+                      </dd>
+                    </div>
+                    <div v-if="row.transaction.mirror_transaction_id" class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Mirror transaction</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        #{{ row.transaction.mirror_transaction_id }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Plaid transaction ID</dt>
+                      <dd class="min-w-0 break-all text-right font-mono text-[11px] text-gray-400 sm:max-w-[70%] sm:text-right">
+                        {{ row.transaction.plaid_transaction_id || '—' }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Import source</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ row.transaction.import_source || '—' }}
+                      </dd>
+                    </div>
+                  </dl>
+                </template>
+                <p v-else class="text-xs text-amber-200/90">No linked ledger transaction.</p>
               </div>
+
               <!-- Actions -->
               <div v-if="!autoCreatedFormFor(row).correcting" class="mt-3 flex flex-col gap-2 sm:flex-row">
                 <button
@@ -764,7 +918,7 @@
                   type="button"
                   class="min-h-[44px] flex-1 rounded-xl border border-gray-600 bg-transparent px-4 py-2.5 text-sm font-semibold text-gray-200 transition-colors hover:bg-gray-800 disabled:opacity-50"
                   :disabled="actionId === row.id"
-                  @click="() => { ensureAutoCreatedForm(row); autoCreatedFormFor(row).correcting = true; }"
+                  @click="openAutoCreatedCorrect(row)"
                 >
                   Correct It
                 </button>
@@ -1036,6 +1190,7 @@ const autoCreatedForms = reactive({});
 const dismissedImports = ref([]);
 const dismissedForms = reactive({});
 const expandedId = ref(null);
+const expandedAutoCreatedId = ref(null);
 const forms = reactive({});
 const rowErrors = reactive({});
 const actionId = ref(null);
@@ -1122,6 +1277,84 @@ function formatCurrency(amount) {
     currency: 'USD',
     minimumFractionDigits: 2,
   }).format(amount);
+}
+
+function advanceFundRecord(tx) {
+  if (!tx || typeof tx !== 'object') {
+    return null;
+  }
+  return tx.advance_fund ?? tx.advanceFund ?? null;
+}
+
+function tagFundRecord(tx) {
+  if (!tx || typeof tx !== 'object') {
+    return null;
+  }
+  return tx.fund ?? null;
+}
+
+function yesNoDisplay(val) {
+  return val ? 'Yes' : 'No';
+}
+
+function autoCreatedDebtSummary(tx) {
+  const d = tx?.debt;
+  if (!d) {
+    return '';
+  }
+  if (d.creditor?.name) {
+    return `To ${d.creditor.name}`;
+  }
+  if (d.creditor_name) {
+    return `To ${d.creditor_name}`;
+  }
+  if (d.fund?.name) {
+    return `Borrowed: ${d.fund.name}`;
+  }
+  if (d.description) {
+    return d.description;
+  }
+  return `Debt #${d.id}`;
+}
+
+function formatLedgerDate(tx) {
+  const v = tx?.transaction_date;
+  if (!v) {
+    return '';
+  }
+  return formatDate(v);
+}
+
+function splitDataJson(tx) {
+  const raw = tx?.split_data;
+  if (raw == null) {
+    return '';
+  }
+  if (Array.isArray(raw) && raw.length === 0) {
+    return '';
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 0) {
+    return '';
+  }
+  try {
+    return JSON.stringify(raw);
+  } catch {
+    return String(raw);
+  }
+}
+
+function toggleAutoCreatedExpand(row) {
+  if (expandedAutoCreatedId.value === row.id) {
+    expandedAutoCreatedId.value = null;
+  } else {
+    expandedAutoCreatedId.value = row.id;
+  }
+}
+
+function openAutoCreatedCorrect(row) {
+  ensureAutoCreatedForm(row);
+  autoCreatedFormFor(row).correcting = true;
+  expandedAutoCreatedId.value = row.id;
 }
 
 function formatLinkOptionLabel(c) {
@@ -1265,7 +1498,6 @@ function ensureForm(row) {
     type: t,
     category_id: catId,
     description: '',
-    fund_id: row.suggested_fund_id != null ? String(row.suggested_fund_id) : '',
     pay_toward_debt: false,
     debt_id: null,
     is_split: false,
@@ -1282,7 +1514,7 @@ function ensureForm(row) {
     income_new_interest_enabled: false,
     income_new_interest_rate: 0,
   };
-  applyCategoryDefaults(row, { onlyIfExpense: true });
+  applyCategoryDefaults(row, { mergePlaidSuggestion: true });
 }
 
 function formFor(row) {
@@ -1291,32 +1523,50 @@ function formFor(row) {
   return forms[row.id];
 }
 
-function applyCategoryDefaults(row, { onlyIfExpense = false } = {}) {
+/**
+ * Align expense split / advance / non-necessity with category + per-user defaults from GET /categories.
+ * @param {{ mergePlaidSuggestion?: boolean }} options When true (first expand of a row), apply suggested_advance_fund_id / suggested_fund_id / suggested_is_non_necessity only if the category does not define an advance.
+ */
+function applyCategoryDefaults(row, { mergePlaidSuggestion = false } = {}) {
   const f = forms[row.id];
-  if (!f) {
-    return;
-  }
-  if (onlyIfExpense && f.type !== 'expense') {
-    return;
-  }
-  if (f.type !== 'expense' || f.pay_toward_debt) {
+  if (!f || f.type !== 'expense' || f.pay_toward_debt) {
     return;
   }
   const cat = categories.value.find((c) => String(c.id) === String(f.category_id));
   if (!cat) {
     return;
   }
-  if (cat.is_split_default && cat.split_default?.length) {
+
+  if (cat.is_split_default && Array.isArray(cat.split_default) && cat.split_default.length > 0) {
     f.is_split = true;
     f.split_data = familyUsers.value.length ? equalSplitPayloadForFamilyUsers(familyUsers.value) : [];
+  } else {
+    f.is_split = false;
+    f.split_data = [];
   }
+
   if (cat.advance_fund_id) {
-    f.advance_fund_id = cat.advance_fund_id;
+    f.advance_fund_id = Number(cat.advance_fund_id);
+  } else if (!mergePlaidSuggestion) {
+    f.advance_fund_id = null;
   }
+
   if (cat.is_non_necessity_default && selectedFundHasNonNecessityRule(f)) {
     f.is_non_necessity = true;
   } else {
     f.is_non_necessity = false;
+  }
+
+  if (mergePlaidSuggestion) {
+    if (!f.advance_fund_id) {
+      const sug = row.suggested_advance_fund_id ?? row.suggested_fund_id;
+      if (sug != null && sug !== '') {
+        f.advance_fund_id = Number(sug);
+      }
+    }
+    if (row.suggested_is_non_necessity && selectedFundHasNonNecessityRule(f)) {
+      f.is_non_necessity = true;
+    }
   }
 }
 
@@ -1363,6 +1613,7 @@ function togglePayTowardDebt(row) {
     }
   } else {
     f.debt_id = null;
+    applyCategoryDefaults(row);
   }
 }
 
@@ -1413,6 +1664,7 @@ function setType(row, type) {
     resetIncomeDebtFields(f);
     f.pay_toward_debt = false;
     f.debt_id = null;
+    applyCategoryDefaults(row);
   }
 }
 
@@ -1474,6 +1726,9 @@ function removeAutoCreatedRow(id) {
   }
   delete autoCreatedForms[id];
   delete rowErrors[id];
+  if (expandedAutoCreatedId.value === id) {
+    expandedAutoCreatedId.value = null;
+  }
 }
 
 function ensureDismissedForm(row) {
@@ -1662,11 +1917,6 @@ function buildConfirmPayload(row, f) {
         }
       : {}),
   };
-  const fundId = f.fund_id === '' || f.fund_id === null ? undefined : Number(f.fund_id);
-  if (fundId !== undefined && !Number.isNaN(fundId)) {
-    payload.fund_id = fundId;
-  }
-
   return payload;
 }
 

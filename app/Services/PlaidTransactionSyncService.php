@@ -2,6 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\Category;
+use App\Models\CategoryUserDefault;
+use App\Models\Debt;
+use App\Models\FundRule;
 use App\Models\PlaidItem;
 use App\Models\PlaidMerchantRule;
 use App\Models\PlaidPendingImport;
@@ -270,6 +274,9 @@ class PlaidTransactionSyncService
                 'suggested_fund_id' => $suggestion['fund_id'],
                 'suggested_advance_fund_id' => $suggestion['advance_fund_id'],
                 'suggested_is_non_necessity' => $suggestion['is_non_necessity'],
+                'suggested_description' => $suggestion['description'] ?? null,
+                'suggested_is_debt_payment' => (bool) ($suggestion['is_debt_payment'] ?? false),
+                'suggested_split_data' => $suggestion['split_data'] ?? null,
                 'confidence_score' => $suggestion['confidence_score'],
                 'status' => 'dismissed',
                 'dismiss_source' => 'auto',
@@ -298,6 +305,9 @@ class PlaidTransactionSyncService
             'suggested_fund_id' => $suggestion['fund_id'],
             'suggested_advance_fund_id' => $suggestion['advance_fund_id'],
             'suggested_is_non_necessity' => $suggestion['is_non_necessity'],
+            'suggested_description' => $suggestion['description'] ?? null,
+            'suggested_is_debt_payment' => (bool) ($suggestion['is_debt_payment'] ?? false),
+            'suggested_split_data' => $suggestion['split_data'] ?? null,
             'confidence_score' => $suggestion['confidence_score'],
             'status' => 'pending',
             'transaction_id' => null,
@@ -307,24 +317,40 @@ class PlaidTransactionSyncService
             'plaid_category_detailed' => $this->extractPlaidCategoryDetailed($row),
         ]);
 
-        if ($suggestion['is_auto_eligible'] && $user->family_id !== null) {
+        $canAutoCreate = $suggestion['is_auto_eligible'] && $user->family_id !== null;
+
+        if ($canAutoCreate && ($suggestion['is_debt_payment'] ?? false)) {
+            $learnedDebtId = $suggestion['debt_id'] ?? null;
+            if ($learnedDebtId === null) {
+                $canAutoCreate = false;
+            } else {
+                $debt = Debt::query()
+                    ->where('id', $learnedDebtId)
+                    ->where('debtor_id', $user->id)
+                    ->where('is_pending_closeout', false)
+                    ->where('balance', '>', 0)
+                    ->first();
+                $canAutoCreate = $debt !== null;
+            }
+        }
+
+        if ($canAutoCreate) {
             try {
-                $description = trim($merchantRaw) !== '' ? trim($merchantRaw) : 'Plaid import';
+                $payload = $this->buildAutoCreateTransactionPayload(
+                    $user,
+                    $suggestion,
+                    $rule,
+                    $merchantRaw,
+                    abs($plaidAmount),
+                    $dateStr,
+                );
 
-                $transaction = $this->transactionService->createTransaction([
-                    'type' => $suggestion['type'],
-                    'amount' => abs($plaidAmount),
-                    'transaction_date' => $dateStr,
-                    'description' => $description,
-                    'category_id' => $suggestion['category_id'],
-                    'is_split' => (bool) ($rule?->is_split ?? false),
-                    'split_data' => null,
-                    'advance_fund_id' => $suggestion['advance_fund_id'],
-                    'is_non_necessity' => $suggestion['is_non_necessity'],
-                ], $user);
+                $transaction = $this->transactionService->createTransaction($payload, $user);
 
-                if ($suggestion['fund_id'] !== null) {
-                    $transaction->forceFill(['fund_id' => $suggestion['fund_id']])->save();
+                $advanceId = $payload['type'] === 'expense' ? ($payload['advance_fund_id'] ?? null) : null;
+                $tagFundId = $suggestion['fund_id'] ?? $advanceId;
+                if ($tagFundId !== null) {
+                    $transaction->forceFill(['fund_id' => $tagFundId])->save();
                 }
 
                 $transaction->forceFill([
@@ -344,6 +370,201 @@ class PlaidTransactionSyncService
         if ($rule !== null) {
             $this->matchingService->recordSeen($rule);
         }
+    }
+
+    /**
+     * @param  array{
+     *     category_id: int|null,
+     *     type: string,
+     *     fund_id: int|null,
+     *     advance_fund_id: int|null,
+     *     is_non_necessity: bool
+     * }  $suggestion
+     * @return array<string, mixed>
+     */
+    private function buildAutoCreateTransactionPayload(
+        User $user,
+        array $suggestion,
+        ?PlaidMerchantRule $rule,
+        string $merchantRaw,
+        float $amount,
+        string $dateStr,
+    ): array {
+        $type = (string) $suggestion['type'];
+        $categoryId = $suggestion['category_id'];
+        $ruleDescription = $rule !== null ? trim((string) ($rule->description ?? '')) : '';
+        $description = $ruleDescription !== '' ? $ruleDescription : (trim($merchantRaw) !== '' ? trim($merchantRaw) : 'Plaid import');
+
+        if ($type === 'income') {
+            return [
+                'type' => 'income',
+                'amount' => $amount,
+                'transaction_date' => $dateStr,
+                'description' => $description,
+                'category_id' => $categoryId,
+                'is_split' => false,
+                'split_data' => null,
+                'advance_fund_id' => null,
+                'is_non_necessity' => false,
+            ];
+        }
+
+        $advanceFundId = $suggestion['advance_fund_id'];
+        $ruleNonNecessity = (bool) ($suggestion['is_non_necessity'] ?? false);
+        $isSplit = false;
+        $splitData = null;
+
+        $category = null;
+        $userDefaults = null;
+        if ($categoryId !== null && $user->family_id !== null) {
+            $category = Category::query()
+                ->where('id', $categoryId)
+                ->where('family_id', $user->family_id)
+                ->first();
+            if ($category !== null) {
+                $userDefaults = CategoryUserDefault::query()
+                    ->where('category_id', $category->id)
+                    ->where('user_id', $user->id)
+                    ->first();
+            }
+        }
+
+        if ($category !== null && $category->is_expense) {
+            $splitTemplate = $category->split_default;
+            $wantsCategorySplit = $category->is_split_default
+                && is_array($splitTemplate)
+                && count($splitTemplate) > 0;
+
+            if ($wantsCategorySplit || ($rule !== null && $rule->is_split)) {
+                $learnedSplitData = $rule !== null ? $rule->split_data : null;
+                if (
+                    is_array($learnedSplitData)
+                    && count($learnedSplitData) > 0
+                    && SplitCalculator::validate($learnedSplitData)
+                ) {
+                    $splitData = $learnedSplitData;
+                    $isSplit = true;
+                } else {
+                    $splitData = $this->equalFamilySplitDataOrNull($user);
+                    $isSplit = $splitData !== null;
+                }
+            }
+
+            $advanceFromCategory = $userDefaults?->advance_fund_id;
+            if ($advanceFromCategory !== null && (int) $advanceFromCategory !== 0) {
+                $advanceFundId = (int) $advanceFromCategory;
+            }
+
+            $isNonNecessity = $this->resolveAutoCreateNonNecessityFlag(
+                $user,
+                $advanceFundId,
+                $isSplit,
+                $userDefaults,
+                $ruleNonNecessity,
+            );
+        } else {
+            if ($rule !== null && $rule->is_split) {
+                $learnedSplitData = $rule->split_data;
+                if (
+                    is_array($learnedSplitData)
+                    && count($learnedSplitData) > 0
+                    && SplitCalculator::validate($learnedSplitData)
+                ) {
+                    $splitData = $learnedSplitData;
+                    $isSplit = true;
+                } else {
+                    $splitData = $this->equalFamilySplitDataOrNull($user);
+                    $isSplit = $splitData !== null;
+                }
+            }
+
+            $isNonNecessity = $this->resolveAutoCreateNonNecessityFlag(
+                $user,
+                $advanceFundId,
+                $isSplit,
+                null,
+                $ruleNonNecessity,
+            );
+        }
+
+        $isDebtPayment = (bool) ($suggestion['is_debt_payment'] ?? false);
+        $learnedDebtId = ($isDebtPayment && isset($suggestion['debt_id'])) ? (int) $suggestion['debt_id'] : null;
+
+        $expensePayload = [
+            'type' => 'expense',
+            'amount' => $amount,
+            'transaction_date' => $dateStr,
+            'description' => $description,
+            'category_id' => $categoryId,
+            'is_split' => $isSplit,
+            'split_data' => $splitData,
+            'advance_fund_id' => $advanceFundId,
+            'is_non_necessity' => $isNonNecessity,
+        ];
+
+        if ($isDebtPayment && $learnedDebtId !== null) {
+            $expensePayload['is_debt_payment'] = true;
+            $expensePayload['debt_id'] = $learnedDebtId;
+        }
+
+        return $expensePayload;
+    }
+
+    /**
+     * @return list<array{user_id: int, share_percentage: float}>|null
+     */
+    private function equalFamilySplitDataOrNull(User $user): ?array
+    {
+        if ($user->family_id === null) {
+            return null;
+        }
+
+        $familyUserIds = User::query()
+            ->where('family_id', $user->family_id)
+            ->orderBy('id')
+            ->pluck('id')
+            ->all();
+
+        $splitData = SplitCalculator::equalShareSplitData($familyUserIds);
+        if ($splitData === [] || ! SplitCalculator::validate($splitData)) {
+            return null;
+        }
+
+        return $splitData;
+    }
+
+    private function resolveAutoCreateNonNecessityFlag(
+        User $user,
+        ?int $advanceFundId,
+        bool $isSplit,
+        ?CategoryUserDefault $userDefaults,
+        bool $ruleNonNecessity,
+    ): bool {
+        if ($isSplit || $advanceFundId === null || $advanceFundId === 0) {
+            return false;
+        }
+
+        if (! $this->userHasNonNecessityEligibleFundRule($user->id, $advanceFundId)) {
+            return false;
+        }
+
+        if ($userDefaults !== null && $userDefaults->is_non_necessity_default) {
+            return true;
+        }
+
+        return $ruleNonNecessity;
+    }
+
+    private function userHasNonNecessityEligibleFundRule(int $userId, int $advanceFundId): bool
+    {
+        return FundRule::query()
+            ->where('user_id', $userId)
+            ->where('is_active', true)
+            ->where('destination_type', 'fund')
+            ->where('destination_id', $advanceFundId)
+            ->where('allocation_type', 'percentage')
+            ->where('allocation_base', 'remaining')
+            ->exists();
     }
 
     /**

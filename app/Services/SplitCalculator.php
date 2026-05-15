@@ -59,6 +59,38 @@ readonly class SplitCalculator
     }
 
     /**
+     * Equal percentage splits for {@see createTransaction} payloads (same rounding as the Vue equal-split helper).
+     *
+     * @param  list<int|string>  $userIds  Family user IDs, stable order (e.g. ascending id)
+     * @return list<array{user_id: int, share_percentage: float}>
+     */
+    public static function equalShareSplitData(array $userIds): array
+    {
+        $ids = array_values(array_map(static fn (mixed $id): int => (int) $id, $userIds));
+        $count = count($ids);
+        if ($count === 0) {
+            return [];
+        }
+        if ($count === 1) {
+            return [['user_id' => $ids[0], 'share_percentage' => 100.0]];
+        }
+
+        $base = floor(10000 / $count) / 100;
+        $splits = [];
+        $sum = 0.0;
+        for ($i = 0; $i < $count - 1; $i++) {
+            $splits[] = ['user_id' => $ids[$i], 'share_percentage' => $base];
+            $sum += $base;
+        }
+        $splits[] = [
+            'user_id' => $ids[$count - 1],
+            'share_percentage' => round(100.0 - $sum, 2),
+        ];
+
+        return $splits;
+    }
+
+    /**
      * Sums the amount field from allocated splits.
      *
      * Useful for verifying that allocate() distributed all funds correctly.

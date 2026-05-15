@@ -46,6 +46,7 @@ class PlaidImportController extends Controller
             $autoCreatedCount = PlaidPendingImport::query()
                 ->where('user_id', $user->id)
                 ->where('status', 'auto_created')
+                ->whereNull('reviewed_at')
                 ->count();
 
             $dismissedCount = PlaidPendingImport::query()
@@ -81,7 +82,20 @@ class PlaidImportController extends Controller
         $autoCreated = PlaidPendingImport::query()
             ->where('user_id', $user->id)
             ->where('status', 'auto_created')
-            ->with(['suggestedCategory', 'plaidItem', 'transaction.category'])
+            ->whereNull('reviewed_at')
+            ->with([
+                'suggestedCategory',
+                'plaidItem',
+                'transaction.user',
+                'transaction.category',
+                'transaction.splits.user',
+                'transaction.debt.creditor',
+                'transaction.debt.debtor',
+                'transaction.debt.fund',
+                'transaction.advanceFund',
+                'transaction.fund',
+                'transaction.paidByUser',
+            ])
             ->orderByDesc('date')
             ->get();
 
@@ -126,7 +140,13 @@ class PlaidImportController extends Controller
             'is_non_necessity' => (bool) $transaction->is_non_necessity,
             'is_split' => (bool) $transaction->is_split,
             'action' => 'categorize',
+            'description' => $transaction->description,
+            'is_debt_payment' => (bool) $transaction->is_debt_payment,
+            'debt_id' => $transaction->debt_id,
+            'split_data' => $transaction->is_split ? $transaction->split_data : null,
         ]);
+
+        $pendingImport->forceFill(['reviewed_at' => now()])->save();
 
         return response()->noContent();
     }
@@ -152,6 +172,8 @@ class PlaidImportController extends Controller
             'fund_id' => ['nullable', 'integer', 'exists:funds,id'],
             'advance_fund_id' => ['nullable', 'integer', 'exists:funds,id'],
             'is_non_necessity' => ['boolean'],
+            'description' => ['nullable', 'string', 'max:500'],
+            'is_debt_payment' => ['boolean'],
         ]);
 
         $transaction->forceFill([
@@ -160,6 +182,8 @@ class PlaidImportController extends Controller
             'fund_id' => $validated['fund_id'] ?? null,
             'advance_fund_id' => $validated['advance_fund_id'] ?? null,
             'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
+            'description' => $validated['description'] ?? $transaction->description,
+            'is_debt_payment' => (bool) ($validated['is_debt_payment'] ?? $transaction->is_debt_payment),
         ])->save();
 
         $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
@@ -171,10 +195,26 @@ class PlaidImportController extends Controller
             'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
             'is_split' => (bool) $transaction->is_split,
             'action' => 'categorize',
+            'description' => $validated['description'] ?? $transaction->description,
+            'is_debt_payment' => (bool) ($validated['is_debt_payment'] ?? $transaction->is_debt_payment),
+            'debt_id' => $validated['debt_id'] ?? $transaction->debt_id,
+            'split_data' => $transaction->is_split ? $transaction->split_data : null,
         ]);
 
+        $pendingImport->forceFill(['reviewed_at' => now()])->save();
+
         return response()->json(
-            $transaction->fresh()->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
+            $transaction->fresh()->load([
+                'user',
+                'category',
+                'splits.user',
+                'debt.creditor',
+                'debt.debtor',
+                'debt.fund',
+                'advanceFund',
+                'fund',
+                'paidByUser',
+            ])
         );
     }
 
@@ -274,6 +314,10 @@ class PlaidImportController extends Controller
             'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
             'is_split' => false,
             'action' => 'categorize',
+            'description' => $description,
+            'is_debt_payment' => false,
+            'debt_id' => null,
+            'split_data' => null,
         ]);
 
         $pendingImport->forceFill([
@@ -314,6 +358,8 @@ class PlaidImportController extends Controller
 
         $isSplit = (bool) ($validated['is_split'] ?? false);
         $payTowardDebt = ($validated['type'] ?? '') === 'expense' && ! empty($validated['debt_id']);
+        $resolvedAdvanceFundId = ($validated['type'] === 'expense' && ! $payTowardDebt) ? ($validated['advance_fund_id'] ?? null) : null;
+        $resolvedTagFundId = ! empty($validated['fund_id']) ? (int) $validated['fund_id'] : $resolvedAdvanceFundId;
 
         $payload = [
             'type' => $validated['type'],
@@ -323,7 +369,7 @@ class PlaidImportController extends Controller
             'category_id' => $validated['category_id'],
             'is_split' => $isSplit,
             'split_data' => $isSplit && ! empty($validated['split_data']) ? $validated['split_data'] : null,
-            'advance_fund_id' => ($validated['type'] === 'expense' && ! $payTowardDebt) ? ($validated['advance_fund_id'] ?? null) : null,
+            'advance_fund_id' => $resolvedAdvanceFundId,
             'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
         ];
 
@@ -363,8 +409,8 @@ class PlaidImportController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        if (! empty($validated['fund_id'])) {
-            $transaction->forceFill(['fund_id' => $validated['fund_id']])->save();
+        if ($resolvedTagFundId !== null) {
+            $transaction->forceFill(['fund_id' => $resolvedTagFundId])->save();
         }
 
         $transaction->forceFill([
@@ -377,11 +423,15 @@ class PlaidImportController extends Controller
         $this->matchingService->learnFromConfirmation($user->id, $merchantName, [
             'category_id' => $validated['category_id'],
             'type' => $validated['type'],
-            'fund_id' => $validated['fund_id'] ?? null,
-            'advance_fund_id' => $validated['advance_fund_id'] ?? null,
+            'fund_id' => $resolvedTagFundId,
+            'advance_fund_id' => $resolvedAdvanceFundId,
             'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
             'is_split' => $isSplit,
             'action' => 'categorize',
+            'description' => $description,
+            'is_debt_payment' => $payTowardDebt,
+            'debt_id' => isset($validated['debt_id']) ? (int) $validated['debt_id'] : null,
+            'split_data' => $isSplit && ! empty($validated['split_data']) ? $validated['split_data'] : null,
         ]);
 
         $pendingImport->forceFill([
@@ -553,6 +603,10 @@ class PlaidImportController extends Controller
                     'is_non_necessity' => (bool) $ledger->is_non_necessity,
                     'is_split' => (bool) $ledger->is_split,
                     'action' => 'categorize',
+                    'description' => $ledger->description,
+                    'is_debt_payment' => (bool) $ledger->is_debt_payment,
+                    'debt_id' => $ledger->debt_id,
+                    'split_data' => $ledger->is_split ? $ledger->split_data : null,
                 ]);
 
                 $ledger->forceFill([

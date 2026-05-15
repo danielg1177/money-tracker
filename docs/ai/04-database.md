@@ -53,6 +53,8 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_05_08_122741_create_category_user_defaults_table` | Creates `category_user_defaults`, migrates category-level advance/non-necessity defaults to head-of-household users, and removes those columns from `categories` |
 | `2026_05_08_020419_add_is_non_necessity_to_transactions_table` | Adds `is_non_necessity` boolean (default false) to `transactions` |
 || `2026_05_15_164512_add_dismiss_source_reviewed_at_to_plaid_pending_imports` | Adds `dismiss_source` varchar(16) nullable and `reviewed_at` timestamp nullable to `plaid_pending_imports` |
+|| `2026_05_15_231529_add_full_settings_to_plaid_merchant_rules` | Adds `description`, `is_debt_payment`, `debt_id` (advisory, no FK), `split_data` to `plaid_merchant_rules` after `is_split` |
+|| `2026_05_15_231529_add_full_settings_to_plaid_pending_imports` | Adds `suggested_description`, `suggested_is_debt_payment`, `suggested_debt_id` (advisory, no FK), `suggested_split_data` to `plaid_pending_imports` after `suggested_is_non_necessity` |
 
 ## Table schemas
 
@@ -249,6 +251,10 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `suggested_fund_id` | bigint FK nullable | → `funds.id` |
 | `suggested_advance_fund_id` | bigint FK nullable | → `funds.id` |
 | `suggested_is_non_necessity` | boolean | default false |
+| `suggested_description` | varchar nullable | Suggested transaction description from merchant rule |
+| `suggested_is_debt_payment` | boolean | default false; suggested debt-payment flag from merchant rule |
+| `suggested_debt_id` | bigint unsigned nullable | Advisory debt reference from merchant rule (no FK constraint) |
+| `suggested_split_data` | json nullable | Suggested split template from merchant rule: `[{user_id, share_percentage}]` |
 | `confidence_score` | decimal(6,4) nullable | Merchant rule confidence (0.0–1.0) |
 | `status` | varchar | `pending` \| `auto_created` \| `confirmed` \| `dismissed` |
 | `transaction_id` | bigint FK nullable | → `transactions.id`; set when confirmed or auto-created |
@@ -257,7 +263,7 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `plaid_category_primary` | varchar nullable | Plaid PFC primary category |
 | `plaid_category_detailed` | varchar nullable | Plaid PFC detailed category |
 | `dismiss_source` | varchar(16) nullable | `'auto'` (merchant rule dismiss during sync) \| `'manual'` (user dismissed in UI); null for non-dismissed rows |
-| `reviewed_at` | timestamp nullable | Set when user reviews/audits an auto-dismissed entry; once set, row is excluded from the Ignored review queue |
+| `reviewed_at` | timestamp nullable | Set when user acknowledges an auto-dismissed entry or approves/corrects an **auto-created** entry; once set, row is excluded from the Ignored / Auto-Created review queues (`GET /plaid/pending-imports`) |
 | `timestamps` | | |
 
 ### `plaid_merchant_rules`
@@ -272,6 +278,10 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `advance_fund_id` | bigint FK nullable | → `funds.id` |
 | `is_non_necessity` | boolean | default false |
 | `is_split` | boolean | default false |
+| `description` | varchar nullable | Learned transaction description to apply on import |
+| `is_debt_payment` | boolean | default false; learned debt-payment flag |
+| `debt_id` | bigint unsigned nullable | Advisory reference to a debt (no FK constraint — survives debt deletion) |
+| `split_data` | json nullable | Learned split template: `[{user_id, share_percentage}]` |
 | `confirmation_count` | integer | Explicit confirmations; `≥ 3` + score `≥ 0.80` = auto-create eligible |
 | `total_seen_count` | integer | Total times rule was matched; used for confidence scoring |
 | `action` | varchar | `categorize` (create pending or auto-create) \| `dismiss` (auto-dismiss on sync) |

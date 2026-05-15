@@ -16,6 +16,10 @@ class PlaidMerchantRule extends Model
         'advance_fund_id',
         'is_non_necessity',
         'is_split',
+        'description',
+        'is_debt_payment',
+        'debt_id',
+        'split_data',
         'confirmation_count',
         'total_seen_count',
         'action',
@@ -29,6 +33,8 @@ class PlaidMerchantRule extends Model
         return [
             'is_non_necessity' => 'bool',
             'is_split' => 'bool',
+            'is_debt_payment' => 'bool',
+            'split_data' => 'array',
             'confirmation_count' => 'integer',
             'total_seen_count' => 'integer',
         ];
