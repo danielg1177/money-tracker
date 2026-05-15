@@ -11,6 +11,28 @@ Format:
 
 ---
 
+## 2026-05-15 — Savings Sweep Feature
+
+**Summary:** Added "Savings Sweep" action to funds, allowing users to record when they move fund balances into their real savings account.
+
+**Files touched:**
+
+- `app/Http/Requests/SweepFundRequest.php` (new)
+- `app/Services/FundService.php` — added `sweepToSavings()` method
+- `app/Http/Controllers/FundController.php` — added `sweep()` action
+- `routes/web.php` — added `POST /funds/{fund}/sweep`
+- `tests/Feature/FundSweepTest.php` (new, 8 tests)
+- `resources/js/pages/Funds.vue` — added Sweep button, modal, and history display
+- `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+
+**Behavioral impact:**
+
+- New `FundMovement` type `savings_sweep` (debit, no transaction created)
+- Sweep button appears on expanded fund cards only when balance &gt; 0
+- Supports full sweep (clear entire balance) or partial sweep (leaves remainder in fund)
+- Sweep movements visible in fund history modal with teal badge
+- Zero impact on Transactions page, closeout math, or month-close guard
+
 ## 2026-05-11 — Ledger link suggestions scoped to importer’s own transactions
 
 - Files touched: `app/Services/PlaidMatchingService.php`, `app/Http/Requests/LinkPlaidPendingImportRequest.php`, `tests/Feature/PlaidImportTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

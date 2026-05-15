@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\SweepFundRequest;
 use App\Models\Debt;
 use App\Models\Fund;
 use App\Models\FundMovement;
 use App\Models\FundRule;
 use App\Services\ClosedMonthGuard;
 use App\Services\FundService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -196,6 +198,24 @@ class FundController extends Controller
             $this->fundService->repayFund($debt, (float) $request->amount, auth()->user());
 
             return response()->json(['message' => 'Fund repayment recorded'], 200);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function sweep(Fund $fund, SweepFundRequest $request): JsonResponse
+    {
+        $this->authorize('update', $fund);
+
+        try {
+            $movement = $this->fundService->sweepToSavings(
+                $fund,
+                (float) $request->validated('amount'),
+                (string) ($request->validated('description') ?? ''),
+                auth()->user()
+            );
+
+            return response()->json($movement->load('user'), 201);
         } catch (InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

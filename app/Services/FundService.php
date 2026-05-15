@@ -181,4 +181,32 @@ class FundService
             $debt->decrement('balance', $amount);
         });
     }
+
+    /**
+     * Sweep a savings-fund balance to the user's external savings account.
+     *
+     * Decrements the fund balance by the given amount and writes a savings_sweep
+     * FundMovement audit row. No Transaction is created; this action is invisible
+     * to the transactions page and closeout math.
+     *
+     * @throws InvalidArgumentException When the sweep amount exceeds the fund balance.
+     */
+    public function sweepToSavings(Fund $fund, float $amount, string $description, User $user): FundMovement
+    {
+        if ($amount > (float) $fund->balance) {
+            throw new InvalidArgumentException('Sweep amount cannot exceed the current fund balance.');
+        }
+
+        return DB::transaction(function () use ($fund, $amount, $description, $user) {
+            $fund->decrement('balance', $amount);
+
+            return FundMovement::query()->create([
+                'fund_id' => $fund->id,
+                'user_id' => $user->id,
+                'type' => 'savings_sweep',
+                'amount' => $amount,
+                'description' => $description ?: null,
+            ]);
+        });
+    }
 }

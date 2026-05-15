@@ -75,9 +75,19 @@
 - Relations: `belongsTo(User)`, `belongsTo(Fund)`
 
 ### FundMovement (`app/Models/FundMovement.php`)
-- Fields: `fund_id`, `user_id`, `type` (`allocation`|`borrow`|`repayment`|`initial_value`|`closeout_allocation`|`advance_settlement`), `amount`, `transaction_id` (nullable), `description` (nullable)
+- Fields: `fund_id`, `user_id`, `type` (`allocation`|`borrow`|`repayment`|`initial_value`|`closeout_allocation`|`advance_settlement`|`savings_sweep`), `amount`, `transaction_id` (nullable), `description` (nullable)
 - Audit ledger for every fund balance change
 - Relations: `belongsTo(Fund)`, `belongsTo(User)`, `belongsTo(Transaction)`
+
+| `type` | Balance effect | `Transaction` | Notes |
+|---|---|---|---|
+| `allocation` | Fund balance incremented | Yes (income) | Legacy/rule path; not used on income save today |
+| `borrow` | Fund balance decremented | Yes (income, `is_borrow`) | Creates linked `Debt` |
+| `repayment` | Fund balance incremented | Yes (expense, `is_debt_payment`) | Fund debt repayment |
+| `initial_value` | Fund balance incremented | No | Starting balance at fund creation |
+| `closeout_allocation` | Fund balance incremented | Yes (closeout expense) | Month hard-close rule payout |
+| `advance_settlement` | Fund balance decremented | No | Month close settles `advance_fund_id` expenses |
+| `savings_sweep` | Fund balance decremented | No | User sweeps fund balance to external savings account |
 
 ### Debt (`app/Models/Debt.php`)
 - Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable FK → transactions, `cascadeOnDelete` for split-linked rows), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `is_pending_closeout` (bool — true during month hard-close split processing; pending debts are excluded from `GET /debts` and cannot be manually paid), `creditor_name` (nullable string for external creditors), `contributions` (JSON array nullable), `interest_enabled` (bool), `interest_rate` (APR decimal), `interest_last_applied_at` (date nullable), `loan_received_date` (date nullable), `interest_accruals` (JSON array nullable)
@@ -115,6 +125,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `updateRule(FundRule, Request)` — `403` if `fundRule.user_id !== auth()->id()`; same validation as `storeRule`, ignoring the current rule when checking title uniqueness
 - `destroy(Fund)` — authorizes via `FundPolicy`
 - `borrow(Fund, Request)` — authorizes via `FundPolicy`, rejects if the current month is closed for the user via `ClosedMonthGuard`, then delegates to `FundService::borrowFromFund`
+- `sweep(Fund, SweepFundRequest)` — authorizes via `FundPolicy`; **no** `ClosedMonthGuard`; delegates to `FundService::sweepToSavings`; returns `201` with the `FundMovement` (includes `user`)
 - `repayFund(Debt, Request)` — checks `debtor_id === auth()->id()`, rejects if the current month is closed for the user via `ClosedMonthGuard`, then delegates to `FundService::repayFund`
 
 ### DebtController
@@ -250,6 +261,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `processIncome(Transaction, User): void` — loads active `FundRule`s ordered by `order`; iterates rules; calculates allocation amount from `gross`, `net`, or `remaining` base; increments fund balance + creates `FundMovement` — **not called** from `TransactionService` in the current app (reserved / legacy path)
 - `borrowFromFund(Fund, float, string, User): Transaction` — validates balance; decrements fund, creates `is_borrow=true` income transaction, creates `FundMovement` (type=`borrow`), creates `Debt` (creditor_id=null, fund_id set)
 - `repayFund(Debt, float, User): void` — validates fund association, debtor match, amount; increments fund balance, creates `FundMovement` (type=`repayment`), creates expense transaction with `is_debt_payment=true`, decrements debt balance
+- `sweepToSavings(Fund, float, string, User): FundMovement` — validates amount ≤ fund balance; decrements fund, creates `FundMovement` (type=`savings_sweep`, optional `description`); **no** `Transaction`; does not affect closeout math
 
 ### DebtService (`app/Services/DebtService.php`)
 - `payDebt(Debt, float, string, User, bool $isCloseoutInitiated = false, ?string $paymentDate = null, ?int $splitWithUserId = null, ?float $splitPercentage = null): void` — validates and records a debt payment:

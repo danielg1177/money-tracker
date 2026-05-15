@@ -198,7 +198,7 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `id` | bigint PK | |
 | `fund_id` | bigint FK | → `funds.id` |
 | `user_id` | bigint FK | → `users.id` |
-| `type` | varchar | `allocation` \| `borrow` \| `repayment` \| `initial_value` \| `closeout_allocation` \| `advance_settlement` |
+| `type` | varchar | `allocation` \| `borrow` \| `repayment` \| `initial_value` \| `closeout_allocation` \| `advance_settlement` \| `savings_sweep` |
 | `amount` | decimal(15,2) | |
 | `description` | text nullable | |
 | `transaction_id` | bigint FK nullable | → `transactions.id` |

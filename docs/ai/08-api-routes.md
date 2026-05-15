@@ -96,6 +96,7 @@ Requires `PLAID_CLIENT_ID` + `PLAID_SECRET` in the environment. Link tokens use 
 | DELETE | `/funds/{fund}` | `FundController::destroy` | Requires fund ownership (personal) or family membership with `can_manage_family` (family-scoped) |
 | GET | `/funds/{fund}/rules` | `FundController::showRules` | **Backward compatibility:** returns the same JSON as `GET /closeout-rules` (all of the auth user’s rules, not scoped to `{fund}`) |
 | POST | `/funds/{fund}/borrow` | `FundController::borrow` | `{amount, description?}`; requires fund ownership or family membership; rejects `422` when the current month is closed for the user |
+| POST | `/funds/{fund}/sweep` | `FundController::sweep` | **Body:** `{ amount: number` (required, min 0.01, max = fund balance), `description?: string }`. **Auth:** required (`FundPolicy::update` — fund owner or family member with access). **Effect:** decrements `fund.balance` by `amount`, creates `FundMovement` (`type=savings_sweep`). No `Transaction` created. No month-close guard. **Response:** `201` — `FundMovement` with `user` relationship. **Errors:** `422` if amount > balance or validation fails; `403` if not authorized for the fund |
 
 ### Closeout rules (`FundRule` — month hard-close allocations)
 

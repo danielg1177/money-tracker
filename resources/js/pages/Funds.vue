@@ -167,6 +167,13 @@
               Borrow
             </button>
             <button
+              v-if="(fund.balance ?? 0) > 0"
+              @click="openSweepModal(fund)"
+              class="flex-1 py-2 px-3 bg-teal-700 hover:bg-teal-600 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Sweep
+            </button>
+            <button
               @click="openFundHistoryModal(fund)"
               class="flex-1 py-2 px-3 bg-gray-600 hover:bg-gray-500 text-white text-sm font-medium rounded-lg transition-colors"
             >
@@ -461,6 +468,96 @@
       </div>
     </Transition>
 
+    <!-- Sweep to Savings Modal -->
+    <Transition
+      enter-active-class="transition duration-300"
+      enter-from-class="translate-y-full opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition duration-300"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-full opacity-0"
+    >
+      <div v-if="showSweepModal && selectedFund" class="fixed inset-0 z-50">
+        <div class="absolute inset-0 bg-black/50" @click="showSweepModal = false" />
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-bold text-white">Sweep to Savings</h2>
+              <p class="text-gray-400 text-sm">{{ selectedFund.name }}</p>
+            </div>
+            <button @click="showSweepModal = false" class="text-gray-400 hover:text-white">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="p-4 space-y-4">
+            <div class="bg-gray-800 rounded-lg p-3 flex items-center justify-between">
+              <span class="text-sm text-gray-400">Available Balance</span>
+              <span class="text-lg font-bold text-green-400">{{ formatCurrency(selectedFund.balance ?? 0) }}</span>
+            </div>
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <label class="text-sm font-medium text-gray-300">Amount to Sweep</label>
+                <button
+                  @click="sweepForm.amount = selectedFund.balance"
+                  class="text-xs text-teal-400 hover:text-teal-300 underline"
+                >
+                  Sweep All
+                </button>
+              </div>
+              <div class="relative">
+                <span class="absolute left-4 top-2 text-gray-400">$</span>
+                <input
+                  v-model.number="sweepForm.amount"
+                  v-bind="mobileDecimalNumberAttrs"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  :max="selectedFund.balance"
+                  placeholder="0.00"
+                  class="w-full pl-8 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-teal-500"
+                />
+              </div>
+            </div>
+            <div
+              v-if="sweepForm.amount > 0 && sweepForm.amount < (selectedFund.balance ?? 0)"
+              class="bg-gray-800 rounded-lg p-3 flex items-center justify-between"
+            >
+              <span class="text-sm text-gray-400">Remaining in fund</span>
+              <span class="text-sm font-semibold text-amber-400">
+                {{ formatCurrency((selectedFund.balance ?? 0) - sweepForm.amount) }}
+              </span>
+            </div>
+            <textarea
+              v-model="sweepForm.description"
+              placeholder="Note (optional)"
+              class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-teal-500 resize-none"
+              rows="2"
+            />
+            <div v-if="sweepError" class="p-3 bg-red-900/20 border border-red-700/50 rounded-lg">
+              <p class="text-red-400 text-sm">{{ sweepError }}</p>
+            </div>
+            <div class="flex gap-2">
+              <button
+                @click="showSweepModal = false"
+                class="flex-1 py-2 bg-gray-800 text-gray-300 font-medium rounded-lg hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                @click="submitSweep"
+                :disabled="submitLoading || !sweepForm.amount || sweepForm.amount <= 0 || sweepForm.amount > (selectedFund.balance ?? 0)"
+                class="flex-1 py-2 bg-teal-700 text-white font-medium rounded-lg hover:bg-teal-600 disabled:bg-gray-700"
+              >
+                {{ submitLoading ? 'Sweeping…' : 'Confirm Sweep' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Fund History Modal -->
     <Transition
       enter-active-class="transition duration-300"
@@ -509,6 +606,7 @@
                         :class="{
                           'bg-green-900/30 text-green-400 border border-green-700/50': movement.type === 'allocation' || movement.type === 'closeout_allocation' || movement.type === 'repayment' || movement.type === 'initial_value',
                           'bg-amber-900/30 text-amber-400 border border-amber-700/50': movement.type === 'borrow' || movement.type === 'advance_settlement',
+                          'bg-teal-900/30 text-teal-400 border border-teal-700/50': movement.type === 'savings_sweep',
                         }"
                       >
                         {{ movementTypeLabel(movement.type) }}
@@ -524,9 +622,13 @@
                   </div>
                   <p
                     class="text-sm font-bold ml-3"
-                    :class="(movement.type === 'borrow' || movement.type === 'advance_settlement') ? 'text-amber-400' : 'text-green-400'"
+                    :class="{
+                      'text-amber-400': movement.type === 'borrow' || movement.type === 'advance_settlement',
+                      'text-teal-400': movement.type === 'savings_sweep',
+                      'text-green-400': movement.type !== 'borrow' && movement.type !== 'advance_settlement' && movement.type !== 'savings_sweep',
+                    }"
                   >
-                    {{ (movement.type === 'borrow' || movement.type === 'advance_settlement') ? '-' : '+' }}{{ formatCurrency(movement.amount) }}
+                    {{ (movement.type === 'borrow' || movement.type === 'advance_settlement' || movement.type === 'savings_sweep') ? '-' : '+' }}{{ formatCurrency(movement.amount) }}
                   </p>
                 </div>
               </div>
@@ -553,6 +655,7 @@ const showNewFundForm = ref(false);
 const showEditFundModal = ref(false);
 const showEditRuleModal = ref(false);
 const showBorrowModal = ref(false);
+const showSweepModal = ref(false);
 const showFundHistoryModal = ref(false);
 const selectedFund = ref(null);
 const selectedFundForHistory = ref(null);
@@ -560,6 +663,7 @@ const editingFund = ref(null);
 const editingRule = ref(null);
 const submitLoading = ref(false);
 const borrowError = ref(null);
+const sweepError = ref(null);
 const deleteConfirmFund = ref(null);
 
 const newFund = ref({
@@ -570,6 +674,10 @@ const newFund = ref({
 });
 
 const borrowForm = ref({
+  amount: null,
+  description: '',
+});
+const sweepForm = ref({
   amount: null,
   description: '',
 });
@@ -632,6 +740,13 @@ function openBorrowModal(fund) {
   showBorrowModal.value = true;
 }
 
+function openSweepModal(fund) {
+  selectedFund.value = fund;
+  sweepForm.value = { amount: null, description: '' };
+  sweepError.value = null;
+  showSweepModal.value = true;
+}
+
 function openFundHistoryModal(fund) {
   selectedFundForHistory.value = fund;
   showFundHistoryModal.value = true;
@@ -645,6 +760,7 @@ function movementTypeLabel(type) {
     repayment: 'Repayment',
     initial_value: 'Initial Value Set At',
     advance_settlement: 'Advance Settlement',
+    savings_sweep: 'Savings Sweep',
   };
   return labels[type] || type;
 }
@@ -763,6 +879,23 @@ async function submitBorrow() {
     await fetchFunds();
   } catch (err) {
     borrowError.value = err.response?.data?.message || 'Failed to borrow from fund';
+  } finally {
+    submitLoading.value = false;
+  }
+}
+
+async function submitSweep() {
+  sweepError.value = null;
+  submitLoading.value = true;
+  try {
+    await post(`/funds/${selectedFund.value.id}/sweep`, {
+      amount: sweepForm.value.amount,
+      description: sweepForm.value.description,
+    });
+    showSweepModal.value = false;
+    await fetchFunds();
+  } catch (err) {
+    sweepError.value = err.response?.data?.message || 'Failed to sweep fund';
   } finally {
     submitLoading.value = false;
   }
