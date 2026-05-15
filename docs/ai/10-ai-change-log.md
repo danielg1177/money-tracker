@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-15 — Month summary: fund advance transaction drill-down on closeout rules
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`GET /month-summary`** adds **`fund_advance_transactions`** (per-fund advance expense rows for the viewer) and **`destination_id`** on each **`rule_preview.rules`** entry. On **Projected Closeout / Closeout Results**, fund-destination rules with advances in the month are tappable and open a bottom-sheet listing those transactions plus a total.
+
 ## 2026-05-15 — Savings Sweep Feature
 
 **Summary:** Added "Savings Sweep" action to funds, allowing users to record when they move fund balances into their real savings account.

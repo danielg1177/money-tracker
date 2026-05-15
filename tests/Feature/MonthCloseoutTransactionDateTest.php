@@ -728,7 +728,14 @@ class MonthCloseoutTransactionDateTest extends TestCase
         $response = $this->actingAs($user)->getJson('/month-summary?year=2026&month=5')->assertOk();
         $rules = collect($response->json('rule_preview.rules'));
 
+        $advanceRows = $response->json('fund_advance_transactions.'.(string) $fund->id);
+        $this->assertIsArray($advanceRows);
+        $this->assertCount(1, $advanceRows);
+        $this->assertSame('Advance spend', $advanceRows[0]['description']);
+        $this->assertEqualsWithDelta(250.00, (float) $advanceRows[0]['amount'], 0.01);
+
         $fundRow = $rules->firstWhere('rule_id', $fundRule->id);
+        $this->assertSame($fund->id, $fundRow['destination_id']);
         $this->assertEqualsWithDelta(600.00, (float) $fundRow['projected_amount'], 0.01);
         $this->assertEqualsWithDelta(250.00, (float) $fundRow['fund_advance_outstanding_before'], 0.01);
         $this->assertEqualsWithDelta(350.00, (float) $fundRow['net_after_advances'], 0.01);

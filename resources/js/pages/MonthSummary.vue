@@ -125,6 +125,24 @@ function rulePreviewAdvanceBefore(rule) {
     : 0;
 }
 
+function ruleDestinationFundId(rule) {
+  if (rule?.destination_type !== 'fund' || rule?.destination_id == null) {
+    return null;
+  }
+
+  return Number(rule.destination_id);
+}
+
+function ruleHasFundAdvances(rule) {
+  const fundId = ruleDestinationFundId(rule);
+  if (!fundId) {
+    return false;
+  }
+
+  const rows = summary.value?.fund_advance_transactions?.[String(fundId)] ?? [];
+  return rows.length > 0;
+}
+
 function rulePreviewNetClass(amount) {
   if (amount < 0) {
     return 'text-amber-400';
@@ -273,6 +291,8 @@ const showAllExpenseCategories = ref(false);
 const showAllIncomeCategories = ref(false);
 const selectedCategory = ref(null);
 const isCategoryTransactionsModalOpen = ref(false);
+const selectedFundAdvanceRule = ref(null);
+const isFundAdvanceTransactionsModalOpen = ref(false);
 const splitHistoryModalRows = ref([]);
 const splitHistoryModalTitle = ref('');
 const splitHistoryModalSource = ref('');
@@ -374,6 +394,20 @@ function closeCategoryTransactionsModal() {
   isCategoryTransactionsModalOpen.value = false;
 }
 
+function openFundAdvanceTransactions(rule) {
+  if (!ruleHasFundAdvances(rule)) {
+    return;
+  }
+
+  selectedFundAdvanceRule.value = rule;
+  isFundAdvanceTransactionsModalOpen.value = true;
+}
+
+function closeFundAdvanceTransactionsModal() {
+  isFundAdvanceTransactionsModalOpen.value = false;
+  selectedFundAdvanceRule.value = null;
+}
+
 function openSplitHistoryModal(balance, source) {
   const isFromYou = source === 'from_you_created';
   const rows = isFromYou
@@ -467,6 +501,19 @@ const selectedCategoryTransactions = computed(() => {
   const key = categoryTransactionsKey(selectedCategory.value);
   return summary.value?.category_transactions?.[key] ?? [];
 });
+
+const selectedFundAdvanceTransactions = computed(() => {
+  const fundId = ruleDestinationFundId(selectedFundAdvanceRule.value);
+  if (!fundId) {
+    return [];
+  }
+
+  return summary.value?.fund_advance_transactions?.[String(fundId)] ?? [];
+});
+
+const selectedFundAdvanceTransactionsTotal = computed(() =>
+  selectedFundAdvanceTransactions.value.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+);
 
 function movementTypeLabel(type) {
   const labels = {
@@ -985,10 +1032,13 @@ function movementTypeLabel(type) {
           </div>
 
           <div v-else class="space-y-2">
-            <div
+            <button
               v-for="rule in summary.rule_preview.rules"
               :key="rule.rule_id"
-              class="bg-gray-800 rounded-xl p-3 border border-gray-700"
+              type="button"
+              class="w-full text-left bg-gray-800 rounded-xl p-3 border border-gray-700 transition-colors"
+              :class="ruleHasFundAdvances(rule) ? 'hover:bg-gray-700/90 border-amber-800/40 active:bg-gray-700 min-h-11' : 'cursor-default'"
+              @click="openFundAdvanceTransactions(rule)"
             >
               <!-- Rule header: order badge + name -->
               <div class="flex items-start gap-2 mb-2">
@@ -997,6 +1047,12 @@ function movementTypeLabel(type) {
                 </span>
                 <span class="text-sm font-medium text-gray-200">{{ rule.rule_name }}</span>
               </div>
+              <p
+                v-if="ruleHasFundAdvances(rule)"
+                class="text-[10px] text-amber-200/80 mb-2 pl-8"
+              >
+                Tap to view advance transactions for {{ rule.destination_name }}
+              </p>
 
               <!-- Allocation description + net to destination (fund rules net out month advances tagging that fund) -->
               <div class="flex items-center justify-between px-2 mb-2 gap-3">
@@ -1027,7 +1083,7 @@ function movementTypeLabel(type) {
                   {{ rule.destination_name }}
                 </span>
               </div>
-            </div>
+            </button>
           </div>
         </template>
       </div>
@@ -1088,6 +1144,73 @@ function movementTypeLabel(type) {
           </div>
         </div>
       </div>
+
+      <Teleport to="body">
+        <div
+          v-if="isFundAdvanceTransactionsModalOpen"
+          class="fixed inset-0 z-50 bg-black/70"
+          @click.self="closeFundAdvanceTransactionsModal"
+        >
+          <div class="fixed inset-x-0 bottom-0 max-h-[82vh] overflow-hidden rounded-t-2xl border-t border-gray-700 bg-gray-900">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+              <div class="min-w-0">
+                <h3 class="text-sm font-semibold text-gray-100 truncate">
+                  Advances — {{ selectedFundAdvanceRule?.destination_name }}
+                </h3>
+                <p class="text-xs text-gray-400">
+                  {{ monthLabel.replace(' Summary', '') }} · tagged to this fund
+                </p>
+              </div>
+              <button
+                type="button"
+                class="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+                @click="closeFundAdvanceTransactionsModal"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div class="overflow-y-auto px-4 py-3 space-y-2 max-h-[calc(82vh-4rem)]">
+              <div v-if="selectedFundAdvanceTransactions.length === 0" class="text-sm text-gray-500 py-8 text-center">
+                No advance transactions for this fund in this month.
+              </div>
+
+              <template v-else>
+                <div
+                  v-for="row in selectedFundAdvanceTransactions"
+                  :key="`advance-row-${row.id}-${row.transaction_date}-${row.amount}`"
+                  class="flex items-center justify-between gap-3 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5"
+                >
+                  <div class="min-w-0">
+                    <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span v-if="row.category_icon" class="text-sm shrink-0">{{ row.category_icon }}</span>
+                      <p class="text-sm text-gray-200 truncate">
+                        {{ row.description || row.category_name || 'No description' }}
+                      </p>
+                    </div>
+                    <p v-if="row.is_non_necessity" class="text-[11px] text-violet-300 mt-0.5">
+                      Non-necessity
+                    </p>
+                  </div>
+                  <span class="text-sm font-medium shrink-0 tabular-nums text-amber-400">
+                    −{{ formatCurrency(row.amount) }}
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between gap-3 px-3 py-2.5 mt-2 bg-gray-900/80 rounded-lg border border-gray-600">
+                  <span class="text-sm font-semibold text-gray-200">Total advances</span>
+                  <span class="text-sm font-semibold shrink-0 text-amber-400 tabular-nums">
+                    −{{ formatCurrency(selectedFundAdvanceTransactionsTotal) }}
+                  </span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </Teleport>
 
       <Teleport to="body">
         <div

@@ -64,6 +64,7 @@ class MonthSummaryController extends Controller
             'category_transactions' => $this->getCategoryTransactions($user, $year, $month),
             'member_balances' => $memberBalances,
             'rule_preview' => $rulePreview,
+            'fund_advance_transactions' => $this->getFundAdvanceTransactions($user, $year, $month),
             'fund_movements' => $fundMovements,
             'debt_repayments' => $debtRepayments,
             'title_savings' => $titleSavings,
@@ -655,6 +656,54 @@ class MonthSummaryController extends Controller
     }
 
     /**
+     * Advance-tagged expense rows per fund for the viewer in this month (same scope as
+     * {@see MonthCloseoutService::fundAdvanceOutstandingByFundForUserMonth()}).
+     *
+     * @return array<string, array<int, array{
+     *     id: int,
+     *     transaction_date: string,
+     *     description: string|null,
+     *     amount: float,
+     *     category_name: string|null,
+     *     category_icon: string|null,
+     *     is_non_necessity: bool
+     * }>>
+     */
+    private function getFundAdvanceTransactions(User $viewer, int $year, int $month): array
+    {
+        $transactions = Transaction::query()
+            ->where('user_id', $viewer->id)
+            ->where('type', 'expense')
+            ->whereNotNull('advance_fund_id')
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with('category:id,name,icon')
+            ->orderBy('transaction_date')
+            ->orderBy('id')
+            ->get();
+
+        $grouped = [];
+
+        foreach ($transactions as $transaction) {
+            $fundIdKey = (string) (int) $transaction->advance_fund_id;
+            $grouped[$fundIdKey] ??= [];
+            $grouped[$fundIdKey][] = [
+                'id' => (int) $transaction->id,
+                'transaction_date' => $transaction->transaction_date instanceof \DateTimeInterface
+                    ? $transaction->transaction_date->format('Y-m-d')
+                    : (string) $transaction->transaction_date,
+                'description' => $transaction->description,
+                'amount' => round((float) $transaction->amount, 2),
+                'category_name' => $transaction->category?->name,
+                'category_icon' => $transaction->category?->icon,
+                'is_non_necessity' => (bool) $transaction->is_non_necessity,
+            ];
+        }
+
+        return $grouped;
+    }
+
+    /**
      * @param  array<string, array<int, array{
      *     id: int,
      *     transaction_date: string,
@@ -1177,7 +1226,7 @@ class MonthSummaryController extends Controller
      *
      * For debt destinations, projected_amount reflects nominal rule allocation (before debt-balance cap) and net_after_advances carries the capped payoff.
      *
-     * @return array{rule_id: int, rule_name: string, order: int, allocation_type: string, amount: float, allocation_base: string, destination_type: string, destination_name: string, projected_amount: float, fund_advance_outstanding_before: float, net_after_advances: float, is_active: bool}
+     * @return array{rule_id: int, rule_name: string, order: int, allocation_type: string, amount: float, allocation_base: string, destination_type: string, destination_id: int|null, destination_name: string, projected_amount: float, fund_advance_outstanding_before: float, net_after_advances: float, is_active: bool}
      */
     private function formatRuleForPreview(FundRule $rule, float $projectedAmount, float $fundAdvanceOutstandingBefore, float $netAfterAdvances): array
     {
@@ -1204,6 +1253,7 @@ class MonthSummaryController extends Controller
             'amount' => (float) $rule->amount,
             'allocation_base' => $rule->allocation_base,
             'destination_type' => $rule->destination_type,
+            'destination_id' => $rule->destination_id ? (int) $rule->destination_id : null,
             'destination_name' => $destinationName,
             'projected_amount' => $projectedAmount,
             'fund_advance_outstanding_before' => $fundAdvanceOutstandingBefore,
