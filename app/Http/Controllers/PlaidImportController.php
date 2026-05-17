@@ -349,54 +349,13 @@ class PlaidImportController extends Controller
 
         $validated = $request->validated();
 
-        $description = $validated['description'] ?? null;
-        if ($description === null || $description === '') {
-            $description = trim((string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? ''));
-        }
-        if ($description === '') {
-            $description = 'Plaid import';
-        }
-
-        $isSplit = (bool) ($validated['is_split'] ?? false);
-        $payTowardDebt = ($validated['type'] ?? '') === 'expense' && ! empty($validated['debt_id']);
-        $resolvedAdvanceFundId = ($validated['type'] === 'expense' && ! $payTowardDebt) ? ($validated['advance_fund_id'] ?? null) : null;
-        $resolvedTagFundId = ! empty($validated['fund_id']) ? (int) $validated['fund_id'] : $resolvedAdvanceFundId;
-
-        $payload = [
-            'type' => $validated['type'],
-            'amount' => (float) $pendingImport->amount,
-            'transaction_date' => $pendingImport->date->format('Y-m-d'),
-            'description' => $description,
-            'category_id' => $validated['category_id'],
-            'is_split' => $isSplit,
-            'split_data' => $isSplit && ! empty($validated['split_data']) ? $validated['split_data'] : null,
-            'advance_fund_id' => $resolvedAdvanceFundId,
-            'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
-        ];
-
-        if ($validated['type'] === 'expense' && $payTowardDebt) {
-            $payload['debt_id'] = (int) $validated['debt_id'];
-        }
-
-        if ($validated['type'] === 'income') {
-            $payload['income_debt_mode'] = $validated['income_debt_mode'] ?? 'none';
-            $payload['income_existing_debt_id'] = ($payload['income_debt_mode'] === 'existing') ? ($validated['income_existing_debt_id'] ?? null) : null;
-            $payload['income_new_is_family_debt'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($validated['income_new_is_family_debt'] ?? false) : false;
-            $payload['income_new_is_interfamily'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($validated['income_new_is_interfamily'] ?? false) : false;
-            $payload['income_new_creditor_id'] = ($payload['income_debt_mode'] === 'new' && ($payload['income_new_is_interfamily'] ?? false))
-                ? ($validated['income_new_creditor_id'] ?? null)
-                : null;
-            $payload['income_new_creditor_name'] = ($payload['income_debt_mode'] === 'new' && ! ($payload['income_new_is_interfamily'] ?? false))
-                ? ($validated['income_new_creditor_name'] ?? null)
-                : null;
-            $payload['income_new_description'] = ($payload['income_debt_mode'] === 'new' && ! empty($validated['income_new_description']))
-                ? $validated['income_new_description']
-                : null;
-            $payload['income_new_interest_enabled'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($validated['income_new_interest_enabled'] ?? false) : false;
-            $payload['income_new_interest_rate'] = ($payload['income_debt_mode'] === 'new' && ($payload['income_new_interest_enabled'] ?? false))
-                ? ($validated['income_new_interest_rate'] ?? null)
-                : null;
-        }
+        $payload = $this->buildTransactionPayloadFromImportFields(
+            $validated,
+            (float) $pendingImport->amount,
+            $pendingImport->date->format('Y-m-d'),
+            $pendingImport,
+        );
+        $resolvedTagFundId = $this->resolvedTagFundIdFromImportFields($validated);
 
         try {
             $this->closedMonthGuard->assertTransactionPayloadOpen($user, $payload);
@@ -420,6 +379,9 @@ class PlaidImportController extends Controller
         ])->save();
 
         $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
+        $payTowardDebt = ($validated['type'] ?? '') === 'expense' && ! empty($validated['debt_id']);
+        $isSplit = (bool) ($validated['is_split'] ?? false);
+        $resolvedAdvanceFundId = ($validated['type'] === 'expense' && ! $payTowardDebt) ? ($validated['advance_fund_id'] ?? null) : null;
 
         $this->matchingService->learnFromConfirmation($user->id, $merchantName, [
             'category_id' => $validated['category_id'],
@@ -429,7 +391,7 @@ class PlaidImportController extends Controller
             'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
             'is_split' => $isSplit,
             'action' => 'categorize',
-            'description' => $description,
+            'description' => $payload['description'],
             'is_debt_payment' => $payTowardDebt,
             'debt_id' => isset($validated['debt_id']) ? (int) $validated['debt_id'] : null,
             'split_data' => $isSplit && ! empty($validated['split_data']) ? $validated['split_data'] : null,
@@ -462,16 +424,15 @@ class PlaidImportController extends Controller
 
         $validated = $request->validated();
         $lines = $validated['lines'];
+        $transactionDate = $pendingImport->date->format('Y-m-d');
 
         foreach ($lines as $line) {
-            $payload = [
-                'type' => $line['type'],
-                'amount' => (float) $line['amount'],
-                'transaction_date' => $pendingImport->date->format('Y-m-d'),
-                'description' => $this->resolveSplitLineDescription($line, $pendingImport),
-                'category_id' => $line['category_id'],
-                'is_split' => false,
-            ];
+            $payload = $this->buildTransactionPayloadFromImportFields(
+                $line,
+                (float) $line['amount'],
+                $transactionDate,
+                $pendingImport,
+            );
 
             try {
                 $this->closedMonthGuard->assertTransactionPayloadOpen($user, $payload);
@@ -480,29 +441,29 @@ class PlaidImportController extends Controller
             }
         }
 
-        $createdTransactions = DB::transaction(function () use ($lines, $pendingImport, $user): array {
+        $createdTransactions = DB::transaction(function () use ($lines, $pendingImport, $user, $transactionDate): array {
             $created = [];
             $isFirst = true;
 
             foreach ($lines as $line) {
-                $payload = [
-                    'type' => $line['type'],
-                    'amount' => (float) $line['amount'],
-                    'transaction_date' => $pendingImport->date->format('Y-m-d'),
-                    'description' => $this->resolveSplitLineDescription($line, $pendingImport),
-                    'category_id' => $line['category_id'],
-                    'is_split' => false,
-                ];
+                $payload = $this->buildTransactionPayloadFromImportFields(
+                    $line,
+                    (float) $line['amount'],
+                    $transactionDate,
+                    $pendingImport,
+                );
 
                 $transaction = $this->transactionService->createTransaction($payload, $user);
+
+                $resolvedTagFundId = $this->resolvedTagFundIdFromImportFields($line);
 
                 $overrides = [
                     'plaid_pending_import_id' => $pendingImport->id,
                     'import_source' => 'plaid',
                 ];
 
-                if (! empty($line['fund_id'])) {
-                    $overrides['fund_id'] = (int) $line['fund_id'];
+                if ($resolvedTagFundId !== null) {
+                    $overrides['fund_id'] = $resolvedTagFundId;
                 }
 
                 if ($isFirst) {
@@ -529,21 +490,79 @@ class PlaidImportController extends Controller
     }
 
     /**
-     * @param  array{description?: string|null}  $line
+     * @param  array<string, mixed>  $fields
+     * @return array<string, mixed>
      */
-    private function resolveSplitLineDescription(array $line, PlaidPendingImport $pendingImport): string
+    private function buildTransactionPayloadFromImportFields(
+        array $fields,
+        float $amount,
+        string $transactionDate,
+        PlaidPendingImport $pendingImport,
+    ): array {
+        $description = $fields['description'] ?? null;
+        if ($description === null || $description === '') {
+            $description = trim((string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? ''));
+        }
+        if ($description === '') {
+            $description = 'Plaid import';
+        }
+
+        $isSplit = (bool) ($fields['is_split'] ?? false);
+        $payTowardDebt = ($fields['type'] ?? '') === 'expense' && ! empty($fields['debt_id']);
+        $resolvedAdvanceFundId = ($fields['type'] === 'expense' && ! $payTowardDebt) ? ($fields['advance_fund_id'] ?? null) : null;
+
+        $payload = [
+            'type' => $fields['type'],
+            'amount' => $amount,
+            'transaction_date' => $transactionDate,
+            'description' => $description,
+            'category_id' => $fields['category_id'],
+            'is_split' => $isSplit,
+            'split_data' => $isSplit && ! empty($fields['split_data']) ? $fields['split_data'] : null,
+            'advance_fund_id' => $resolvedAdvanceFundId,
+            'is_non_necessity' => (bool) ($fields['is_non_necessity'] ?? false),
+        ];
+
+        if (($fields['type'] ?? '') === 'expense' && $payTowardDebt) {
+            $payload['debt_id'] = (int) $fields['debt_id'];
+        }
+
+        if (($fields['type'] ?? '') === 'income') {
+            $payload['income_debt_mode'] = $fields['income_debt_mode'] ?? 'none';
+            $payload['income_existing_debt_id'] = ($payload['income_debt_mode'] === 'existing') ? ($fields['income_existing_debt_id'] ?? null) : null;
+            $payload['income_new_is_family_debt'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($fields['income_new_is_family_debt'] ?? false) : false;
+            $payload['income_new_is_interfamily'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($fields['income_new_is_interfamily'] ?? false) : false;
+            $payload['income_new_creditor_id'] = ($payload['income_debt_mode'] === 'new' && ($payload['income_new_is_interfamily'] ?? false))
+                ? ($fields['income_new_creditor_id'] ?? null)
+                : null;
+            $payload['income_new_creditor_name'] = ($payload['income_debt_mode'] === 'new' && ! ($payload['income_new_is_interfamily'] ?? false))
+                ? ($fields['income_new_creditor_name'] ?? null)
+                : null;
+            $payload['income_new_description'] = ($payload['income_debt_mode'] === 'new' && ! empty($fields['income_new_description']))
+                ? $fields['income_new_description']
+                : null;
+            $payload['income_new_interest_enabled'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($fields['income_new_interest_enabled'] ?? false) : false;
+            $payload['income_new_interest_rate'] = ($payload['income_debt_mode'] === 'new' && ($payload['income_new_interest_enabled'] ?? false))
+                ? ($fields['income_new_interest_rate'] ?? null)
+                : null;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $fields
+     */
+    private function resolvedTagFundIdFromImportFields(array $fields): ?int
     {
-        $description = trim((string) ($line['description'] ?? ''));
-        if ($description !== '') {
-            return $description;
+        $payTowardDebt = ($fields['type'] ?? '') === 'expense' && ! empty($fields['debt_id']);
+        $resolvedAdvanceFundId = ($fields['type'] === 'expense' && ! $payTowardDebt) ? ($fields['advance_fund_id'] ?? null) : null;
+
+        if (! empty($fields['fund_id'])) {
+            return (int) $fields['fund_id'];
         }
 
-        $merchantFallback = trim((string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? ''));
-        if ($merchantFallback !== '') {
-            return $merchantFallback;
-        }
-
-        return 'Plaid import';
+        return $resolvedAdvanceFundId !== null ? (int) $resolvedAdvanceFundId : null;
     }
 
     public function dismiss(Request $request, PlaidPendingImport $pendingImport): Response

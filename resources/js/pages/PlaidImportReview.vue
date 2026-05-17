@@ -692,14 +692,14 @@
                         class="min-h-[44px] rounded-lg py-2 text-sm font-medium transition-colors disabled:opacity-50"
                         :class="line.type === 'expense' ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
                         :disabled="actionId === row.id"
-                        @click="line.type = 'expense'; line.category_id = ''"
+                        @click="setSplitLineType(line, 'expense')"
                       >Expense</button>
                       <button
                         type="button"
                         class="min-h-[44px] rounded-lg py-2 text-sm font-medium transition-colors disabled:opacity-50"
                         :class="line.type === 'income' ? 'bg-emerald-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
                         :disabled="actionId === row.id"
-                        @click="line.type = 'income'; line.category_id = ''"
+                        @click="setSplitLineType(line, 'income')"
                       >Income</button>
                     </div>
                   </div>
@@ -710,6 +710,7 @@
                       v-model="line.category_id"
                       class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50"
                       :disabled="actionId === row.id"
+                      @change="applySplitLineCategoryDefaults(line)"
                     >
                       <option value="" disabled>Select category</option>
                       <option
@@ -732,6 +733,16 @@
                       :disabled="actionId === row.id"
                     />
                   </div>
+
+                  <PlaidImportSplitLineOptions
+                    :line="line"
+                    :disabled="actionId === row.id"
+                    :categories="categories"
+                    :funds="funds"
+                    :family-users="familyUsers"
+                    :payable-debts="payableDebts"
+                    :income-attachable-debts="incomeAttachableDebts"
+                  />
                 </div>
 
                 <button
@@ -1309,6 +1320,7 @@ import { ref, reactive, computed, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
 import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 import SplitEditor from '../components/SplitEditor.vue';
+import PlaidImportSplitLineOptions from '../components/PlaidImportSplitLineOptions.vue';
 import {
   equalSplitPayloadForFamilyUsers,
   hasPositiveSplitShares,
@@ -1838,8 +1850,28 @@ function isSplitMode(row) {
   return splitModes[row.id]?.active === true;
 }
 
-function makeSplitLine() {
-  return { amount: '', type: 'expense', category_id: '', description: '' };
+function makeSplitLine(amount = '') {
+  return {
+    amount: amount === '' ? '' : String(amount),
+    type: 'expense',
+    category_id: '',
+    description: '',
+    pay_toward_debt: false,
+    debt_id: null,
+    is_split: false,
+    split_data: [],
+    advance_fund_id: null,
+    is_non_necessity: false,
+    income_debt_mode: 'none',
+    income_existing_debt_id: null,
+    income_new_is_family_debt: false,
+    income_new_is_interfamily: false,
+    income_new_creditor_id: null,
+    income_new_creditor_name: '',
+    income_new_description: '',
+    income_new_interest_enabled: false,
+    income_new_interest_rate: 0,
+  };
 }
 
 function toggleSplitMode(row) {
@@ -1849,10 +1881,7 @@ function toggleSplitMode(row) {
     const total = importAbsAmount(row);
     splitModes[row.id] = {
       active: true,
-      lines: [
-        { amount: String(total), type: 'expense', category_id: '', description: '' },
-        { amount: '', type: 'expense', category_id: '', description: '' },
-      ],
+      lines: [makeSplitLine(total), makeSplitLine()],
     };
   }
 }
@@ -1869,6 +1898,239 @@ function removeSplitLine(row, idx) {
     return;
   }
   splitModes[row.id].lines.splice(idx, 1);
+}
+
+function applySplitLineCategoryDefaults(line) {
+  if (!line || line.type !== 'expense' || line.pay_toward_debt) {
+    return;
+  }
+  const cat = categories.value.find((c) => String(c.id) === String(line.category_id));
+  if (!cat) {
+    return;
+  }
+  if (cat.is_split_default && Array.isArray(cat.split_default) && cat.split_default.length > 0) {
+    line.is_split = true;
+    line.split_data = familyUsers.value.length ? equalSplitPayloadForFamilyUsers(familyUsers.value) : [];
+  } else {
+    line.is_split = false;
+    line.split_data = [];
+  }
+  if (cat.advance_fund_id) {
+    line.advance_fund_id = Number(cat.advance_fund_id);
+  } else {
+    line.advance_fund_id = null;
+    line.is_non_necessity = false;
+  }
+  if (cat.is_non_necessity_default && splitLineFundHasNonNecessityRule(line)) {
+    line.is_non_necessity = true;
+  } else if (!splitLineFundHasNonNecessityRule(line)) {
+    line.is_non_necessity = false;
+  }
+}
+
+function splitLineFundHasNonNecessityRule(line) {
+  if (line.advance_fund_id === null || line.advance_fund_id === undefined) {
+    return false;
+  }
+  const fund = funds.value.find((x) => Number(x.id) === Number(line.advance_fund_id));
+
+  return fund?.has_non_necessity_rule === true;
+}
+
+function setSplitLineType(line, type) {
+  line.type = type;
+  const pool = categories.value.filter((c) => (type === 'income' ? c.is_income : c.is_expense));
+  if (!pool.some((c) => String(c.id) === String(line.category_id))) {
+    line.category_id = pool[0] ? String(pool[0].id) : '';
+  }
+  if (type === 'income') {
+    line.pay_toward_debt = false;
+    line.debt_id = null;
+    line.is_split = false;
+    line.split_data = [];
+    line.advance_fund_id = null;
+    line.is_non_necessity = false;
+    line.income_debt_mode = 'none';
+    line.income_existing_debt_id = null;
+    line.income_new_is_family_debt = false;
+    line.income_new_is_interfamily = false;
+    line.income_new_creditor_id = null;
+    line.income_new_creditor_name = '';
+    line.income_new_description = '';
+    line.income_new_interest_enabled = false;
+    line.income_new_interest_rate = 0;
+  } else {
+    line.income_debt_mode = 'none';
+    line.income_existing_debt_id = null;
+    line.income_new_is_family_debt = false;
+    line.income_new_is_interfamily = false;
+    line.income_new_creditor_id = null;
+    line.income_new_creditor_name = '';
+    line.income_new_description = '';
+    line.income_new_interest_enabled = false;
+    line.income_new_interest_rate = 0;
+    line.pay_toward_debt = false;
+    line.debt_id = null;
+    applySplitLineCategoryDefaults(line);
+  }
+}
+
+function setSplitLineIncomeDebtMode(line, mode) {
+  line.income_debt_mode = mode;
+  if (mode === 'existing') {
+    line.income_new_is_family_debt = false;
+    line.income_new_is_interfamily = false;
+    line.income_new_creditor_id = null;
+    line.income_new_creditor_name = '';
+    line.income_new_description = '';
+    line.income_new_interest_enabled = false;
+    line.income_new_interest_rate = 0;
+    if (incomeAttachableDebts.value.length === 1) {
+      line.income_existing_debt_id = incomeAttachableDebts.value[0].id;
+    } else {
+      line.income_existing_debt_id = null;
+    }
+
+    return;
+  }
+  line.income_existing_debt_id = null;
+  if (mode !== 'new') {
+    line.income_debt_mode = 'none';
+    line.income_new_is_family_debt = false;
+    line.income_new_is_interfamily = false;
+    line.income_new_creditor_id = null;
+    line.income_new_creditor_name = '';
+    line.income_new_description = '';
+    line.income_new_interest_enabled = false;
+    line.income_new_interest_rate = 0;
+  }
+}
+
+function toggleSplitLinePayTowardDebt(line) {
+  line.pay_toward_debt = !line.pay_toward_debt;
+  if (line.pay_toward_debt) {
+    line.advance_fund_id = null;
+    line.is_non_necessity = false;
+    const pd = payableDebts.value;
+    if (pd.length === 1) {
+      line.debt_id = pd[0].id;
+    } else if (!pd.some((d) => Number(d.id) === Number(line.debt_id))) {
+      line.debt_id = null;
+    }
+  } else {
+    line.debt_id = null;
+    applySplitLineCategoryDefaults(line);
+  }
+}
+
+function toggleSplitLineFamilySplit(line) {
+  line.is_split = !line.is_split;
+  if (!line.is_split) {
+    line.split_data = [];
+    line.is_non_necessity = false;
+
+    return;
+  }
+  if (!familyUsers.value.length || !hasPositiveSplitShares(line.split_data)) {
+    line.split_data = equalSplitPayloadForFamilyUsers(familyUsers.value);
+  }
+}
+
+function toggleSplitLineAdvanceFund(line) {
+  if (line.advance_fund_id !== null) {
+    line.advance_fund_id = null;
+    line.is_non_necessity = false;
+  } else {
+    line.advance_fund_id = funds.value.length > 0 ? funds.value[0].id : null;
+  }
+}
+
+function onSplitLineAdvanceFundChange(line) {
+  if (line.advance_fund_id === null) {
+    line.is_non_necessity = false;
+  } else if (!splitLineFundHasNonNecessityRule(line)) {
+    line.is_non_necessity = false;
+  }
+}
+
+function splitLineAmount(line) {
+  const parsed = parseFloat(line.amount);
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function validateSplitLine(line) {
+  if (line.type === 'expense' && line.pay_toward_debt) {
+    if (!line.debt_id) {
+      return 'Select which debt you are paying toward.';
+    }
+  }
+  if (line.type === 'income') {
+    if (line.income_debt_mode === 'existing' && !line.income_existing_debt_id) {
+      return 'Select which existing debt this income belongs to.';
+    }
+    if (line.income_debt_mode === 'new') {
+      if (line.income_new_is_interfamily && !line.income_new_creditor_id) {
+        return 'Select which family member is the creditor.';
+      }
+      if (!line.income_new_is_interfamily && !String(line.income_new_creditor_name || '').trim()) {
+        return 'Enter the creditor name for the new debt.';
+      }
+      if (line.income_new_interest_enabled) {
+        const interestRate = Number(line.income_new_interest_rate);
+        if (!Number.isFinite(interestRate) || interestRate < 0 || interestRate > 100) {
+          return 'Interest rate must be between 0 and 100.';
+        }
+      }
+    }
+  }
+  if (line.type === 'expense' && line.is_split && !hasPositiveSplitShares(line.split_data)) {
+    return 'Add split shares for each family member.';
+  }
+
+  return '';
+}
+
+function buildSplitLinePayload(line) {
+  const payTowardDebt = line.type === 'expense' && line.pay_toward_debt;
+
+  return {
+    amount: parseFloat(line.amount),
+    type: line.type,
+    category_id: Number(line.category_id),
+    description: line.description?.trim() || undefined,
+    is_split: line.type === 'expense' && line.is_split,
+    advance_fund_id: line.type === 'expense' && !payTowardDebt ? line.advance_fund_id || null : null,
+    is_non_necessity:
+      line.type === 'expense' &&
+      !payTowardDebt &&
+      !line.is_split &&
+      line.advance_fund_id !== null &&
+      splitLineFundHasNonNecessityRule(line)
+        ? Boolean(line.is_non_necessity)
+        : false,
+    ...(line.type === 'expense' && line.is_split ? { split_data: line.split_data } : {}),
+    ...(line.type === 'expense' && payTowardDebt && line.debt_id ? { debt_id: line.debt_id } : {}),
+    ...(line.type === 'income'
+      ? {
+          income_debt_mode: line.income_debt_mode,
+          income_existing_debt_id: line.income_debt_mode === 'existing' ? line.income_existing_debt_id : null,
+          income_new_is_family_debt: line.income_debt_mode === 'new' ? Boolean(line.income_new_is_family_debt) : false,
+          income_new_is_interfamily: line.income_debt_mode === 'new' ? Boolean(line.income_new_is_interfamily) : false,
+          income_new_creditor_id:
+            line.income_debt_mode === 'new' && line.income_new_is_interfamily ? line.income_new_creditor_id : null,
+          income_new_creditor_name:
+            line.income_debt_mode === 'new' && !line.income_new_is_interfamily ? line.income_new_creditor_name : null,
+          income_new_description:
+            line.income_debt_mode === 'new' && String(line.income_new_description || '').trim()
+              ? line.income_new_description
+              : null,
+          income_new_interest_enabled: line.income_debt_mode === 'new' ? Boolean(line.income_new_interest_enabled) : false,
+          income_new_interest_rate:
+            line.income_debt_mode === 'new' && line.income_new_interest_enabled ? line.income_new_interest_rate : null,
+        }
+      : {}),
+  };
 }
 
 function splitAllocated(row) {
@@ -1892,6 +2154,9 @@ function splitLinesValid(row) {
     if (!line.category_id || !(parseFloat(line.amount) > 0)) {
       return false;
     }
+    if (validateSplitLine(line)) {
+      return false;
+    }
   }
 
   return Math.abs(splitRemaining(row)) <= 0.01;
@@ -1903,6 +2168,14 @@ async function confirmSplitRow(row) {
   if (!sm || !sm.lines) {
     return;
   }
+  for (const line of sm.lines) {
+    const lineError = validateSplitLine(line);
+    if (lineError) {
+      rowErrors[row.id] = lineError;
+
+      return;
+    }
+  }
   if (!splitLinesValid(row)) {
     rowErrors[row.id] = 'Each line needs a category and a positive amount. All line amounts must sum to the total.';
 
@@ -1911,12 +2184,7 @@ async function confirmSplitRow(row) {
   actionId.value = row.id;
   try {
     await post(`/plaid/pending-imports/${row.id}/confirm-split`, {
-      lines: sm.lines.map((l) => ({
-        amount: parseFloat(l.amount),
-        type: l.type,
-        category_id: Number(l.category_id),
-        description: l.description?.trim() || undefined,
-      })),
+      lines: sm.lines.map((l) => buildSplitLinePayload(l)),
     });
     delete splitModes[row.id];
     removePendingRow(row.id);

@@ -49,141 +49,107 @@ trait TransactionPayloadValidationRules
     protected function configureTransactionPayloadValidator(Validator $validator): void
     {
         $validator->after(function (Validator $v): void {
-            if ($this->input('type') !== 'expense') {
-                return;
-            }
-
-            if (! $this->filled('debt_id')) {
-                return;
-            }
-
-            $user = $this->user();
-            if (! $user?->family_id) {
-                return;
-            }
-
-            $amount = round((float) $this->input('amount'), 2);
-            if ($amount <= 0) {
-                return;
-            }
-
-            $debt = Debt::query()
-                ->where('family_id', $user->family_id)
-                ->whereKey($this->input('debt_id'))
-                ->first();
-
-            if (! $debt) {
-                $v->errors()->add('debt_id', 'The selected debt does not belong to your family.');
-
-                return;
-            }
-
-            if ($debt->is_pending_closeout) {
-                $v->errors()->add('debt_id', 'This debt is pending split closeout and cannot be paid this way.');
-            }
-
-            if ($amount > round((float) $debt->balance, 2)) {
-                $v->errors()->add('amount', 'Payment amount cannot exceed the remaining debt balance.');
-            }
-
-            if ($debt->is_family_debt) {
-                if ($user->family_id !== $debt->family_id) {
-                    $v->errors()->add('debt_id', 'You cannot pay this debt.');
-                }
-            } elseif ($user->id !== $debt->debtor_id) {
-                $v->errors()->add('debt_id', 'Only the debtor can record this repayment.');
-            }
-
+            $this->validateTransactionPayloadData($v, $this->all(), '');
         });
+    }
 
-        $validator->after(function (Validator $v): void {
-            if ($this->input('type') !== 'income') {
-                return;
-            }
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    protected function validateTransactionPayloadData(Validator $validator, array $data, string $errorKeyPrefix = ''): void
+    {
+        $field = fn (string $key): string => $errorKeyPrefix === '' ? $key : "{$errorKeyPrefix}.{$key}";
+        $value = fn (string $key, mixed $default = null): mixed => $data[$key] ?? $default;
+        $filled = fn (string $key): bool => array_key_exists($key, $data) && $data[$key] !== null && $data[$key] !== '';
+        $boolean = fn (string $key): bool => filter_var($value($key, false), FILTER_VALIDATE_BOOLEAN);
 
+        if (($value('type') ?? '') === 'expense' && $filled('debt_id')) {
             $user = $this->user();
-            if (! $user?->family_id) {
-                return;
-            }
+            if ($user?->family_id) {
+                $amount = round((float) $value('amount', 0), 2);
+                if ($amount > 0) {
+                    $debt = Debt::query()
+                        ->where('family_id', $user->family_id)
+                        ->whereKey($value('debt_id'))
+                        ->first();
 
-            $mode = (string) $this->input('income_debt_mode', 'none');
-            if ($mode === 'none') {
-                return;
-            }
+                    if (! $debt) {
+                        $validator->errors()->add($field('debt_id'), 'The selected debt does not belong to your family.');
+                    } else {
+                        if ($debt->is_pending_closeout) {
+                            $validator->errors()->add($field('debt_id'), 'This debt is pending split closeout and cannot be paid this way.');
+                        }
 
-            if ($mode === 'existing') {
-                if (! $this->filled('income_existing_debt_id')) {
-                    $v->errors()->add('income_existing_debt_id', 'Select an existing debt to attach this income to.');
+                        if ($amount > round((float) $debt->balance, 2)) {
+                            $validator->errors()->add($field('amount'), 'Payment amount cannot exceed the remaining debt balance.');
+                        }
 
-                    return;
-                }
-
-                $debt = Debt::query()
-                    ->where('family_id', $user->family_id)
-                    ->whereKey($this->input('income_existing_debt_id'))
-                    ->first();
-
-                if (! $debt) {
-                    $v->errors()->add('income_existing_debt_id', 'The selected debt does not belong to your family.');
-
-                    return;
-                }
-
-                if ($debt->is_pending_closeout) {
-                    $v->errors()->add('income_existing_debt_id', 'Pending split closeout debts cannot be increased this way.');
-                }
-
-                if ((int) $debt->debtor_id !== (int) $user->id) {
-                    $v->errors()->add('income_existing_debt_id', 'You can only attach this income to debts where you are the debtor.');
-                }
-
-                return;
-            }
-
-            if ($mode !== 'new') {
-                $v->errors()->add('income_debt_mode', 'Invalid income debt option.');
-
-                return;
-            }
-
-            if ($this->boolean('income_new_is_interfamily')) {
-                if (! $this->filled('income_new_creditor_id')) {
-                    $v->errors()->add('income_new_creditor_id', 'Select a family member creditor.');
-
-                    return;
-                }
-
-                $creditor = User::query()->find($this->input('income_new_creditor_id'));
-                if (! $creditor || (int) $creditor->family_id !== (int) $user->family_id || (int) $creditor->id === (int) $user->id) {
-                    $v->errors()->add('income_new_creditor_id', 'Creditor must be a different family member.');
-                }
-
-                return;
-            }
-
-            if (! $this->filled('income_new_creditor_name')) {
-                $v->errors()->add('income_new_creditor_name', 'Creditor name is required when not selecting a family member.');
-            }
-
-            if ($this->boolean('income_new_interest_enabled')) {
-                $interestRate = $this->input('income_new_interest_rate');
-                if (! is_numeric($interestRate) || (float) $interestRate < 0 || (float) $interestRate > 100) {
-                    $v->errors()->add('income_new_interest_rate', 'Interest rate must be between 0 and 100.');
+                        if ($debt->is_family_debt) {
+                            if ($user->family_id !== $debt->family_id) {
+                                $validator->errors()->add($field('debt_id'), 'You cannot pay this debt.');
+                            }
+                        } elseif ($user->id !== $debt->debtor_id) {
+                            $validator->errors()->add($field('debt_id'), 'Only the debtor can record this repayment.');
+                        }
+                    }
                 }
             }
-        });
+        }
 
-        $validator->after(function (Validator $v): void {
-            if ($this->input('type') !== 'expense') {
-                return;
-            }
-
-            if (! $this->boolean('is_non_necessity')) {
-                return;
-            }
-
+        if (($value('type') ?? '') === 'income') {
             $user = $this->user();
-            $advanceFundId = (int) $this->input('advance_fund_id');
+            if ($user?->family_id) {
+                $mode = (string) $value('income_debt_mode', 'none');
+                if ($mode === 'existing') {
+                    if (! $filled('income_existing_debt_id')) {
+                        $validator->errors()->add($field('income_existing_debt_id'), 'Select an existing debt to attach this income to.');
+                    } else {
+                        $debt = Debt::query()
+                            ->where('family_id', $user->family_id)
+                            ->whereKey($value('income_existing_debt_id'))
+                            ->first();
+
+                        if (! $debt) {
+                            $validator->errors()->add($field('income_existing_debt_id'), 'The selected debt does not belong to your family.');
+                        } else {
+                            if ($debt->is_pending_closeout) {
+                                $validator->errors()->add($field('income_existing_debt_id'), 'Pending split closeout debts cannot be increased this way.');
+                            }
+
+                            if ((int) $debt->debtor_id !== (int) $user->id) {
+                                $validator->errors()->add($field('income_existing_debt_id'), 'You can only attach this income to debts where you are the debtor.');
+                            }
+                        }
+                    }
+                } elseif ($mode === 'new') {
+                    if ($boolean('income_new_is_interfamily')) {
+                        if (! $filled('income_new_creditor_id')) {
+                            $validator->errors()->add($field('income_new_creditor_id'), 'Select a family member creditor.');
+                        } else {
+                            $creditor = User::query()->find($value('income_new_creditor_id'));
+                            if (! $creditor || (int) $creditor->family_id !== (int) $user->family_id || (int) $creditor->id === (int) $user->id) {
+                                $validator->errors()->add($field('income_new_creditor_id'), 'Creditor must be a different family member.');
+                            }
+                        }
+                    } elseif (! $filled('income_new_creditor_name')) {
+                        $validator->errors()->add($field('income_new_creditor_name'), 'Creditor name is required when not selecting a family member.');
+                    }
+
+                    if ($boolean('income_new_interest_enabled')) {
+                        $interestRate = $value('income_new_interest_rate');
+                        if (! is_numeric($interestRate) || (float) $interestRate < 0 || (float) $interestRate > 100) {
+                            $validator->errors()->add($field('income_new_interest_rate'), 'Interest rate must be between 0 and 100.');
+                        }
+                    }
+                } elseif ($mode !== 'none') {
+                    $validator->errors()->add($field('income_debt_mode'), 'Invalid income debt option.');
+                }
+            }
+        }
+
+        if (($value('type') ?? '') === 'expense' && $boolean('is_non_necessity')) {
+            $user = $this->user();
+            $advanceFundId = (int) $value('advance_fund_id', 0);
             $hasEligibleRule = $user !== null
                 && FundRule::query()
                     ->where('user_id', $user->id)
@@ -195,13 +161,13 @@ trait TransactionPayloadValidationRules
                     ->exists();
 
             if (
-                ! $this->filled('advance_fund_id')
-                || $this->boolean('is_split')
+                ! $filled('advance_fund_id')
+                || $boolean('is_split')
                 || ! $hasEligibleRule
             ) {
-                $v->errors()->add('is_non_necessity', 'Non-necessity is only allowed for non-split expenses with an advance fund that has an active percentage-of-remaining closeout rule targeting that fund.');
+                $validator->errors()->add($field('is_non_necessity'), 'Non-necessity is only allowed for non-split expenses with an advance fund that has an active percentage-of-remaining closeout rule targeting that fund.');
             }
-        });
+        }
     }
 
     /**

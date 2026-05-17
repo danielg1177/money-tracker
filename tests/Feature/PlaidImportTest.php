@@ -1297,4 +1297,56 @@ class PlaidImportTest extends TestCase
 
         $this->assertDatabaseMissing('plaid_merchant_rules', ['user_id' => $user->id]);
     }
+
+    public function test_confirm_split_applies_family_split_and_advance_fund_per_line(): void
+    {
+        $user = $this->familyUser();
+        $spouse = User::factory()->create(['family_id' => $user->family_id]);
+        ['import' => $import] = $this->createPendingImportForUser($user, 'txn-split-7');
+        $category = Category::factory()->create([
+            'family_id' => $user->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+        $fund = Fund::factory()->create(['user_id' => $user->id, 'family_id' => null]);
+
+        $this->actingAs($user)
+            ->postJson("/plaid/pending-imports/{$import->id}/confirm-split", [
+                'lines' => [
+                    [
+                        'amount' => 30.00,
+                        'type' => 'expense',
+                        'category_id' => $category->id,
+                        'is_split' => true,
+                        'split_data' => [
+                            ['user_id' => $user->id, 'share_percentage' => 50],
+                            ['user_id' => $spouse->id, 'share_percentage' => 50],
+                        ],
+                    ],
+                    [
+                        'amount' => 12.50,
+                        'type' => 'expense',
+                        'category_id' => $category->id,
+                        'advance_fund_id' => $fund->id,
+                    ],
+                ],
+            ])
+            ->assertOk();
+
+        $splitTx = Transaction::query()
+            ->where('plaid_pending_import_id', $import->id)
+            ->where('amount', 30.00)
+            ->first();
+        $this->assertNotNull($splitTx);
+        $this->assertTrue($splitTx->is_split);
+        $this->assertCount(2, $splitTx->splits);
+
+        $advanceTx = Transaction::query()
+            ->where('plaid_pending_import_id', $import->id)
+            ->where('amount', 12.50)
+            ->first();
+        $this->assertNotNull($advanceTx);
+        $this->assertSame($fund->id, $advanceTx->advance_fund_id);
+        $this->assertSame($fund->id, $advanceTx->fund_id);
+    }
 }

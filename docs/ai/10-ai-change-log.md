@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-17 — Plaid import split lines: full transaction options per line
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `app/Http/Requests/ConfirmSplitImportRequest.php`, `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `resources/js/pages/PlaidImportReview.vue`, `resources/js/components/PlaidImportSplitLineOptions.vue`, `tests/Feature/PlaidImportTest.php`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **Split into multiple transactions** on import review now exposes the same per-line controls as single confirm (family split, debt payment, advance fund + non-necessity, income-debt modes). `POST /plaid/pending-imports/{id}/confirm-split` validates and creates each line through `TransactionService` with shared payload building; merchant rules are still not learned from splits.
+
 ## 2026-05-15 — PlaidImportTest: 10 new tests for description/is_debt_payment/split_data learning
 
 - Files touched: `tests/Feature/PlaidImportTest.php`, `docs/ai/10-ai-change-log.md`
