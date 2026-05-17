@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreTransactionRequest;
 use App\Models\Transaction;
 use App\Services\ClosedMonthGuard;
+use App\Services\TransactionRepaymentService;
 use App\Services\TransactionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,6 +15,7 @@ class TransactionController extends Controller
     public function __construct(
         private TransactionService $transactionService,
         private ClosedMonthGuard $closedMonthGuard,
+        private TransactionRepaymentService $repaymentService,
     ) {}
 
     /**
@@ -32,7 +34,14 @@ class TransactionController extends Controller
         }
 
         $query = $user->family->transactions()
-            ->with(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund', 'advanceFund', 'plaidPendingImport.plaidItem'])
+            ->with([
+                'user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund', 'advanceFund', 'plaidPendingImport.plaidItem',
+                'repaymentLinks.repaidTransaction.category',
+                'repaymentLinks.mirrorTransaction.user',
+                'repaymentLinks.repaidUser',
+                'repaidByLink.repaymentTransaction.user',
+                'mirrorRepaymentLink.repaymentTransaction.user',
+            ])
             ->where(function ($q) use ($user): void {
                 $q->where('user_id', $user->id)
                     ->orWhereHas('splits', function ($splitQuery) use ($user): void {
@@ -50,6 +59,37 @@ class TransactionController extends Controller
                         $debtQuery->where('creditor_id', $user->id);
                     });
             });
+
+        if ($request->filled('start_date')) {
+            $query->whereDate('transaction_date', '>=', $request->input('start_date'));
+        }
+        if ($request->filled('end_date')) {
+            $query->whereDate('transaction_date', '<=', $request->input('end_date'));
+        }
+
+        return response()->json($query->get());
+    }
+
+    /**
+     * Returns the authenticated user's expense transactions that have not yet been repaid.
+     * Used to populate the repayment expense selector in the transaction form.
+     */
+    public function repayableExpenses(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+        if (! $user->family_id) {
+            return response()->json([]);
+        }
+
+        $query = Transaction::query()
+            ->where('family_id', $user->family_id)
+            ->where('user_id', $user->id)
+            ->where('type', 'expense')
+            ->where('is_repaid', false)
+            ->where('is_repayment_mirror', false)
+            ->where('is_closeout_initiated', false)
+            ->with(['category'])
+            ->orderBy('transaction_date', 'desc');
 
         if ($request->filled('start_date')) {
             $query->whereDate('transaction_date', '>=', $request->input('start_date'));
@@ -82,8 +122,10 @@ class TransactionController extends Controller
                 $user
             );
 
+            $this->repaymentService->handleRepaymentForTransaction($transaction, $validated);
+
             return response()->json(
-                $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund']),
+                $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund', 'repaymentLinks.repaidTransaction.category', 'repaymentLinks.mirrorTransaction', 'repaidByLink.repaymentTransaction', 'mirrorRepaymentLink.repaymentTransaction.user']),
                 201
             );
         } catch (\InvalidArgumentException $e) {
@@ -110,8 +152,10 @@ class TransactionController extends Controller
 
             $this->transactionService->updateTransaction($transaction, $validated);
 
+            $this->repaymentService->handleRepaymentForTransaction($transaction, $validated);
+
             return response()->json(
-                $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
+                $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund', 'repaymentLinks.repaidTransaction.category', 'repaymentLinks.mirrorTransaction', 'repaidByLink.repaymentTransaction', 'mirrorRepaymentLink.repaymentTransaction.user'])
             );
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -133,6 +177,7 @@ class TransactionController extends Controller
 
         try {
             $this->closedMonthGuard->assertTransactionMutationOpen($transaction);
+            $this->repaymentService->deleteRepaymentLinks($transaction);
             $this->transactionService->deleteTransaction($transaction);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

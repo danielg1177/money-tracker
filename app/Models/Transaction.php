@@ -33,6 +33,10 @@ class Transaction extends Model
         'mirror_transaction_id',
         'plaid_transaction_id',
         'import_source',
+        'plaid_pending_import_id',
+        'is_repayment',
+        'is_repaid',
+        'is_repayment_mirror',
     ];
 
     protected $casts = [
@@ -44,6 +48,9 @@ class Transaction extends Model
         'is_debt_payment' => 'bool',
         'is_closeout_initiated' => 'bool',
         'is_non_necessity' => 'bool',
+        'is_repayment' => 'bool',
+        'is_repaid' => 'bool',
+        'is_repayment_mirror' => 'bool',
         'advance_fund_id' => 'integer',
     ];
 
@@ -100,5 +107,20 @@ class Transaction extends Model
     public function plaidPendingImport(): HasOne
     {
         return $this->hasOne(PlaidPendingImport::class, 'transaction_id');
+    }
+
+    public function repaymentLinks(): HasMany
+    {
+        return $this->hasMany(TransactionRepaymentLink::class, 'repayment_transaction_id');
+    }
+
+    public function repaidByLink(): HasOne
+    {
+        return $this->hasOne(TransactionRepaymentLink::class, 'repaid_transaction_id');
+    }
+
+    public function mirrorRepaymentLink(): HasOne
+    {
+        return $this->hasOne(TransactionRepaymentLink::class, 'mirror_transaction_id');
     }
 }

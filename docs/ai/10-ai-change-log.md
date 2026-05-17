@@ -11,6 +11,46 @@ Format:
 
 ---
 
+## 2026-05-17 — Expense repayment linking: Transactions UI, Plaid banner, feature tests
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/PlaidImportReview.vue`, `tests/Feature/RepaymentLinkTest.php`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Transactions page period/day totals exclude `is_repayment` income and `is_repaid` expenses; cards show repayment badges and styling; repaid expenses and repayment income cannot be opened for edit (delete on repayment income warns about cascade). Plaid import cards show a cyan banner when `raw_payload.suggested_repayment_group` is present. PHPUnit covers create/link, validation, delete cascade, closeout/month-summary exclusions, and double-repay guard.
+
+## 2026-05-17 — Expense repayment linking: frontend (TransactionForm + Plaid split)
+
+- Files touched: `resources/js/components/TransactionForm.vue`, `resources/js/components/PlaidImportSplitLineOptions.vue`, `resources/js/pages/PlaidImportReview.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Income transactions can be marked as **repayment for expenses I covered**: pick a family member, select repayable expenses (loaded from `GET /transactions/repayable-expenses`), and submit when link totals match the income/line amount. Plaid **split import** income lines support the same flow via `PlaidImportSplitLineOptions` with validation in `buildSplitLinePayload` / `validateSplitLine`.
+
+## 2026-05-17 — Plaid sync: suggest expense-repayment mirror groups on import
+
+- Files touched: `app/Services/PlaidMatchingService.php`, `app/Services/PlaidTransactionSyncService.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: When syncing Plaid **expense** rows with no single-ledger match, `findRepaymentGroupMatch` may attach `raw_payload.suggested_repayment_group` on `PlaidPendingImport` (repayment income id + mirror expense ids + total). Auto-create is skipped when a group match is present. `GET /plaid/pending-imports` already serializes `raw_payload` for the review UI.
+
+## 2026-05-17 — Expense repayment linking: exclude from closeout and month-summary totals
+
+- Files touched: `app/Services/MonthCloseoutService.php`, `app/Http/Controllers/MonthSummaryController.php`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **`is_repaid`** expenses are excluded from remaining-basis expense math, category totals/transactions, split member balances, and advance-fund settlement. **`is_repayment`** income is excluded from gross income (closeout + rule preview) alongside debt repayments received. **`is_repayment_mirror`** rows are unchanged (count normally for the repaying user).
+
+## 2026-05-17 — Expense repayment linking: wire service into transaction + Plaid confirm
+
+- Files touched: `app/Http/Controllers/TransactionController.php`, `app/Http/Controllers/PlaidImportController.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Creating/updating transactions and confirming Plaid imports (single or split income lines with `is_repayment_mode`) now call `TransactionRepaymentService::handleRepaymentForTransaction`. Deleting a transaction clears repayment links first. `GET /transactions` and create/update/confirm responses eager-load repayment link relations.
+
+## 2026-05-17 — Expense repayment linking: validation + repayable expenses API
+
+- Files touched: `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `app/Http/Requests/StoreTransactionRequest.php`, `app/Http/Requests/ConfirmSplitImportRequest.php`, `app/Http/Controllers/TransactionController.php`, `routes/web.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Income payloads may include `is_repayment_mode`, `repayment_for_user_id`, and `repayment_links` (validated in shared trait; cleared on non-income). Plaid split-import lines inherit the same rules via `lines.*` prefix. New **`GET /transactions/repayable-expenses`** lists the auth user's linkable expenses for the repayment picker.
+
+## 2026-05-17 — Expense repayment linking: TransactionRepaymentService
+
+- Files touched: `app/Services/TransactionRepaymentService.php`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: New service implements `createRepaymentLinks`, `deleteRepaymentLinks`, and `handleRepaymentForTransaction` (repayment income ↔ repaid expenses + mirror expenses for the repaid user). **Not wired to HTTP/TransactionService yet** — callable from a follow-up controller/request integration.
+
+## 2026-05-17 — Expense repayment linking: schema and models (foundation)
+
+- Files touched: `database/migrations/2026_05_17_115724_create_transaction_repayment_links_and_repayment_columns.php`, `app/Models/TransactionRepaymentLink.php`, `app/Models/Transaction.php`, `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **No user-facing behavior yet.** Adds `transaction_repayment_links` (repayment income ↔ repaid expense, optional mirror transaction, repaid user, amount) and boolean flags on `transactions` (`is_repayment`, `is_repaid`, `is_repayment_mirror`). `Transaction` and `TransactionRepaymentLink` Eloquent relationships are in place for a follow-up service/UI layer.
+
 ## 2026-05-17 — Plaid import split lines: full transaction options per line
 
 - Files touched: `app/Http/Controllers/PlaidImportController.php`, `app/Http/Requests/ConfirmSplitImportRequest.php`, `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `resources/js/pages/PlaidImportReview.vue`, `resources/js/components/PlaidImportSplitLineOptions.vue`, `tests/Feature/PlaidImportTest.php`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`

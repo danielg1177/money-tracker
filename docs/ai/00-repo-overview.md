@@ -37,10 +37,10 @@ money-tracker/
 │   ├── Http/
 │   │   ├── Controllers/       # Admin, BankBalance, Category, Dashboard, Debt, Fund, MonthCloseout, MonthSummary, Plaid (+ webhook), Transaction + base Controller
 │   │   └── Requests/          # Form Request classes (incl. ExchangePlaidTokenRequest)
-│   ├── Models/                # 15 Eloquent models
+│   ├── Models/                # 16 Eloquent models
 │   ├── Policies/              # FundPolicy, DebtPolicy
 │   ├── Providers/             # AppServiceProvider (Gates, Plaid client singleton), FortifyServiceProvider
-│   └── Services/              # DebtService, FundService, MonthCloseoutService, PlaidCalibrationService, PlaidClient, PlaidMatchingService, PlaidTransactionSyncService, SplitCalculator, TransactionService
+│   └── Services/              # DebtService, FundService, MonthCloseoutService, PlaidCalibrationService, PlaidClient, PlaidMatchingService, PlaidTransactionSyncService, SplitCalculator, TransactionRepaymentService, TransactionService
 ├── database/
 │   ├── factories/             # 7 factories
 │   ├── migrations/            # 31+ migrations (initial set 2026-04-30; ongoing additions)

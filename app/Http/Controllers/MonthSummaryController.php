@@ -340,8 +340,8 @@ class MonthSummaryController extends Controller
 
     /**
      * Fetch category totals for the month for the authenticated user only (split expenses use viewer split rows).
-     * Viewer incomes exclude **`is_borrow`** rows (fund borrow withdrawals use **`is_borrow`** and stay out of **`rule_preview.basis.gross_income`** — see fund movement / **Fund In/Out**).
-     * Non-split viewer expenses exclude **`is_closeout_initiated`** rows (they stay out of **`rule_preview.basis.total_expenses`** and are shown via fund/debt sections instead).
+     * Viewer incomes exclude **`is_borrow`** and **`is_repayment`** rows (fund borrows and expense-repayment income stay out of **`rule_preview.basis.gross_income`** — see fund movement / **Fund In/Out** / repayment UI).
+     * Non-split viewer expenses exclude **`is_closeout_initiated`** and **`is_repaid`** rows (closeout ledger lines and expenses repaid by another member stay out of **`rule_preview.basis.total_expenses`**).
      * Tracked debt repayments with a **category_id** are merged into that expense category. Repayments with **no** category appear under a synthetic **Uncategorized Debt Payments** row ({@see self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID}).
      *
      * @return array<array{category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int, type: string}>
@@ -356,6 +356,7 @@ class MonthSummaryController extends Controller
             ->where('type', 'income')
             ->where('is_debt_payment', false)
             ->where('is_borrow', false)
+            ->where('is_repayment', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->with('category')
@@ -379,6 +380,7 @@ class MonthSummaryController extends Controller
             ->where('is_split', false)
             ->where('is_debt_payment', false)
             ->where('is_closeout_initiated', false)
+            ->where('is_repaid', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->with('category')
@@ -402,6 +404,7 @@ class MonthSummaryController extends Controller
                 ->where('type', 'expense')
                 ->where('is_split', true)
                 ->where('is_debt_payment', false)
+                ->where('is_repaid', false)
                 ->whereYear('transaction_date', $year)
                 ->whereMonth('transaction_date', $month))
             ->with(['transaction.category'])
@@ -600,6 +603,7 @@ class MonthSummaryController extends Controller
             ->where('type', 'income')
             ->where('is_debt_payment', false)
             ->where('is_borrow', false)
+            ->where('is_repayment', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->with(['splits.user'])
@@ -618,6 +622,7 @@ class MonthSummaryController extends Controller
             ->where('is_split', false)
             ->where('is_debt_payment', false)
             ->where('is_closeout_initiated', false)
+            ->where('is_repaid', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->with(['splits.user'])
@@ -636,6 +641,7 @@ class MonthSummaryController extends Controller
                 ->where('type', 'expense')
                 ->where('is_split', true)
                 ->where('is_debt_payment', false)
+                ->where('is_repaid', false)
                 ->whereYear('transaction_date', $year)
                 ->whereMonth('transaction_date', $month))
             ->with(['transaction.splits.user'])
@@ -675,6 +681,7 @@ class MonthSummaryController extends Controller
             ->where('user_id', $viewer->id)
             ->where('type', 'expense')
             ->whereNotNull('advance_fund_id')
+            ->where('is_repaid', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->with('category:id,name,icon')
@@ -833,6 +840,7 @@ class MonthSummaryController extends Controller
             ->where('type', 'expense')
             ->where('is_split', true)
             ->where('is_closeout_initiated', false)
+            ->where('is_repaid', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->orderBy('transaction_date')
@@ -972,7 +980,8 @@ class MonthSummaryController extends Controller
     {
         return [
             'Includes your solo expenses, your split expense shares, and repayments toward tracked debts.',
-            'Excludes fund-borrow withdrawals and expenses created by closeout (so repeat closeouts do not change the basis).',
+            'Excludes fund-borrow withdrawals, expenses repaid by another member (`is_repaid`), and expenses created by closeout (so repeat closeouts do not change the basis).',
+            'Expense-repayment income (`is_repayment`) is excluded from gross income the same way debt repayments received are excluded.',
             'Non-necessity advance transactions are excluded from this total; they are settled directly against their target fund at closeout.',
         ];
     }
@@ -989,6 +998,7 @@ class MonthSummaryController extends Controller
             ->where('type', 'income')
             ->where('is_borrow', false)
             ->where('is_debt_payment', false)
+            ->where('is_repayment', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->sum('amount');
@@ -1018,6 +1028,7 @@ class MonthSummaryController extends Controller
             ->where('is_non_necessity', true)
             ->whereNotNull('advance_fund_id')
             ->where('is_closeout_initiated', false)
+            ->where('is_repaid', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->sum('amount');

@@ -7,6 +7,7 @@ use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Collection;
 
 class PlaidMatchingService
 {
@@ -105,6 +106,67 @@ class PlaidMatchingService
             'transaction' => $best,
             'score' => $bestScore,
         ];
+    }
+
+    /**
+     * Find a group of is_repayment_mirror expense transactions for the given user
+     * whose amounts sum to the given Plaid expense amount (±$0.01).
+     *
+     * @param  array<string, mixed>  $plaidRow
+     * @return array{repayment_transaction_id: int, mirror_transactions: Collection<int, Transaction>, total: float}|null
+     */
+    public function findRepaymentGroupMatch(array $plaidRow, int $userId): ?array
+    {
+        $plaidAmount = (float) data_get($plaidRow, 'amount', 0);
+        if ($plaidAmount <= 0) {
+            return null;
+        }
+
+        $dateStr = data_get($plaidRow, 'date') ?? data_get($plaidRow, 'authorized_date');
+        if (! is_string($dateStr) || $dateStr === '') {
+            return null;
+        }
+
+        try {
+            $center = Carbon::parse($dateStr)->startOfDay();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $mirrorExpenses = Transaction::query()
+            ->where('user_id', $userId)
+            ->where('type', 'expense')
+            ->where('is_repayment_mirror', true)
+            ->whereNull('plaid_transaction_id')
+            ->whereBetween('transaction_date', [
+                $center->copy()->subDays(7)->toDateString(),
+                $center->copy()->addDays(7)->toDateString(),
+            ])
+            ->with(['mirrorRepaymentLink'])
+            ->get();
+
+        if ($mirrorExpenses->isEmpty()) {
+            return null;
+        }
+
+        $grouped = $mirrorExpenses->groupBy(fn (Transaction $tx) => $tx->mirrorRepaymentLink?->repayment_transaction_id);
+
+        foreach ($grouped as $repaymentTxId => $groupMirrors) {
+            if (! $repaymentTxId) {
+                continue;
+            }
+
+            $groupTotal = round($groupMirrors->sum(fn (Transaction $tx) => (float) $tx->amount), 2);
+            if (abs($groupTotal - $plaidAmount) <= 0.01) {
+                return [
+                    'repayment_transaction_id' => (int) $repaymentTxId,
+                    'mirror_transactions' => $groupMirrors,
+                    'total' => $groupTotal,
+                ];
+            }
+        }
+
+        return null;
     }
 
     public function normalizeMerchantKey(string $name): string

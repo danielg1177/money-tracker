@@ -172,6 +172,13 @@
             </button>
 
             <div
+              v-if="row.raw_payload?.suggested_repayment_group"
+              class="mx-4 mb-2 rounded-md border border-cyan-700/30 bg-cyan-950/10 px-3 py-2 text-xs text-cyan-300"
+            >
+              This looks like a repayment — {{ row.raw_payload.suggested_repayment_group.mirror_transaction_ids.length }} linked expense(s) totalling {{ formatCurrency(row.raw_payload.suggested_repayment_group.total) }} were found. Consider splitting this import to link to those expenses.
+            </div>
+
+            <div
               v-show="expandedId === row.id"
               class="space-y-3 border-t border-gray-700/80 px-4 pb-4 pt-3"
             >
@@ -1871,6 +1878,9 @@ function makeSplitLine(amount = '') {
     income_new_description: '',
     income_new_interest_enabled: false,
     income_new_interest_rate: 0,
+    is_repayment_mode: false,
+    repayment_for_user_id: null,
+    repayment_links: [],
   };
 }
 
@@ -1959,7 +1969,13 @@ function setSplitLineType(line, type) {
     line.income_new_description = '';
     line.income_new_interest_enabled = false;
     line.income_new_interest_rate = 0;
+    line.is_repayment_mode = false;
+    line.repayment_for_user_id = null;
+    line.repayment_links = [];
   } else {
+    line.is_repayment_mode = false;
+    line.repayment_for_user_id = null;
+    line.repayment_links = [];
     line.income_debt_mode = 'none';
     line.income_existing_debt_id = null;
     line.income_new_is_family_debt = false;
@@ -2083,12 +2099,43 @@ function validateSplitLine(line) {
         }
       }
     }
+    if (line.is_repayment_mode) {
+      if (!line.repayment_for_user_id) {
+        return 'Select which family member is repaying you.';
+      }
+      if (!line.repayment_links?.length) {
+        return 'Select at least one expense transaction to link this repayment to.';
+      }
+      const linksTotal = line.repayment_links.reduce(
+        (sum, link) => sum + (parseFloat(link.amount) || 0),
+        0,
+      );
+      const lineAmount = parseFloat(line.amount) || 0;
+      if (Math.abs(linksTotal - lineAmount) >= 0.01) {
+        return 'The sum of repayment amounts must equal the line amount.';
+      }
+    }
   }
   if (line.type === 'expense' && line.is_split && !hasPositiveSplitShares(line.split_data)) {
     return 'Add split shares for each family member.';
   }
 
   return '';
+}
+
+function buildSplitLineRepaymentPayload(line) {
+  if (line.type !== 'income' || !line.is_repayment_mode) {
+    return { is_repayment_mode: false };
+  }
+
+  return {
+    is_repayment_mode: true,
+    repayment_for_user_id: line.repayment_for_user_id,
+    repayment_links: (line.repayment_links || []).map((link) => ({
+      transaction_id: link.transaction_id,
+      amount: parseFloat(link.amount),
+    })),
+  };
 }
 
 function buildSplitLinePayload(line) {
@@ -2128,8 +2175,9 @@ function buildSplitLinePayload(line) {
           income_new_interest_enabled: line.income_debt_mode === 'new' ? Boolean(line.income_new_interest_enabled) : false,
           income_new_interest_rate:
             line.income_debt_mode === 'new' && line.income_new_interest_enabled ? line.income_new_interest_rate : null,
+          ...buildSplitLineRepaymentPayload(line),
         }
-      : {}),
+      : { is_repayment_mode: false }),
   };
 }
 

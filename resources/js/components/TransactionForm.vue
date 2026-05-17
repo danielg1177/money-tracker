@@ -278,6 +278,94 @@
         </div>
 
       </div>
+
+      <!-- Repayment from family member -->
+      <div class="space-y-3 rounded-lg border border-gray-700 bg-gray-800/50 p-3">
+        <div
+          class="flex items-center justify-between"
+          :class="isInteractionBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+          @click="!isInteractionBlocked && (form.is_repayment_mode = !form.is_repayment_mode)"
+        >
+          <div>
+            <p class="text-sm font-medium text-gray-300">Repayment for expenses I covered</p>
+            <p class="mt-0.5 text-xs text-gray-500">Did a family member pay you back for expenses you made for them?</p>
+          </div>
+          <div
+            class="relative h-6 w-10 shrink-0 rounded-full transition-colors"
+            :class="form.is_repayment_mode ? 'bg-blue-600' : 'bg-gray-600'"
+          >
+            <span
+              class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200"
+              :class="form.is_repayment_mode ? 'translate-x-4' : 'translate-x-0'"
+            />
+          </div>
+        </div>
+
+        <template v-if="form.is_repayment_mode">
+          <div>
+            <label class="text-xs text-gray-400">Family member repaying you</label>
+            <select
+              v-model.number="form.repayment_for_user_id"
+              :disabled="submitLoading || isInteractionBlocked"
+              class="mt-1 w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none disabled:opacity-50"
+            >
+              <option :value="null" disabled>Select family member</option>
+              <option
+                v-for="member in familyUsers.filter((u) => u.id !== user?.id)"
+                :key="member.id"
+                :value="member.id"
+              >
+                {{ member.name }}
+              </option>
+            </select>
+          </div>
+
+          <div v-if="form.repayment_for_user_id">
+            <label class="text-xs text-gray-400">Expenses being repaid</label>
+            <p class="mb-2 text-xs text-gray-500">Select the expenses from your account that this payment covers</p>
+            <div v-if="repayableExpensesLoading" class="text-xs text-gray-400">Loading expenses...</div>
+            <div v-else-if="repayableExpenses.length === 0" class="text-xs text-gray-400">No eligible expenses found</div>
+            <div v-else class="max-h-48 space-y-1.5 overflow-y-auto pr-1">
+              <div
+                v-for="tx in repayableExpenses"
+                :key="tx.id"
+                class="flex cursor-pointer items-center justify-between rounded-md border px-2.5 py-2 transition-colors"
+                :class="
+                  isRepaymentLinkSelected(tx.id)
+                    ? 'border-blue-500 bg-blue-900/20 text-blue-100'
+                    : 'border-gray-600 bg-gray-700/50 text-gray-300 hover:border-gray-500'
+                "
+                @click="isRepaymentLinkSelected(tx.id) ? removeRepaymentLink(tx.id) : addRepaymentLink(tx)"
+              >
+                <div class="flex min-w-0 items-center gap-2">
+                  <span v-if="tx.category?.icon" class="shrink-0 text-sm">{{ tx.category.icon }}</span>
+                  <div class="min-w-0">
+                    <p class="truncate text-xs font-medium">{{ tx.category?.name ?? 'Uncategorized' }}</p>
+                    <p v-if="tx.description" class="truncate text-[10px] text-gray-400">{{ tx.description }}</p>
+                    <p class="text-[10px] text-gray-500">{{ tx.transaction_date }}</p>
+                  </div>
+                </div>
+                <span class="ml-2 shrink-0 text-xs font-semibold text-red-400">
+                  -{{ formatCurrency(Number(tx.amount)) }}
+                </span>
+              </div>
+            </div>
+
+            <div v-if="form.repayment_links.length > 0" class="mt-2 flex justify-between text-xs">
+              <span class="text-gray-400">Selected total:</span>
+              <span
+                class="font-semibold"
+                :class="repaymentLinksTotalMatchesIncome ? 'text-green-400' : 'text-red-400'"
+              >
+                {{ formatCurrency(repaymentLinksTotal) }}
+                <span v-if="!repaymentLinksTotalMatchesIncome">
+                  (income is {{ formatCurrency(parseFloat(form.amount) || 0) }})
+                </span>
+              </span>
+            </div>
+          </div>
+        </template>
+      </div>
     </div>
 
     <!-- Pay toward debt (expense only) -->
@@ -478,7 +566,7 @@ const props = defineProps({
 
 const emit = defineEmits(['created', 'updated', 'close']);
 
-const { post, put, loading: submitLoading } = useApi();
+const { post, put, get, loading: submitLoading } = useApi();
 const { post: postCloseoutStatus } = useApi();
 const { user } = useAuth();
 const formError = ref(null);
@@ -506,7 +594,13 @@ const form = ref({
   income_new_description: '',
   income_new_interest_enabled: false,
   income_new_interest_rate: 0,
+  is_repayment_mode: false,
+  repayment_for_user_id: null,
+  repayment_links: [],
 });
+
+const repayableExpenses = ref([]);
+const repayableExpensesLoading = ref(false);
 
 const payableDebts = computed(() => {
   const list = [
@@ -568,6 +662,61 @@ const isSelectedDateClosed = computed(() => {
 const isInteractionBlocked = computed(() => {
   return isDebtPaymentIncomeEditBlocked.value;
 });
+
+const repaymentLinksTotal = computed(() =>
+  form.value.repayment_links.reduce((sum, link) => sum + (parseFloat(link.amount) || 0), 0),
+);
+
+const repaymentLinksTotalMatchesIncome = computed(
+  () => Math.abs(repaymentLinksTotal.value - (parseFloat(form.value.amount) || 0)) < 0.01,
+);
+
+async function loadRepayableExpenses() {
+  repayableExpensesLoading.value = true;
+  try {
+    const data = await get('/transactions/repayable-expenses');
+    repayableExpenses.value = Array.isArray(data) ? data : [];
+  } catch {
+    repayableExpenses.value = [];
+  } finally {
+    repayableExpensesLoading.value = false;
+  }
+}
+
+function addRepaymentLink(tx) {
+  if (isRepaymentLinkSelected(tx.id)) {
+    return;
+  }
+  form.value.repayment_links.push({
+    transaction_id: tx.id,
+    amount: String(tx.amount),
+  });
+}
+
+function removeRepaymentLink(txId) {
+  form.value.repayment_links = form.value.repayment_links.filter(
+    (link) => Number(link.transaction_id) !== Number(txId),
+  );
+}
+
+function isRepaymentLinkSelected(txId) {
+  return form.value.repayment_links.some((link) => Number(link.transaction_id) === Number(txId));
+}
+
+function buildRepaymentPayload() {
+  if (form.value.type !== 'income' || !form.value.is_repayment_mode) {
+    return { is_repayment_mode: false };
+  }
+
+  return {
+    is_repayment_mode: true,
+    repayment_for_user_id: form.value.repayment_for_user_id,
+    repayment_links: form.value.repayment_links.map((link) => ({
+      transaction_id: link.transaction_id,
+      amount: parseFloat(link.amount),
+    })),
+  };
+}
 
 function isMonthClosedForUser(status) {
   if (!status) {
@@ -666,7 +815,19 @@ watch(
         income_new_description: '',
         income_new_interest_enabled: false,
         income_new_interest_rate: 0,
+        is_repayment_mode: Boolean(newTransaction.is_repayment),
+        repayment_for_user_id:
+          newTransaction.repayment_links?.[0]?.repaid_user_id ??
+          newTransaction.repayment_links?.[0]?.repaid_user?.id ??
+          null,
+        repayment_links: (newTransaction.repayment_links || []).map((link) => ({
+          transaction_id: link.repaid_transaction_id,
+          amount: String(link.amount),
+        })),
       };
+      if (form.value.is_repayment_mode) {
+        loadRepayableExpenses();
+      }
       lastAllowedTransactionDate.value = normalizedDate;
     } else {
       resetForm();
@@ -746,6 +907,9 @@ watch(() => form.value.type, (newType) => {
     return;
   }
 
+  form.value.is_repayment_mode = false;
+  form.value.repayment_for_user_id = null;
+  form.value.repayment_links = [];
   form.value.income_debt_mode = 'none';
   form.value.income_existing_debt_id = null;
   form.value.income_new_is_family_debt = false;
@@ -810,6 +974,18 @@ watch(() => form.value.advance_fund_id, (newVal) => {
 });
 
 watch(
+  () => form.value.is_repayment_mode,
+  (enabled) => {
+    if (enabled) {
+      loadRepayableExpenses();
+      return;
+    }
+    form.value.repayment_for_user_id = null;
+    form.value.repayment_links = [];
+  },
+);
+
+watch(
   () => props.familyUsers,
   () => {
     if (form.value.type !== 'expense' || !form.value.is_split || !props.familyUsers?.length) {
@@ -846,7 +1022,11 @@ function resetForm() {
     income_new_description: '',
     income_new_interest_enabled: false,
     income_new_interest_rate: 0,
+    is_repayment_mode: false,
+    repayment_for_user_id: null,
+    repayment_links: [],
   };
+  repayableExpenses.value = [];
   formError.value = null;
 }
 
@@ -916,6 +1096,21 @@ async function handleSubmit() {
         }
       }
     }
+
+    if (form.value.is_repayment_mode) {
+      if (!form.value.repayment_for_user_id) {
+        formError.value = 'Select the family member who is repaying you';
+        return;
+      }
+      if (form.value.repayment_links.length === 0) {
+        formError.value = 'Select at least one expense transaction to link this repayment to';
+        return;
+      }
+      if (!repaymentLinksTotalMatchesIncome.value) {
+        formError.value = 'The sum of repayment amounts must equal the income amount';
+        return;
+      }
+    }
   }
 
   try {
@@ -969,8 +1164,9 @@ async function handleSubmit() {
               form.value.income_debt_mode === 'new' && form.value.income_new_interest_enabled
                 ? form.value.income_new_interest_rate
                 : null,
+            ...buildRepaymentPayload(),
           }
-        : {}),
+        : { is_repayment_mode: false }),
     };
 
     if (isEditMode.value) {

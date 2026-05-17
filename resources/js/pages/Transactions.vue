@@ -259,18 +259,21 @@
             :class="[
               'bg-gray-800 border border-gray-700 rounded-lg sm:rounded-xl p-2 sm:p-3 transition-colors',
               transaction.is_closeout_initiated ? 'border-purple-600/40 bg-purple-900/10' : '',
+              transaction.is_repaid ? 'opacity-40' : '',
+              transaction.is_repayment ? 'border-cyan-700/30 bg-cyan-950/10' : '',
+              transaction.is_repayment_mirror ? 'border-amber-700/30 bg-amber-950/10' : '',
               confirmDelete[transaction.id] ? 'border-red-600 bg-red-900/20' : '',
               isSelectedMonthLocked ? 'opacity-75' : '',
-              !confirmDelete[transaction.id] && !isSelectedMonthLocked && isSystemCloseoutEntry(transaction) ? 'cursor-default' : '',
-              !confirmDelete[transaction.id] && !isSelectedMonthLocked && !isSystemCloseoutEntry(transaction) ? 'cursor-pointer hover:border-gray-600' : '',
+              !confirmDelete[transaction.id] && !isSelectedMonthLocked && isTransactionEditLocked(transaction) ? 'cursor-default' : '',
+              !confirmDelete[transaction.id] && !isSelectedMonthLocked && !isTransactionEditLocked(transaction) ? 'cursor-pointer hover:border-gray-600' : '',
             ]"
-            @click="!confirmDelete[transaction.id] && !isSelectedMonthLocked && !isSystemCloseoutEntry(transaction) && openEditForm(transaction.id)"
+            @click="!confirmDelete[transaction.id] && !isSelectedMonthLocked && !isTransactionEditLocked(transaction) && openEditForm(transaction.id)"
           >
             <!-- Main transaction row: one horizontal row on all breakpoints so amount + split stay beside title on mobile -->
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
               <div
                 class="min-w-0 flex-1"
-                :class="!confirmDelete[transaction.id] && !isSelectedMonthLocked && !isSystemCloseoutEntry(transaction) && 'cursor-pointer'"
+                :class="!confirmDelete[transaction.id] && !isSelectedMonthLocked && !isTransactionEditLocked(transaction) && 'cursor-pointer'"
               >
                 <div class="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1 min-w-0 flex-wrap">
                   <span
@@ -290,6 +293,24 @@
                     :class="pill.classes"
                   >
                     {{ pill.label }}
+                  </span>
+                  <span
+                    v-if="transaction.is_repaid"
+                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
+                  >
+                    Repaid by {{ transaction.repaidByLink?.repaymentTransaction?.user?.name ?? 'family member' }}
+                  </span>
+                  <span
+                    v-if="transaction.is_repayment"
+                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
+                  >
+                    Repayment received
+                  </span>
+                  <span
+                    v-if="transaction.is_repayment_mirror"
+                    class="inline-flex shrink-0 items-center rounded-md border border-amber-700/30 bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300"
+                  >
+                    Needs Review — repaid{{ transaction.mirrorRepaymentLink?.repaymentTransaction?.user?.name ? ' on behalf of ' + transaction.mirrorRepaymentLink.repaymentTransaction.user.name : '' }}
                   </span>
                 </div>
                 <p v-if="transaction.description" class="hidden sm:block text-gray-400 text-xs truncate">
@@ -358,7 +379,7 @@
                       @click.stop="confirmDelete[transaction.id] = true"
                       :disabled="isSelectedMonthLocked || transaction.is_closeout_initiated"
                       :class="['p-1 sm:p-2 rounded-md sm:rounded-lg transition-colors', (isSelectedMonthLocked || transaction.is_closeout_initiated) ? 'text-gray-500 cursor-not-allowed' : 'text-gray-400 hover:text-red-400 hover:bg-gray-700']"
-                      :title="isSelectedMonthLocked ? 'Cannot edit transactions in a closed month' : (transaction.is_closeout_initiated ? 'Closeout-generated entries cannot be deleted here' : 'Delete')"
+                      :title="deleteButtonTitle(transaction)"
                     >
                       <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -807,10 +828,10 @@ const transactionsByDay = computed(() => {
     }
     grouped[date].transactions.push(tx);
     if (tx.type === 'income') {
-      if (!tx.is_debt_payment) {
+      if (!tx.is_debt_payment && !tx.is_repayment) {
         grouped[date].totalIncome += Number(tx.amount) || 0;
       }
-    } else {
+    } else if (!tx.is_repaid) {
       grouped[date].totalExpenses += expenseAmountForViewerTotals(tx);
     }
   });
@@ -837,13 +858,13 @@ const transactionsByDay = computed(() => {
 
 const totalIncome = computed(() => {
   return transactions.value
-    .filter(tx => tx.type === 'income' && !tx.is_debt_payment)
+    .filter(tx => tx.type === 'income' && !tx.is_debt_payment && !tx.is_repayment)
     .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
 });
 
 const totalExpenses = computed(() => {
   return transactions.value
-    .filter(tx => tx.type === 'expense')
+    .filter(tx => tx.type === 'expense' && !tx.is_repaid)
     .reduce((sum, tx) => sum + expenseAmountForViewerTotals(tx), 0);
 });
 
@@ -1090,6 +1111,28 @@ function isSystemCloseoutEntry(transaction) {
   return Boolean(transaction?.is_debt_payment && transaction?.type === 'income');
 }
 
+function isTransactionEditLocked(transaction) {
+  if (isSystemCloseoutEntry(transaction)) {
+    return true;
+  }
+
+  return Boolean(transaction?.is_repaid || transaction?.is_repayment);
+}
+
+function deleteButtonTitle(transaction) {
+  if (isSelectedMonthLocked.value) {
+    return 'Cannot edit transactions in a closed month';
+  }
+  if (transaction?.is_closeout_initiated) {
+    return 'Closeout-generated entries cannot be deleted here';
+  }
+  if (transaction?.is_repayment) {
+    return "Deleting this will remove the repayment links and the linked family member's mirror expense.";
+  }
+
+  return 'Delete';
+}
+
 async function handleTransactionCreated(transaction) {
   await reloadCurrentFilterData();
   showForm.value = false;
@@ -1159,7 +1202,7 @@ function handleFormClose() {
 
 function openEditForm(transactionId) {
   const tx = getTransactionById(transactionId);
-  if (isSelectedMonthLocked.value || isSystemCloseoutEntry(tx)) {
+  if (isSelectedMonthLocked.value || isTransactionEditLocked(tx)) {
     return;
   }
   editReturnScrollY.value = window.scrollY;

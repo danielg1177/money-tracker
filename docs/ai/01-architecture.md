@@ -67,6 +67,7 @@ routes/web.php
 
 **Service classes:**
 - `TransactionService` — create/update transactions with splits and debt creation
+- `TransactionRepaymentService` — expense-repayment linking (income repays another member's expenses; mirror expense rows + `transaction_repayment_links`)
 - `FundService` — borrow from fund, repay fund debt; includes `processIncome` (not called from `TransactionService` today)
 - `MonthCloseoutService` — month hard-close workflow; applies user `FundRule` allocations and related debt/title moves; also provides `getMonthStatus` for month summaries
 - `DebtService` — pay a debt (creates expense + income transactions, reduces balance)

@@ -60,6 +60,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
+| GET | `/transactions/repayable-expenses` | `TransactionController::repayableExpenses` | Auth user's unrepped expenses (`is_repaid=false`, not mirror/closeout-initiated); optional `?start_date=&end_date=`; includes `category`; empty array when no `family_id` |
 | GET | `/transactions` | `TransactionController::index` | Accepts `?start_date=&end_date=` filters; JSON includes `debt` (with `creditor`, `debtor`, `fund` when present) for debt-payment rows, `advanceFund` when `advance_fund_id` is set, `plaid_pending_import.plaid_item` (null for non-Plaid rows; `institution_name` used in Transactions page badge); omits split debt-payment **expense** for the creditor when that row duplicates their repayment **income** for the same debt |
 | POST | `/transactions` | `TransactionController::store` | Body: see `StoreTransactionRequest`; rejects `422` when the family month is hard-closed or any affected user has soft-closed the month |
 | PUT | `/transactions/{transaction}` | `TransactionController::update` | Same body as store; debt-payment **expense** rows can be edited (recalculates debt balance + mirrored income), debt-payment **income** mirror rows are rejected; rejects `422` when the existing row month or target payload month is closed |
@@ -202,7 +203,7 @@ Requires `PLAID_CLIENT_ID` + `PLAID_SECRET` in the environment. Link tokens use 
 ## Request bodies (key Form Requests)
 
 ### `StoreTransactionRequest`
-For `type=income`, `advance_fund_id`, `is_split`, `split_data`, and expense-side `debt_id` are cleared server-side before validation (income does not support expense split/advance/repayment flow). Income can still optionally link debt through `income_debt_mode`.
+For `type=income`, `advance_fund_id`, `is_split`, `split_data`, and expense-side `debt_id` are cleared server-side before validation (income does not support expense split/advance/debt-payment flow). Income can optionally link debt through `income_debt_mode`, or link **expense repayments** via `is_repayment_mode`, `repayment_for_user_id` (another family member paying the auth user back), and `repayment_links` (`[{transaction_id, amount}]` summing to income `amount`; each expense must be auth user's unrepped expense). Non-income requests force `is_repayment_mode=false`.
 
 For `type=expense`, optional **`debt_id`** (existing `debts.id` for the payer’s family) records a categorized debt repayment: creates/expands the same flow as `DebtService::payDebt` for simple (non-split) payments — reduces `debts.balance`, emits mirrored **`is_debt_payment` creditor income** when `creditor_id` is set; **mutually exclusive** with split/advance (`prepareForValidation` clears those when `debt_id` is present).
 

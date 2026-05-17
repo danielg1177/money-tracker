@@ -15,6 +15,7 @@ use App\Services\ClosedMonthGuard;
 use App\Services\PlaidCalibrationService;
 use App\Services\PlaidMatchingService;
 use App\Services\PlaidTransactionSyncService;
+use App\Services\TransactionRepaymentService;
 use App\Services\TransactionService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -32,6 +33,7 @@ class PlaidImportController extends Controller
         private PlaidTransactionSyncService $syncService,
         private TransactionService $transactionService,
         private ClosedMonthGuard $closedMonthGuard,
+        private TransactionRepaymentService $repaymentService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -378,6 +380,10 @@ class PlaidImportController extends Controller
             'import_source' => 'plaid',
         ])->save();
 
+        if (! empty($validated['is_repayment_mode'])) {
+            $this->repaymentService->handleRepaymentForTransaction($transaction, $validated);
+        }
+
         $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
         $payTowardDebt = ($validated['type'] ?? '') === 'expense' && ! empty($validated['debt_id']);
         $isSplit = (bool) ($validated['is_split'] ?? false);
@@ -403,7 +409,7 @@ class PlaidImportController extends Controller
         ])->save();
 
         return response()->json(
-            $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
+            $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund', 'repaymentLinks.repaidTransaction.category', 'repaymentLinks.mirrorTransaction', 'repaidByLink.repaymentTransaction', 'mirrorRepaymentLink.repaymentTransaction.user'])
         );
     }
 
@@ -472,6 +478,11 @@ class PlaidImportController extends Controller
                 }
 
                 $transaction->forceFill($overrides)->save();
+
+                if (! empty($line['is_repayment_mode'])) {
+                    $this->repaymentService->handleRepaymentForTransaction($transaction, $line);
+                }
+
                 $created[] = $transaction;
             }
 

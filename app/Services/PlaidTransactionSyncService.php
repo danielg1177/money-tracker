@@ -11,6 +11,7 @@ use App\Models\PlaidMerchantRule;
 use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
 class PlaidTransactionSyncService
@@ -246,6 +247,17 @@ class PlaidTransactionSyncService
 
         $suggestion = $this->matchingService->getSuggestion($row, $item->user_id);
 
+        $ledgerMatch = $familyId !== null
+            ? $this->matchingService->findLedgerMatch($row, $familyId)
+            : null;
+
+        $repaymentGroupMatch = null;
+        if ($ledgerMatch === null) {
+            $repaymentGroupMatch = $this->matchingService->findRepaymentGroupMatch($row, $item->user_id);
+        }
+
+        $rawPayload = $this->buildPendingImportRawPayload($row, $repaymentGroupMatch);
+
         $merchantRaw = (string) (data_get($row, 'merchant_name') ?? data_get($row, 'name') ?? '');
         $key = $this->matchingService->normalizeMerchantKey($merchantRaw);
         $rule = PlaidMerchantRule::query()
@@ -281,7 +293,7 @@ class PlaidTransactionSyncService
                 'status' => 'dismissed',
                 'dismiss_source' => 'auto',
                 'transaction_id' => null,
-                'raw_payload' => $row,
+                'raw_payload' => $rawPayload,
                 'is_transfer' => false,
                 'plaid_category_primary' => $this->extractPlaidCategoryPrimary($row),
                 'plaid_category_detailed' => $this->extractPlaidCategoryDetailed($row),
@@ -311,13 +323,14 @@ class PlaidTransactionSyncService
             'confidence_score' => $suggestion['confidence_score'],
             'status' => 'pending',
             'transaction_id' => null,
-            'raw_payload' => $row,
+            'raw_payload' => $rawPayload,
             'is_transfer' => false,
             'plaid_category_primary' => $this->extractPlaidCategoryPrimary($row),
             'plaid_category_detailed' => $this->extractPlaidCategoryDetailed($row),
         ]);
 
-        $canAutoCreate = $suggestion['is_auto_eligible'] && $user->family_id !== null;
+        $canAutoCreate = $suggestion['is_auto_eligible'] && $user->family_id !== null
+            && $repaymentGroupMatch === null;
 
         if ($canAutoCreate && ($suggestion['is_debt_payment'] ?? false)) {
             $learnedDebtId = $suggestion['debt_id'] ?? null;
@@ -694,6 +707,26 @@ class PlaidTransactionSyncService
             'pending_created' => $pendingCreated,
             'auto_created' => $autoCreated,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array{repayment_transaction_id: int, mirror_transactions: Collection, total: float}|null  $repaymentGroupMatch
+     * @return array<string, mixed>
+     */
+    private function buildPendingImportRawPayload(array $row, ?array $repaymentGroupMatch): array
+    {
+        if ($repaymentGroupMatch === null) {
+            return $row;
+        }
+
+        return array_merge($row, [
+            'suggested_repayment_group' => [
+                'repayment_transaction_id' => $repaymentGroupMatch['repayment_transaction_id'],
+                'mirror_transaction_ids' => $repaymentGroupMatch['mirror_transactions']->pluck('id')->values()->all(),
+                'total' => $repaymentGroupMatch['total'],
+            ],
+        ]);
     }
 
     /**

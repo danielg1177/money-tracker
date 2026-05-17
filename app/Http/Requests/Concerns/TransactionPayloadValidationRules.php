@@ -4,6 +4,7 @@ namespace App\Http\Requests\Concerns;
 
 use App\Models\Debt;
 use App\Models\FundRule;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Validation\Rule;
@@ -43,6 +44,11 @@ trait TransactionPayloadValidationRules
             'income_new_description' => ['nullable', 'string'],
             'income_new_interest_enabled' => ['nullable', 'boolean'],
             'income_new_interest_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'is_repayment_mode' => ['boolean'],
+            'repayment_for_user_id' => ['nullable', 'integer', Rule::exists('users', 'id')],
+            'repayment_links' => ['nullable', 'array'],
+            'repayment_links.*.transaction_id' => ['required_with:repayment_links', 'integer', Rule::exists('transactions', 'id')],
+            'repayment_links.*.amount' => ['required_with:repayment_links', 'numeric', 'min:0.01'],
         ];
     }
 
@@ -143,6 +149,45 @@ trait TransactionPayloadValidationRules
                     }
                 } elseif ($mode !== 'none') {
                     $validator->errors()->add($field('income_debt_mode'), 'Invalid income debt option.');
+                }
+
+                $isRepaymentMode = filter_var($value('is_repayment_mode', false), FILTER_VALIDATE_BOOLEAN);
+                if ($isRepaymentMode) {
+                    $repaidUserId = $value('repayment_for_user_id');
+                    $repaymentLinks = $value('repayment_links', []);
+                    if (! $filled('repayment_for_user_id')) {
+                        $validator->errors()->add($field('repayment_for_user_id'), 'Select the family member who is repaying you.');
+                    } else {
+                        $repaidUser = User::query()->find($repaidUserId);
+                        if (! $repaidUser || (int) $repaidUser->family_id !== (int) ($user?->family_id ?? 0)) {
+                            $validator->errors()->add($field('repayment_for_user_id'), 'The selected user must be a family member.');
+                        } elseif ((int) $repaidUserId === (int) ($user?->id ?? 0)) {
+                            $validator->errors()->add($field('repayment_for_user_id'), 'You cannot select yourself as the repaying user.');
+                        }
+                    }
+                    if (empty($repaymentLinks)) {
+                        $validator->errors()->add($field('repayment_links'), 'Select at least one expense transaction to link this repayment to.');
+                    } else {
+                        $linkedAmount = collect($repaymentLinks)->sum(fn ($l) => (float) ($l['amount'] ?? 0));
+                        $incomeAmount = round((float) $value('amount', 0), 2);
+                        if (abs($linkedAmount - $incomeAmount) > 0.01) {
+                            $validator->errors()->add($field('repayment_links'), 'The sum of repayment amounts must equal the income amount.');
+                        }
+                        foreach ($repaymentLinks as $i => $link) {
+                            $txId = $link['transaction_id'] ?? null;
+                            if ($txId) {
+                                $repaidTx = Transaction::query()
+                                    ->where('family_id', $user?->family_id ?? 0)
+                                    ->where('user_id', $user?->id ?? 0)
+                                    ->where('type', 'expense')
+                                    ->where('is_repaid', false)
+                                    ->find($txId);
+                                if (! $repaidTx) {
+                                    $validator->errors()->add($field("repayment_links.{$i}.transaction_id"), 'This expense transaction is invalid or has already been repaid.');
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -171,7 +171,8 @@ class MonthCloseoutService
      * Sum of the viewer's expenses that reduce remaining-after-expenses during closeout and in month-summary rule preview.
      *
      * Includes tracked debt repayments (solo payer amount and split shares). Excludes closeout-generated
-     * expense rows and borrow transactions so hard-close math stays stable.
+     * expense rows, borrow transactions, and expenses repaid via expense-repayment linking (`is_repaid`)
+     * so hard-close math stays stable.
      * Excludes non-necessity advance transactions (is_non_necessity = true); their deduction from fund balances
      * is handled by applyFundAdvances() at closeout.
      */
@@ -191,6 +192,7 @@ class MonthCloseoutService
             ->where('user_id', $user->id)
             ->where('type', 'expense')
             ->whereNotNull('advance_fund_id')
+            ->where('is_repaid', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->selectRaw('advance_fund_id, SUM(amount) as total_advanced')
@@ -217,6 +219,7 @@ class MonthCloseoutService
             ->where('is_closeout_initiated', false)
             ->where('is_borrow', false)
             ->where('is_non_necessity', false)
+            ->where('is_repaid', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->sum('amount');
@@ -229,7 +232,8 @@ class MonthCloseoutService
                     ->whereMonth('transaction_date', $month)
                     ->where('type', 'expense')
                     ->where('is_closeout_initiated', false)
-                    ->where('is_borrow', false);
+                    ->where('is_borrow', false)
+                    ->where('is_repaid', false);
             })
             ->sum('amount');
 
@@ -552,6 +556,7 @@ class MonthCloseoutService
             ->where('type', 'income')
             ->where('is_borrow', false)
             ->where('is_debt_payment', false)
+            ->where('is_repayment', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->sum('amount');
@@ -778,6 +783,7 @@ class MonthCloseoutService
             ->where('user_id', $user->id)
             ->where('type', 'expense')
             ->whereNotNull('advance_fund_id')
+            ->where('is_repaid', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->selectRaw('advance_fund_id, SUM(amount) as total_advanced')

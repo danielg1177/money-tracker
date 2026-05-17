@@ -56,6 +56,12 @@ For debts with `interest_enabled=true` and a configured `interest_rate`, hard-cl
 ### `net_income` allocation base behaves like `gross_income`
 In `MonthCloseoutService::processUserCloseoutRules`, `net_income` rules are fetched in the same gross-rule query as `gross_income` rules (both use `allocation_base != 'remaining'`). Both use the same `$grossIncome` value because no net deductions are computed. `FundService::processIncome` is not invoked during month close. There is still no separate net-income basis in closeout; `net_income` is a planned distinction only.
 
+### Expense-repayment linking and closeout/month-summary totals
+When User B repays User A's expenses via **expense repayment linking**:
+- User A's original expenses (`is_repaid`) are **excluded** from User A's expense totals and closeout remaining-basis math (same spirit as not double-counting settled obligations).
+- User A's repayment **income** (`is_repayment`) is **excluded** from User A's gross income for closeout rules (like debt repayments received — not new earned income).
+- User B's auto-created **mirror** expenses (`is_repayment_mirror`) are **included** normally in User B's totals.
+
 ### Debt repayment income/expense asymmetry is intentional (hybrid cash-flow model)
 The app uses a deliberate hybrid model for debt transactions:
 

@@ -55,6 +55,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 || `2026_05_15_164512_add_dismiss_source_reviewed_at_to_plaid_pending_imports` | Adds `dismiss_source` varchar(16) nullable and `reviewed_at` timestamp nullable to `plaid_pending_imports` |
 || `2026_05_15_231529_add_full_settings_to_plaid_merchant_rules` | Adds `description`, `is_debt_payment`, `debt_id` (advisory, no FK), `split_data` to `plaid_merchant_rules` after `is_split` |
 || `2026_05_15_231529_add_full_settings_to_plaid_pending_imports` | Adds `suggested_description`, `suggested_is_debt_payment`, `suggested_debt_id` (advisory, no FK), `suggested_split_data` to `plaid_pending_imports` after `suggested_is_non_necessity` |
+| `2026_05_17_115724_create_transaction_repayment_links_and_repayment_columns` | Creates `transaction_repayment_links`; adds `is_repayment`, `is_repaid`, `is_repayment_mirror` to `transactions` |
 
 ## Table schemas
 
@@ -160,6 +161,20 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `advance_fund_id` | bigint FK nullable | → `funds.id` with `nullOnDelete`; marks an expense transaction as advancing against a fund (settled at month hard-close) |
 | `is_non_necessity` | boolean | default false; marks an expense as a non-necessity advance — excluded from the expense basis used in closeout remaining-pool math; advance settlement still runs so the net is settled against the advance fund |
 | `mirror_transaction_id` | bigint FK nullable | → `transactions.id` with `nullOnDelete`; paired leg for unsplit debtor expense ↔ creditor **income** when repaying an in-member debt (`is_debt_payment`) |
+| `is_repayment` | boolean | default false; income transaction that repays another member's expense |
+| `is_repaid` | boolean | default false; expense transaction that has been repaid via expense-repayment linking |
+| `is_repayment_mirror` | boolean | default false; mirror income for the repaid user when payer ≠ repaid user |
+| `timestamps` | | |
+
+### `transaction_repayment_links`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint PK | |
+| `repayment_transaction_id` | bigint FK | → `transactions.id` (`cascadeOnDelete`); income repayment row |
+| `repaid_transaction_id` | bigint FK | → `transactions.id` (`cascadeOnDelete`); expense being repaid |
+| `mirror_transaction_id` | bigint FK nullable | → `transactions.id` (`nullOnDelete`); optional mirror income for repaid user |
+| `repaid_user_id` | bigint FK | → `users.id` (`cascadeOnDelete`); member whose expense was repaid |
+| `amount` | decimal(14,2) | linked repayment amount |
 | `timestamps` | | |
 
 ### `transaction_splits`

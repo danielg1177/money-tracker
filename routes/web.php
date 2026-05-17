@@ -46,6 +46,8 @@ Route::middleware(['auth'])->group(function () {
             : view('app');
     });
 
+    Route::get('/transactions/repayable-expenses', [TransactionController::class, 'repayableExpenses']);
+
     Route::get('/transactions', function (Request $request) {
         return $request->expectsJson()
             ? app(TransactionController::class)->index($request)
