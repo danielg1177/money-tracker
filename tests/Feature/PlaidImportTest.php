@@ -1162,4 +1162,139 @@ class PlaidImportTest extends TestCase
         $this->assertIsArray($tag);
         $this->assertSame($fund->name, $tag['name']);
     }
+
+    public function test_confirm_split_creates_multiple_transactions_from_pending_import(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import] = $this->createPendingImportForUser($user, 'txn-split-1');
+        $categoryA = Category::factory()->create([
+            'family_id' => $user->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+        $categoryB = Category::factory()->create([
+            'family_id' => $user->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson("/plaid/pending-imports/{$import->id}/confirm-split", [
+                'lines' => [
+                    ['amount' => 20.00, 'type' => 'expense', 'category_id' => $categoryA->id, 'description' => 'Office supplies'],
+                    ['amount' => 22.50, 'type' => 'expense', 'category_id' => $categoryB->id, 'description' => 'Personal'],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('count', 2);
+
+        $import->refresh();
+        $this->assertSame('confirmed', $import->status);
+        $this->assertNotNull($import->transaction_id);
+
+        $transactions = Transaction::query()
+            ->where('plaid_pending_import_id', $import->id)
+            ->orderBy('id')
+            ->get();
+
+        $this->assertCount(2, $transactions);
+        $this->assertSame($import->plaid_transaction_id, $transactions[0]->plaid_transaction_id);
+        $this->assertNull($transactions[1]->plaid_transaction_id);
+
+        foreach ($transactions as $tx) {
+            $this->assertSame('plaid', $tx->import_source);
+            $this->assertSame($import->id, $tx->plaid_pending_import_id);
+        }
+
+        $this->assertSame((float) 20.00, (float) $transactions[0]->amount);
+        $this->assertSame((float) 22.50, (float) $transactions[1]->amount);
+        $this->assertSame('Office supplies', $transactions[0]->description);
+        $this->assertSame('Personal', $transactions[1]->description);
+    }
+
+    public function test_confirm_split_requires_at_least_two_lines(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import, 'category' => $category] = $this->createPendingImportForUser($user, 'txn-split-2');
+
+        $this->actingAs($user)
+            ->postJson("/plaid/pending-imports/{$import->id}/confirm-split", [
+                'lines' => [
+                    ['amount' => 42.50, 'type' => 'expense', 'category_id' => $category->id],
+                ],
+            ])
+            ->assertUnprocessable();
+    }
+
+    public function test_confirm_split_rejects_when_amounts_do_not_sum_to_import_total(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import] = $this->createPendingImportForUser($user, 'txn-split-3');
+        $categoryA = Category::factory()->create(['family_id' => $user->family_id, 'is_expense' => true, 'is_income' => false]);
+        $categoryB = Category::factory()->create(['family_id' => $user->family_id, 'is_expense' => true, 'is_income' => false]);
+
+        $this->actingAs($user)
+            ->postJson("/plaid/pending-imports/{$import->id}/confirm-split", [
+                'lines' => [
+                    ['amount' => 10.00, 'type' => 'expense', 'category_id' => $categoryA->id],
+                    ['amount' => 10.00, 'type' => 'expense', 'category_id' => $categoryB->id],
+                ],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.lines.0', fn ($v) => str_contains($v, '42.50'));
+    }
+
+    public function test_confirm_split_is_rejected_for_wrong_user(): void
+    {
+        $owner = $this->familyUser();
+        $other = $this->familyUser();
+        ['import' => $import] = $this->createPendingImportForUser($owner, 'txn-split-4');
+
+        $this->actingAs($other)
+            ->postJson("/plaid/pending-imports/{$import->id}/confirm-split", [
+                'lines' => [
+                    ['amount' => 21.25, 'type' => 'expense', 'category_id' => 1],
+                    ['amount' => 21.25, 'type' => 'expense', 'category_id' => 1],
+                ],
+            ])
+            ->assertNotFound();
+    }
+
+    public function test_confirm_split_is_rejected_when_import_is_not_pending(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import] = $this->createPendingImportForUser($user, 'txn-split-5');
+        $categoryA = Category::factory()->create(['family_id' => $user->family_id, 'is_expense' => true, 'is_income' => false]);
+        $categoryB = Category::factory()->create(['family_id' => $user->family_id, 'is_expense' => true, 'is_income' => false]);
+
+        $import->update(['status' => 'confirmed']);
+
+        $this->actingAs($user)
+            ->postJson("/plaid/pending-imports/{$import->id}/confirm-split", [
+                'lines' => [
+                    ['amount' => 20.00, 'type' => 'expense', 'category_id' => $categoryA->id],
+                    ['amount' => 22.50, 'type' => 'expense', 'category_id' => $categoryB->id],
+                ],
+            ])
+            ->assertUnprocessable();
+    }
+
+    public function test_confirm_split_does_not_create_merchant_rule(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import] = $this->createPendingImportForUser($user, 'txn-split-6');
+        $categoryA = Category::factory()->create(['family_id' => $user->family_id, 'is_expense' => true, 'is_income' => false]);
+        $categoryB = Category::factory()->create(['family_id' => $user->family_id, 'is_expense' => true, 'is_income' => false]);
+
+        $this->actingAs($user)
+            ->postJson("/plaid/pending-imports/{$import->id}/confirm-split", [
+                'lines' => [
+                    ['amount' => 20.00, 'type' => 'expense', 'category_id' => $categoryA->id],
+                    ['amount' => 22.50, 'type' => 'expense', 'category_id' => $categoryB->id],
+                ],
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseMissing('plaid_merchant_rules', ['user_id' => $user->id]);
+    }
 }

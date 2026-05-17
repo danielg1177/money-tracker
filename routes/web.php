@@ -140,6 +140,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/pending-imports/{pendingImport}/ledger-candidates', [PlaidImportController::class, 'ledgerLinkCandidates']);
         Route::post('/pending-imports/{pendingImport}/link', [PlaidImportController::class, 'linkToLedger']);
         Route::post('/pending-imports/{pendingImport}/confirm', [PlaidImportController::class, 'confirm']);
+        Route::post('/pending-imports/{pendingImport}/confirm-split', [PlaidImportController::class, 'confirmSplit']);
         Route::post('/pending-imports/{pendingImport}/dismiss', [PlaidImportController::class, 'dismiss']);
         Route::post('/pending-imports/{pendingImport}/dismiss-as-transfer', [PlaidImportController::class, 'dismissAsTransfer']);
         Route::post('/pending-imports/{pendingImport}/approve-auto-created', [PlaidImportController::class, 'approveAutoCreated']);

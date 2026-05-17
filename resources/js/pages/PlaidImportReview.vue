@@ -175,6 +175,22 @@
               v-show="expandedId === row.id"
               class="space-y-3 border-t border-gray-700/80 px-4 pb-4 pt-3"
             >
+              <button
+                type="button"
+                class="flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors"
+                :class="isSplitMode(row)
+                  ? 'border-indigo-600/60 bg-indigo-900/30 text-indigo-200'
+                  : 'border-gray-600 bg-gray-800/60 text-gray-300 hover:border-gray-500 hover:text-white'"
+                :disabled="actionId === row.id"
+                @click="toggleSplitMode(row)"
+              >
+                <span>Split into multiple transactions</span>
+                <span class="text-xs" :class="isSplitMode(row) ? 'text-indigo-300' : 'text-gray-500'">
+                  {{ isSplitMode(row) ? 'Cancel split' : 'One charge, multiple categories?' }}
+                </span>
+              </button>
+
+              <template v-if="!isSplitMode(row)">
               <div>
                 <label class="mb-1.5 block text-xs font-medium text-gray-400">Type</label>
                 <div class="grid grid-cols-2 gap-2">
@@ -626,6 +642,130 @@
                   Dismiss
                 </button>
               </div>
+              </template>
+
+              <template v-if="isSplitMode(row)">
+                <div class="rounded-lg border border-gray-700/60 bg-gray-900/40 px-3 py-2 text-xs text-gray-400">
+                  <span>Bank charge:</span>
+                  <span class="ml-1 font-semibold tabular-nums text-white">{{ formatCurrency(importAbsAmount(row)) }}</span>
+                  <span class="mx-2 text-gray-600">·</span>
+                  <span :class="Math.abs(splitRemaining(row)) <= 0.01 ? 'text-emerald-400' : 'text-amber-400'">
+                    {{ Math.abs(splitRemaining(row)) <= 0.01 ? 'Fully allocated' : `${formatCurrency(Math.abs(splitRemaining(row)))} ${splitRemaining(row) > 0 ? 'remaining' : 'over'}` }}
+                  </span>
+                </div>
+
+                <div
+                  v-for="(line, idx) in splitModes[row.id]?.lines ?? []"
+                  :key="idx"
+                  class="rounded-lg border border-gray-700 bg-gray-900/30 p-3 space-y-2.5"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-gray-400">Line {{ idx + 1 }}</span>
+                    <button
+                      v-if="(splitModes[row.id]?.lines?.length ?? 0) > 2"
+                      type="button"
+                      class="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                      :disabled="actionId === row.id"
+                      @click="removeSplitLine(row, idx)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div>
+                    <label class="mb-1 block text-xs font-medium text-gray-400">Amount</label>
+                    <input
+                      v-model="line.amount"
+                      type="text"
+                      inputmode="decimal"
+                      placeholder="0.00"
+                      class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+                      :disabled="actionId === row.id"
+                    />
+                  </div>
+
+                  <div>
+                    <label class="mb-1 block text-xs font-medium text-gray-400">Type</label>
+                    <div class="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        class="min-h-[44px] rounded-lg py-2 text-sm font-medium transition-colors disabled:opacity-50"
+                        :class="line.type === 'expense' ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                        :disabled="actionId === row.id"
+                        @click="line.type = 'expense'; line.category_id = ''"
+                      >Expense</button>
+                      <button
+                        type="button"
+                        class="min-h-[44px] rounded-lg py-2 text-sm font-medium transition-colors disabled:opacity-50"
+                        :class="line.type === 'income' ? 'bg-emerald-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                        :disabled="actionId === row.id"
+                        @click="line.type = 'income'; line.category_id = ''"
+                      >Income</button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="mb-1 block text-xs font-medium text-gray-400">Category</label>
+                    <select
+                      v-model="line.category_id"
+                      class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+                      :disabled="actionId === row.id"
+                    >
+                      <option value="" disabled>Select category</option>
+                      <option
+                        v-for="cat in categoriesForType(line.type)"
+                        :key="cat.id"
+                        :value="String(cat.id)"
+                      >
+                        {{ cat.icon ? cat.icon + ' ' : '' }}{{ cat.name }}
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="mb-1 block text-xs font-medium text-gray-400">Description <span class="text-gray-600">(optional)</span></label>
+                    <input
+                      v-model="line.description"
+                      type="text"
+                      placeholder="What was this for?"
+                      class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+                      :disabled="actionId === row.id"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  class="flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-600 bg-transparent py-2 text-sm text-gray-400 transition-colors hover:border-gray-500 hover:text-gray-300 disabled:opacity-50"
+                  :disabled="actionId === row.id"
+                  @click="addSplitLine(row)"
+                >
+                  + Add another line
+                </button>
+
+                <p v-if="rowErrors[row.id]" class="text-sm text-red-300">
+                  {{ rowErrors[row.id] }}
+                </p>
+
+                <div class="flex flex-col gap-2 sm:flex-row-reverse sm:justify-end">
+                  <button
+                    type="button"
+                    class="min-h-[48px] w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[10rem]"
+                    :disabled="actionId === row.id || !splitLinesValid(row)"
+                    @click="confirmSplitRow(row)"
+                  >
+                    {{ actionId === row.id ? 'Saving…' : 'Confirm Split' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-[48px] w-full rounded-xl border border-gray-600 bg-transparent px-4 py-3 text-sm font-semibold text-gray-200 transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[8rem]"
+                    :disabled="actionId === row.id"
+                    @click="toggleSplitMode(row)"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </template>
             </div>
           </li>
         </TransitionGroup>
@@ -1192,6 +1332,7 @@ const dismissedForms = reactive({});
 const expandedId = ref(null);
 const expandedAutoCreatedId = ref(null);
 const forms = reactive({});
+const splitModes = reactive({});
 const rowErrors = reactive({});
 const actionId = ref(null);
 const toast = ref({ message: '', variant: 'success' });
@@ -1687,8 +1828,104 @@ function removePendingRow(id) {
   delete linkCandidatesMap[id];
   delete linkCandidatesLoaded[id];
   delete linkSelectedId[id];
+  delete splitModes[id];
   if (expandedId.value === id) {
     expandedId.value = null;
+  }
+}
+
+function isSplitMode(row) {
+  return splitModes[row.id]?.active === true;
+}
+
+function makeSplitLine() {
+  return { amount: '', type: 'expense', category_id: '', description: '' };
+}
+
+function toggleSplitMode(row) {
+  if (splitModes[row.id]?.active) {
+    splitModes[row.id] = { active: false, lines: [] };
+  } else {
+    const total = importAbsAmount(row);
+    splitModes[row.id] = {
+      active: true,
+      lines: [
+        { amount: String(total), type: 'expense', category_id: '', description: '' },
+        { amount: '', type: 'expense', category_id: '', description: '' },
+      ],
+    };
+  }
+}
+
+function addSplitLine(row) {
+  if (!splitModes[row.id]) {
+    return;
+  }
+  splitModes[row.id].lines.push(makeSplitLine());
+}
+
+function removeSplitLine(row, idx) {
+  if (!splitModes[row.id] || splitModes[row.id].lines.length <= 2) {
+    return;
+  }
+  splitModes[row.id].lines.splice(idx, 1);
+}
+
+function splitAllocated(row) {
+  if (!splitModes[row.id]) {
+    return 0;
+  }
+
+  return splitModes[row.id].lines.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+}
+
+function splitRemaining(row) {
+  return importAbsAmount(row) - splitAllocated(row);
+}
+
+function splitLinesValid(row) {
+  const sm = splitModes[row.id];
+  if (!sm || !sm.lines || sm.lines.length < 2) {
+    return false;
+  }
+  for (const line of sm.lines) {
+    if (!line.category_id || !(parseFloat(line.amount) > 0)) {
+      return false;
+    }
+  }
+
+  return Math.abs(splitRemaining(row)) <= 0.01;
+}
+
+async function confirmSplitRow(row) {
+  rowErrors[row.id] = '';
+  const sm = splitModes[row.id];
+  if (!sm || !sm.lines) {
+    return;
+  }
+  if (!splitLinesValid(row)) {
+    rowErrors[row.id] = 'Each line needs a category and a positive amount. All line amounts must sum to the total.';
+
+    return;
+  }
+  actionId.value = row.id;
+  try {
+    await post(`/plaid/pending-imports/${row.id}/confirm-split`, {
+      lines: sm.lines.map((l) => ({
+        amount: parseFloat(l.amount),
+        type: l.type,
+        category_id: Number(l.category_id),
+        description: l.description?.trim() || undefined,
+      })),
+    });
+    delete splitModes[row.id];
+    removePendingRow(row.id);
+    showToast(`Split into ${sm.lines.length} transactions.`, 'success');
+  } catch (err) {
+    console.error(err);
+    rowErrors[row.id] = err.response?.data?.message || err.response?.data?.errors?.lines?.[0] || 'Could not confirm split.';
+  } finally {
+    actionId.value = null;
   }
 }
 

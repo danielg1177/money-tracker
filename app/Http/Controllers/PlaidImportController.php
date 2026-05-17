@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ApplyPlaidCalibrationRequest;
+use App\Http\Requests\ConfirmSplitImportRequest;
 use App\Http\Requests\LinkPlaidPendingImportRequest;
 use App\Http\Requests\StoreImportConfirmRequest;
 use App\Models\Category;
@@ -442,6 +443,107 @@ class PlaidImportController extends Controller
         return response()->json(
             $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
         );
+    }
+
+    public function confirmSplit(ConfirmSplitImportRequest $request, PlaidPendingImport $pendingImport): JsonResponse
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'pending') {
+            return response()->json(['message' => 'This import is not pending confirmation.'], 422);
+        }
+
+        $user = $request->user();
+        if ($user->family_id === null) {
+            return response()->json(['message' => 'You must belong to a family to confirm imports.'], 403);
+        }
+
+        $validated = $request->validated();
+        $lines = $validated['lines'];
+
+        foreach ($lines as $line) {
+            $payload = [
+                'type' => $line['type'],
+                'amount' => (float) $line['amount'],
+                'transaction_date' => $pendingImport->date->format('Y-m-d'),
+                'description' => $this->resolveSplitLineDescription($line, $pendingImport),
+                'category_id' => $line['category_id'],
+                'is_split' => false,
+            ];
+
+            try {
+                $this->closedMonthGuard->assertTransactionPayloadOpen($user, $payload);
+            } catch (InvalidArgumentException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+        }
+
+        $createdTransactions = DB::transaction(function () use ($lines, $pendingImport, $user): array {
+            $created = [];
+            $isFirst = true;
+
+            foreach ($lines as $line) {
+                $payload = [
+                    'type' => $line['type'],
+                    'amount' => (float) $line['amount'],
+                    'transaction_date' => $pendingImport->date->format('Y-m-d'),
+                    'description' => $this->resolveSplitLineDescription($line, $pendingImport),
+                    'category_id' => $line['category_id'],
+                    'is_split' => false,
+                ];
+
+                $transaction = $this->transactionService->createTransaction($payload, $user);
+
+                $overrides = [
+                    'plaid_pending_import_id' => $pendingImport->id,
+                    'import_source' => 'plaid',
+                ];
+
+                if (! empty($line['fund_id'])) {
+                    $overrides['fund_id'] = (int) $line['fund_id'];
+                }
+
+                if ($isFirst) {
+                    $overrides['plaid_transaction_id'] = $pendingImport->plaid_transaction_id;
+                    $isFirst = false;
+                }
+
+                $transaction->forceFill($overrides)->save();
+                $created[] = $transaction;
+            }
+
+            $pendingImport->forceFill([
+                'status' => 'confirmed',
+                'transaction_id' => $created[0]->id,
+            ])->save();
+
+            return $created;
+        });
+
+        return response()->json([
+            'count' => count($createdTransactions),
+            'transactions' => $createdTransactions,
+        ]);
+    }
+
+    /**
+     * @param  array{description?: string|null}  $line
+     */
+    private function resolveSplitLineDescription(array $line, PlaidPendingImport $pendingImport): string
+    {
+        $description = trim((string) ($line['description'] ?? ''));
+        if ($description !== '') {
+            return $description;
+        }
+
+        $merchantFallback = trim((string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? ''));
+        if ($merchantFallback !== '') {
+            return $merchantFallback;
+        }
+
+        return 'Plaid import';
     }
 
     public function dismiss(Request $request, PlaidPendingImport $pendingImport): Response
