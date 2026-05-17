@@ -723,7 +723,9 @@ class PlaidTransactionSyncService
         return array_merge($row, [
             'suggested_repayment_group' => [
                 'repayment_transaction_id' => $repaymentGroupMatch['repayment_transaction_id'],
-                'mirror_transaction_ids' => $repaymentGroupMatch['mirror_transactions']->pluck('id')->values()->all(),
+                'mirror_transaction_ids' => $repaymentGroupMatch['mirror_transaction_ids'],
+                'repaid_transaction_ids' => $repaymentGroupMatch['repaid_transaction_ids'],
+                'repaid_user_id' => $repaymentGroupMatch['repaid_user_id'],
                 'total' => $repaymentGroupMatch['total'],
             ],
         ]);

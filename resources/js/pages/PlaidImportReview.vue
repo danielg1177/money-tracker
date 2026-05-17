@@ -173,9 +173,20 @@
 
             <div
               v-if="row.raw_payload?.suggested_repayment_group"
-              class="mx-4 mb-2 rounded-md border border-cyan-700/30 bg-cyan-950/10 px-3 py-2 text-xs text-cyan-300"
+              class="mx-4 mb-2 space-y-2 rounded-md border border-cyan-700/30 bg-cyan-950/10 px-3 py-2 text-xs text-cyan-300"
             >
-              This looks like a repayment — {{ row.raw_payload.suggested_repayment_group.mirror_transaction_ids.length }} linked expense(s) totalling {{ formatCurrency(row.raw_payload.suggested_repayment_group.total) }} were found. Consider splitting this import to link to those expenses.
+              <p>
+                This looks like a family member paying you back — {{ row.raw_payload.suggested_repayment_group.repaid_transaction_ids?.length ?? row.raw_payload.suggested_repayment_group.mirror_transaction_ids?.length ?? 0 }} linked expense(s) totalling {{ formatCurrency(row.raw_payload.suggested_repayment_group.total) }}.
+              </p>
+              <button
+                v-if="expandedId === row.id"
+                type="button"
+                class="min-h-[36px] rounded-lg border border-cyan-600/50 bg-cyan-900/40 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-900/60"
+                :disabled="actionId === row.id"
+                @click="applySuggestedRepaymentGroup(row)"
+              >
+                Set up as repayment income
+              </button>
             </div>
 
             <div
@@ -1142,6 +1153,14 @@
                     </option>
                   </select>
                 </div>
+                <PlaidImportRepaymentOptions
+                  v-if="autoCreatedFormFor(row).type === 'income'"
+                  :model="autoCreatedFormFor(row)"
+                  :amount="autoCreatedIncomeAmount(row)"
+                  amount-label="transaction"
+                  :disabled="actionId === row.id"
+                  :family-users="familyUsers"
+                />
                 <p v-if="rowErrors[row.id]" class="text-sm text-red-300">{{ rowErrors[row.id] }}</p>
                 <div class="flex flex-col gap-2 sm:flex-row-reverse sm:justify-end">
                   <button
@@ -1280,6 +1299,14 @@
                     </option>
                   </select>
                 </div>
+                <PlaidImportRepaymentOptions
+                  v-if="dismissedFormFor(row).type === 'income'"
+                  :model="dismissedFormFor(row)"
+                  :amount="importAbsAmount(row)"
+                  amount-label="import"
+                  :disabled="actionId === row.id"
+                  :family-users="familyUsers"
+                />
                 <p v-if="rowErrors[row.id]" class="text-sm text-red-300">{{ rowErrors[row.id] }}</p>
                 <div class="flex flex-col gap-2 sm:flex-row-reverse sm:justify-end">
                   <button
@@ -1342,7 +1369,7 @@ import {
   hasPositiveSplitShares,
 } from '../support/equalFamilySplit.js';
 
-const { post } = useApi();
+const { get, post } = useApi();
 
 const loading = ref(true);
 const pageError = ref('');
@@ -1615,6 +1642,12 @@ function importAbsAmount(row) {
   return Math.abs(Number(row.amount) || 0);
 }
 
+function autoCreatedIncomeAmount(row) {
+  const amount = row.transaction?.amount ?? row.amount;
+
+  return Math.abs(Number(amount) || 0);
+}
+
 function selectedFundHasNonNecessityRule(f) {
   if (f.advance_fund_id === null || f.advance_fund_id === undefined) {
     return false;
@@ -1754,6 +1787,9 @@ function onCategoryChange(row) {
 
 function setIncomeDebtMode(row, mode) {
   const f = formFor(row);
+  if (mode !== 'none') {
+    resetRepaymentFields(f);
+  }
   f.income_debt_mode = mode;
   if (mode === 'existing') {
     f.income_new_is_family_debt = false;
@@ -2012,6 +2048,9 @@ function setSplitLineType(line, type) {
 }
 
 function setSplitLineIncomeDebtMode(line, mode) {
+  if (mode !== 'none') {
+    resetRepaymentFields(line);
+  }
   line.income_debt_mode = mode;
   if (mode === 'existing') {
     line.income_new_is_family_debt = false;
@@ -2288,6 +2327,9 @@ function ensureAutoCreatedForm(row) {
     advance_fund_id: tx?.advance_fund_id ?? null,
     is_non_necessity: Boolean(tx?.is_non_necessity),
     correcting: false,
+    is_repayment_mode: false,
+    repayment_for_user_id: null,
+    repayment_links: [],
   };
 }
 
@@ -2320,6 +2362,9 @@ function ensureDismissedForm(row) {
     is_non_necessity: false,
     description: '',
     restoring: false,
+    is_repayment_mode: false,
+    repayment_for_user_id: null,
+    repayment_links: [],
   };
 }
 
@@ -2358,15 +2403,15 @@ async function submitAutoCreatedCorrection(row) {
     rowErrors[row.id] = 'Choose a category.';
     return;
   }
+  const validationMessage = validateAutoCreatedCorrection(row, f);
+  if (validationMessage) {
+    rowErrors[row.id] = validationMessage;
+
+    return;
+  }
   actionId.value = row.id;
   try {
-    await post(`/plaid/pending-imports/${row.id}/correct-auto-created`, {
-      category_id: Number(f.category_id),
-      type: f.type,
-      fund_id: f.fund_id ? Number(f.fund_id) : null,
-      advance_fund_id: f.advance_fund_id ?? null,
-      is_non_necessity: Boolean(f.is_non_necessity),
-    });
+    await post(`/plaid/pending-imports/${row.id}/correct-auto-created`, buildAutoCreatedCorrectionPayload(f));
     removeAutoCreatedRow(row.id);
     showToast('Transaction corrected. Rule updated.', 'success');
   } catch (err) {
@@ -2397,16 +2442,15 @@ async function restoreFromDismiss(row) {
     rowErrors[row.id] = 'Choose a category first.';
     return;
   }
+  const validationMessage = validateDismissedRestore(row, f);
+  if (validationMessage) {
+    rowErrors[row.id] = validationMessage;
+
+    return;
+  }
   actionId.value = row.id;
   try {
-    await post(`/plaid/pending-imports/${row.id}/restore-from-dismiss`, {
-      category_id: Number(f.category_id),
-      type: f.type,
-      fund_id: f.fund_id ? Number(f.fund_id) : null,
-      advance_fund_id: f.advance_fund_id ?? null,
-      is_non_necessity: Boolean(f.is_non_necessity),
-      description: f.description?.trim() || undefined,
-    });
+    await post(`/plaid/pending-imports/${row.id}/restore-from-dismiss`, buildDismissedRestorePayload(f));
     removeDismissedRow(row.id);
     showToast('Transaction created. Merchant rule updated — future imports will appear for review.', 'success');
   } catch (err) {
@@ -2550,6 +2594,105 @@ async function loadAll() {
   } finally {
     loading.value = false;
   }
+}
+
+async function applySuggestedRepaymentGroup(row) {
+  const group = row.raw_payload?.suggested_repayment_group;
+  if (!group) {
+    return;
+  }
+
+  const f = formFor(row);
+  f.type = 'income';
+  const pool = categories.value.filter((c) => c.is_income);
+  if (pool.length && !pool.some((c) => String(c.id) === String(f.category_id))) {
+    f.category_id = String(pool[0].id);
+  }
+  resetIncomeDebtFields(f);
+  f.is_repayment_mode = true;
+  f.repayment_for_user_id = group.repaid_user_id ?? null;
+
+  try {
+    const data = await get('/transactions/repayable-expenses');
+    const expenses = Array.isArray(data) ? data : [];
+    const ids = group.repaid_transaction_ids ?? [];
+    f.repayment_links = ids
+      .map((id) => {
+        const tx = expenses.find((e) => Number(e.id) === Number(id));
+        if (!tx) {
+          return null;
+        }
+
+        return {
+          transaction_id: tx.id,
+          amount: String(tx.amount),
+        };
+      })
+      .filter(Boolean);
+  } catch {
+    f.repayment_links = [];
+  }
+}
+
+function validateDismissedRestore(row, f) {
+  if (f.type === 'income' && f.is_repayment_mode) {
+    if (!f.repayment_for_user_id) {
+      return 'Select which family member is repaying you.';
+    }
+    if (!f.repayment_links?.length) {
+      return 'Select at least one expense transaction to link this repayment to.';
+    }
+    const linksTotal = f.repayment_links.reduce((sum, link) => sum + (parseFloat(link.amount) || 0), 0);
+    if (Math.abs(linksTotal - importAbsAmount(row)) >= 0.01) {
+      return 'The sum of repayment amounts must equal the import amount.';
+    }
+  }
+
+  return '';
+}
+
+function validateAutoCreatedCorrection(row, f) {
+  if (f.type === 'income' && f.is_repayment_mode) {
+    if (!f.repayment_for_user_id) {
+      return 'Select which family member is repaying you.';
+    }
+    if (!f.repayment_links?.length) {
+      return 'Select at least one expense transaction to link this repayment to.';
+    }
+    const amount = parseFloat(row.transaction?.amount) || 0;
+    const linksTotal = f.repayment_links.reduce((sum, link) => sum + (parseFloat(link.amount) || 0), 0);
+    if (Math.abs(linksTotal - amount) >= 0.01) {
+      return 'The sum of repayment amounts must equal the transaction amount.';
+    }
+  }
+
+  return '';
+}
+
+function buildDismissedRestorePayload(f) {
+  const payTowardDebt = f.type === 'expense' && f.pay_toward_debt;
+
+  return {
+    category_id: Number(f.category_id),
+    type: f.type,
+    description: f.description?.trim() || undefined,
+    fund_id: f.fund_id ? Number(f.fund_id) : null,
+    is_split: false,
+    advance_fund_id: f.type === 'expense' && !payTowardDebt ? f.advance_fund_id || null : null,
+    is_non_necessity: false,
+    ...(f.type === 'income' ? buildRepaymentPayload(f) : { is_repayment_mode: false }),
+  };
+}
+
+function buildAutoCreatedCorrectionPayload(f) {
+  return {
+    category_id: Number(f.category_id),
+    type: f.type,
+    fund_id: f.fund_id ? Number(f.fund_id) : null,
+    advance_fund_id: f.advance_fund_id ?? null,
+    is_non_necessity: Boolean(f.is_non_necessity),
+    ...(f.type === 'income' ? buildRepaymentPayload(f) : { is_repayment_mode: false }),
+  };
 }
 
 async function confirmRow(row) {

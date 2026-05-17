@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ApplyPlaidCalibrationRequest;
 use App\Http\Requests\ConfirmSplitImportRequest;
+use App\Http\Requests\CorrectAutoCreatedImportRequest;
 use App\Http\Requests\LinkPlaidPendingImportRequest;
+use App\Http\Requests\RestoreDismissedImportRequest;
 use App\Http\Requests\StoreImportConfirmRequest;
 use App\Models\Category;
 use App\Models\PlaidItem;
@@ -154,7 +156,7 @@ class PlaidImportController extends Controller
         return response()->noContent();
     }
 
-    public function correctAutoCreated(Request $request, PlaidPendingImport $pendingImport): JsonResponse
+    public function correctAutoCreated(CorrectAutoCreatedImportRequest $request, PlaidPendingImport $pendingImport): JsonResponse
     {
         if ($pendingImport->user_id !== $request->user()->id) {
             abort(403);
@@ -169,28 +171,50 @@ class PlaidImportController extends Controller
             abort(422, 'No linked transaction found.');
         }
 
-        $validated = $request->validate([
-            'category_id' => ['required', 'integer', 'exists:categories,id'],
-            'type' => ['required', 'string', 'in:expense,income'],
-            'fund_id' => ['nullable', 'integer', 'exists:funds,id'],
-            'advance_fund_id' => ['nullable', 'integer', 'exists:funds,id'],
-            'is_non_necessity' => ['boolean'],
-            'description' => ['nullable', 'string', 'max:500'],
-            'is_debt_payment' => ['boolean'],
-        ]);
+        $user = $request->user();
+        $validated = $request->validated();
 
-        $transaction->forceFill([
-            'category_id' => $validated['category_id'],
-            'type' => $validated['type'],
-            'fund_id' => $validated['fund_id'] ?? null,
-            'advance_fund_id' => $validated['advance_fund_id'] ?? null,
-            'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
-            'description' => $validated['description'] ?? $transaction->description,
-            'is_debt_payment' => (bool) ($validated['is_debt_payment'] ?? $transaction->is_debt_payment),
-        ])->save();
+        $payload = $this->buildTransactionPayloadFromImportFields(
+            array_merge($validated, [
+                'description' => $validated['description'] ?? $transaction->description,
+                'is_split' => (bool) $transaction->is_split,
+                'split_data' => $transaction->is_split ? $transaction->split_data : null,
+            ]),
+            (float) $transaction->amount,
+            $transaction->transaction_date->format('Y-m-d'),
+            $pendingImport,
+        );
+
+        if (($validated['type'] ?? '') === 'expense' && ! empty($validated['is_debt_payment'])) {
+            $payload['debt_id'] = $validated['debt_id'] ?? $transaction->debt_id;
+        }
+
+        try {
+            $this->closedMonthGuard->assertTransactionMutationOpen($transaction, $payload);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        try {
+            $this->transactionService->updateTransaction($transaction, $payload);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $transaction->refresh();
+
+        if (! empty($validated['fund_id'])) {
+            $transaction->forceFill(['fund_id' => $validated['fund_id']])->save();
+        }
+
+        try {
+            $this->repaymentService->handleRepaymentForTransaction($transaction, $validated);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
-        $this->matchingService->learnFromConfirmation($request->user()->id, $merchantName, [
+        $this->matchingService->learnFromConfirmation($user->id, $merchantName, [
             'category_id' => $validated['category_id'],
             'type' => $validated['type'],
             'fund_id' => $validated['fund_id'] ?? null,
@@ -217,6 +241,10 @@ class PlaidImportController extends Controller
                 'advanceFund',
                 'fund',
                 'paidByUser',
+                'repaymentLinks.repaidTransaction.category',
+                'repaymentLinks.mirrorTransaction',
+                'repaidByLink.repaymentTransaction',
+                'mirrorRepaymentLink.repaymentTransaction.user',
             ])
         );
     }
@@ -247,7 +275,7 @@ class PlaidImportController extends Controller
         return response()->noContent();
     }
 
-    public function restoreFromDismiss(Request $request, PlaidPendingImport $pendingImport): JsonResponse
+    public function restoreFromDismiss(RestoreDismissedImportRequest $request, PlaidPendingImport $pendingImport): JsonResponse
     {
         if ($pendingImport->user_id !== $request->user()->id) {
             abort(403);
@@ -262,34 +290,14 @@ class PlaidImportController extends Controller
             return response()->json(['message' => 'You must belong to a family to create transactions.'], 403);
         }
 
-        $validated = $request->validate([
-            'category_id' => ['required', 'integer', 'exists:categories,id'],
-            'type' => ['required', 'string', 'in:expense,income'],
-            'fund_id' => ['nullable', 'integer', 'exists:funds,id'],
-            'advance_fund_id' => ['nullable', 'integer', 'exists:funds,id'],
-            'is_non_necessity' => ['boolean'],
-            'description' => ['nullable', 'string', 'max:500'],
-        ]);
+        $validated = $request->validated();
 
-        $description = $validated['description'] ?? null;
-        if ($description === null || $description === '') {
-            $description = trim((string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? ''));
-        }
-        if ($description === '') {
-            $description = 'Plaid import';
-        }
-
-        $payload = [
-            'type' => $validated['type'],
-            'amount' => (float) $pendingImport->amount,
-            'transaction_date' => $pendingImport->date->format('Y-m-d'),
-            'description' => $description,
-            'category_id' => $validated['category_id'],
-            'fund_id' => $validated['fund_id'] ?? null,
-            'advance_fund_id' => $validated['advance_fund_id'] ?? null,
-            'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
-            'is_split' => false,
-        ];
+        $payload = $this->buildTransactionPayloadFromImportFields(
+            $validated,
+            (float) $pendingImport->amount,
+            $pendingImport->date->format('Y-m-d'),
+            $pendingImport,
+        );
 
         try {
             $this->closedMonthGuard->assertTransactionPayloadOpen($user, $payload);
@@ -297,10 +305,15 @@ class PlaidImportController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $transaction = $this->transactionService->createTransaction($payload, $user);
+        try {
+            $transaction = $this->transactionService->createTransaction($payload, $user);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
-        if (! empty($validated['fund_id'])) {
-            $transaction->forceFill(['fund_id' => $validated['fund_id']])->save();
+        $resolvedTagFundId = $this->resolvedTagFundIdFromImportFields($validated);
+        if ($resolvedTagFundId !== null) {
+            $transaction->forceFill(['fund_id' => $resolvedTagFundId])->save();
         }
 
         $transaction->forceFill([
@@ -308,7 +321,16 @@ class PlaidImportController extends Controller
             'import_source' => 'plaid',
         ])->save();
 
+        if (! empty($validated['is_repayment_mode'])) {
+            try {
+                $this->repaymentService->handleRepaymentForTransaction($transaction, $validated);
+            } catch (InvalidArgumentException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+        }
+
         $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
+        $payTowardDebt = ($validated['type'] ?? '') === 'expense' && ! empty($validated['debt_id']);
         $this->matchingService->learnFromConfirmation($user->id, $merchantName, [
             'category_id' => $validated['category_id'],
             'type' => $validated['type'],
@@ -317,9 +339,9 @@ class PlaidImportController extends Controller
             'is_non_necessity' => (bool) ($validated['is_non_necessity'] ?? false),
             'is_split' => false,
             'action' => 'categorize',
-            'description' => $description,
-            'is_debt_payment' => false,
-            'debt_id' => null,
+            'description' => $payload['description'],
+            'is_debt_payment' => $payTowardDebt,
+            'debt_id' => $payTowardDebt ? $validated['debt_id'] : null,
             'split_data' => null,
         ]);
 
@@ -330,7 +352,18 @@ class PlaidImportController extends Controller
         ])->save();
 
         return response()->json(
-            $transaction->fresh()->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
+            $transaction->fresh()->load([
+                'user',
+                'category',
+                'splits.user',
+                'debt.creditor',
+                'debt.debtor',
+                'debt.fund',
+                'repaymentLinks.repaidTransaction.category',
+                'repaymentLinks.mirrorTransaction',
+                'repaidByLink.repaymentTransaction',
+                'mirrorRepaymentLink.repaymentTransaction.user',
+            ])
         );
     }
 

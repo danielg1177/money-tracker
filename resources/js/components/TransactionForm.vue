@@ -287,8 +287,8 @@
           @click="!isInteractionBlocked && (form.is_repayment_mode = !form.is_repayment_mode)"
         >
           <div>
-            <p class="text-sm font-medium text-gray-300">Repayment for expenses I covered</p>
-            <p class="mt-0.5 text-xs text-gray-500">Did a family member pay you back for expenses you made for them?</p>
+            <p class="text-sm font-medium text-gray-300">Family member paying me back</p>
+            <p class="mt-0.5 text-xs text-gray-500">Another household member is reimbursing you for expenses you paid on their behalf. This creates the same mirror expense on their account as if they had recorded the repayment.</p>
           </div>
           <div
             class="relative h-6 w-10 shrink-0 rounded-full transition-colors"
@@ -922,6 +922,11 @@ watch(() => form.value.type, (newType) => {
 });
 
 watch(() => form.value.income_debt_mode, (mode) => {
+  if (mode !== 'none') {
+    form.value.is_repayment_mode = false;
+    form.value.repayment_for_user_id = null;
+    form.value.repayment_links = [];
+  }
   if (mode === 'existing') {
     form.value.income_new_is_family_debt = false;
     form.value.income_new_is_interfamily = false;
@@ -977,6 +982,15 @@ watch(
   () => form.value.is_repayment_mode,
   (enabled) => {
     if (enabled) {
+      form.value.income_debt_mode = 'none';
+      form.value.income_existing_debt_id = null;
+      form.value.income_new_is_family_debt = false;
+      form.value.income_new_is_interfamily = false;
+      form.value.income_new_creditor_id = null;
+      form.value.income_new_creditor_name = '';
+      form.value.income_new_description = '';
+      form.value.income_new_interest_enabled = false;
+      form.value.income_new_interest_rate = 0;
       loadRepayableExpenses();
       return;
     }

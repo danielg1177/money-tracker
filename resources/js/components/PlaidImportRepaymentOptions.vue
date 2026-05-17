@@ -10,8 +10,8 @@
       @keydown.space.prevent="!disabled && (model.is_repayment_mode = !model.is_repayment_mode)"
     >
       <div>
-        <p class="text-sm font-medium text-gray-300">Repayment for expenses I covered</p>
-        <p class="mt-0.5 text-xs text-gray-500">Did a family member pay you back for expenses you made for them?</p>
+            <p class="text-sm font-medium text-gray-300">Family member paying me back</p>
+            <p class="mt-0.5 text-xs text-gray-500">Another household member is reimbursing you for expenses you paid on their behalf. This creates the same mirror expense on their account as if they had recorded the repayment.</p>
       </div>
       <div
         class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"
@@ -193,6 +193,17 @@ watch(
   () => props.model.is_repayment_mode,
   (enabled) => {
     if (enabled) {
+      if ('income_debt_mode' in props.model) {
+        props.model.income_debt_mode = 'none';
+        props.model.income_existing_debt_id = null;
+        props.model.income_new_is_family_debt = false;
+        props.model.income_new_is_interfamily = false;
+        props.model.income_new_creditor_id = null;
+        props.model.income_new_creditor_name = '';
+        props.model.income_new_description = '';
+        props.model.income_new_interest_enabled = false;
+        props.model.income_new_interest_rate = 0;
+      }
       ensureRepaymentLinksArray();
       loadRepayableExpenses();
       return;

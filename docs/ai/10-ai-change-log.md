@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-17 — Repayment income on all Plaid import create paths
+
+- Files touched: `resources/js/pages/PlaidImportReview.vue`, `resources/js/components/PlaidImportRepaymentOptions.vue`, `app/Http/Requests/RestoreDismissedImportRequest.php`, `app/Http/Requests/CorrectAutoCreatedImportRequest.php`, `app/Http/Controllers/PlaidImportController.php`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **Dismissed** restore and **Auto-created → Correct It** income flows now show **Family member paying me back** (`PlaidImportRepaymentOptions`) and POST the same repayment payload as manual confirm; backend calls `TransactionRepaymentService` (mirror expenses on the repaying member). **Suggested repayment** banner button pre-fills income + repayment links from `raw_payload.suggested_repayment_group`. Repayment is mutually exclusive with income-debt mode on split lines.
+
 ## 2026-05-17 — Plaid import review: repayment on single confirm + shared component
 
 - Files touched: `resources/js/components/PlaidImportRepaymentOptions.vue` (new), `resources/js/components/PlaidImportSplitLineOptions.vue`, `resources/js/pages/PlaidImportReview.vue`, `app/Http/Requests/StoreImportConfirmRequest.php`, `tests/Feature/RepaymentLinkTest.php`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

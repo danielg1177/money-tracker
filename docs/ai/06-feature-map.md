@@ -74,9 +74,9 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 | Schema | `transaction_repayment_links` (`repayment_transaction_id`, `repaid_transaction_id`, `mirror_transaction_id`, `repaid_user_id`, `amount`); columns on `transactions` |
 | Model | `app/Models/TransactionRepaymentLink.php`; relations on `Transaction` (`repaymentLinks`, `repaidByLink`, `mirrorRepaymentLink`) |
 | Service | `app/Services/TransactionRepaymentService.php` — `createRepaymentLinks`, `deleteRepaymentLinks`, `handleRepaymentForTransaction` |
-| HTTP | `TransactionController` (store/update/destroy + `GET /transactions/repayable-expenses`); `PlaidImportController` confirm / confirm-split |
-| Validation | `TransactionPayloadValidationRules` — `is_repayment_mode`, `repayment_for_user_id`, `repayment_links` |
-| Frontend | `TransactionForm.vue`, `PlaidImportSplitLineOptions.vue`, `PlaidImportReview.vue` (split + `suggested_repayment_group` banner), `Transactions.vue` (totals, badges, edit lock) |
+| HTTP | `TransactionController` (store/update/destroy + `GET /transactions/repayable-expenses`); `PlaidImportController` confirm, confirm-split, restore-from-dismiss, correct-auto-created |
+| Validation | `TransactionPayloadValidationRules` — `is_repayment_mode`, `repayment_for_user_id`, `repayment_links` (mutually exclusive with `income_debt_mode` on income) |
+| Frontend | `TransactionForm.vue` (FAB + Transactions edit/create), `PlaidImportRepaymentOptions.vue`, `PlaidImportSplitLineOptions.vue`, `PlaidImportReview.vue` (all create paths + suggested-group banner), `Transactions.vue` (totals, badges, edit lock) |
 | Plaid sync | `PlaidMatchingService::findRepaymentGroupMatch` → `raw_payload.suggested_repayment_group` on pending imports |
 
 **Totals / closeout:** User A’s repaid expenses and repayment income are excluded from remaining-basis math (`MonthCloseoutService`, `MonthSummaryController` `rule_preview.basis`). User B’s mirror expenses count normally toward B’s expenses.

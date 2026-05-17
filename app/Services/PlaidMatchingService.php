@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\PlaidMerchantRule;
 use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
+use App\Models\TransactionRepaymentLink;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
@@ -158,9 +159,16 @@ class PlaidMatchingService
 
             $groupTotal = round($groupMirrors->sum(fn (Transaction $tx) => (float) $tx->amount), 2);
             if (abs($groupTotal - $plaidAmount) <= 0.01) {
+                $links = TransactionRepaymentLink::query()
+                    ->where('repayment_transaction_id', (int) $repaymentTxId)
+                    ->get();
+
                 return [
                     'repayment_transaction_id' => (int) $repaymentTxId,
                     'mirror_transactions' => $groupMirrors,
+                    'mirror_transaction_ids' => $groupMirrors->pluck('id')->values()->all(),
+                    'repaid_transaction_ids' => $links->pluck('repaid_transaction_id')->values()->all(),
+                    'repaid_user_id' => $links->first()?->repaid_user_id,
                     'total' => $groupTotal,
                 ];
             }

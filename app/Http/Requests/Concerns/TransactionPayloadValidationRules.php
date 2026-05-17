@@ -152,6 +152,12 @@ trait TransactionPayloadValidationRules
                 }
 
                 $isRepaymentMode = filter_var($value('is_repayment_mode', false), FILTER_VALIDATE_BOOLEAN);
+                if ($isRepaymentMode && $mode !== 'none') {
+                    $validator->errors()->add(
+                        $field('is_repayment_mode'),
+                        'Expense repayment cannot be combined with income debt linking. Choose one or the other.',
+                    );
+                }
                 if ($isRepaymentMode) {
                     $repaidUserId = $value('repayment_for_user_id');
                     $repaymentLinks = $value('repayment_links', []);
