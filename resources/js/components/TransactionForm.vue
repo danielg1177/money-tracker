@@ -279,7 +279,13 @@
 
       </div>
 
-      <!-- Repayment from family member -->
+      <DebtRepaymentReceivedOptions
+        :model="form"
+        :receivable-debts="receivableDebts"
+        :disabled="submitLoading || isInteractionBlocked"
+      />
+
+      <!-- Repayment for covered expenses -->
       <div class="space-y-3 rounded-lg border border-gray-700 bg-gray-800/50 p-3">
         <div
           class="flex items-center justify-between"
@@ -287,8 +293,8 @@
           @click="!isInteractionBlocked && (form.is_repayment_mode = !form.is_repayment_mode)"
         >
           <div>
-            <p class="text-sm font-medium text-gray-300">Family member paying me back</p>
-            <p class="mt-0.5 text-xs text-gray-500">Another household member is reimbursing you for expenses you paid on their behalf. This creates the same mirror expense on their account as if they had recorded the repayment.</p>
+            <p class="text-sm font-medium text-gray-300">Family member paying me back for expenses I covered</p>
+            <p class="mt-0.5 text-xs text-gray-500">Links this income to specific expenses on your account and creates a matching expense on theirs.</p>
           </div>
           <div
             class="relative h-6 w-10 shrink-0 rounded-full transition-colors"
@@ -532,6 +538,7 @@ import { useApi } from '../composables/useApi';
 import { useAuth } from '../composables/useAuth';
 import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 import SplitEditor from './SplitEditor.vue';
+import DebtRepaymentReceivedOptions from './DebtRepaymentReceivedOptions.vue';
 import {
   equalSplitPayloadForFamilyUsers,
   hasPositiveSplitShares,
@@ -597,6 +604,8 @@ const form = ref({
   is_repayment_mode: false,
   repayment_for_user_id: null,
   repayment_links: [],
+  is_debt_repayment_received: false,
+  debt_repayment_received_id: null,
 });
 
 const repayableExpenses = ref([]);
@@ -613,6 +622,14 @@ const payableDebts = computed(() => {
 const incomeAttachableDebts = computed(() => {
   const list = props.debtsPayload?.owed || [];
   return list.filter((d) => !d.is_pending_closeout && Number(d.balance) >= 0);
+});
+
+const receivableDebts = computed(() => {
+  const list = props.debtsPayload?.owing || [];
+
+  return list.filter(
+    (d) => !d.is_pending_closeout && Number(d.balance) > 0 && d.creditor_id != null,
+  );
 });
 
 const filteredCategories = computed(() => {
@@ -715,6 +732,21 @@ function buildRepaymentPayload() {
       transaction_id: link.transaction_id,
       amount: parseFloat(link.amount),
     })),
+    is_debt_repayment_received: false,
+    debt_repayment_received_id: null,
+  };
+}
+
+function buildDebtRepaymentReceivedPayload() {
+  if (form.value.type !== 'income' || !form.value.is_debt_repayment_received) {
+    return { is_debt_repayment_received: false, debt_repayment_received_id: null };
+  }
+
+  return {
+    is_debt_repayment_received: true,
+    debt_repayment_received_id: form.value.debt_repayment_received_id,
+    is_repayment_mode: false,
+    income_debt_mode: 'none',
   };
 }
 
@@ -910,6 +942,8 @@ watch(() => form.value.type, (newType) => {
   form.value.is_repayment_mode = false;
   form.value.repayment_for_user_id = null;
   form.value.repayment_links = [];
+  form.value.is_debt_repayment_received = false;
+  form.value.debt_repayment_received_id = null;
   form.value.income_debt_mode = 'none';
   form.value.income_existing_debt_id = null;
   form.value.income_new_is_family_debt = false;
@@ -923,6 +957,8 @@ watch(() => form.value.type, (newType) => {
 
 watch(() => form.value.income_debt_mode, (mode) => {
   if (mode !== 'none') {
+    form.value.is_debt_repayment_received = false;
+    form.value.debt_repayment_received_id = null;
     form.value.is_repayment_mode = false;
     form.value.repayment_for_user_id = null;
     form.value.repayment_links = [];
@@ -1039,6 +1075,8 @@ function resetForm() {
     is_repayment_mode: false,
     repayment_for_user_id: null,
     repayment_links: [],
+    is_debt_repayment_received: false,
+    debt_repayment_received_id: null,
   };
   repayableExpenses.value = [];
   formError.value = null;
@@ -1111,6 +1149,13 @@ async function handleSubmit() {
       }
     }
 
+    if (form.value.is_debt_repayment_received) {
+      if (!form.value.debt_repayment_received_id) {
+        formError.value = 'Select which loan is being repaid';
+        return;
+      }
+    }
+
     if (form.value.is_repayment_mode) {
       if (!form.value.repayment_for_user_id) {
         formError.value = 'Select the family member who is repaying you';
@@ -1178,9 +1223,10 @@ async function handleSubmit() {
               form.value.income_debt_mode === 'new' && form.value.income_new_interest_enabled
                 ? form.value.income_new_interest_rate
                 : null,
+            ...buildDebtRepaymentReceivedPayload(),
             ...buildRepaymentPayload(),
           }
-        : { is_repayment_mode: false }),
+        : { is_repayment_mode: false, is_debt_repayment_received: false }),
     };
 
     if (isEditMode.value) {

@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-17 — Creditor can record loan repayment received (mirror debtor payment)
+
+- Files touched: `app/Services/TransactionService.php`, `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `app/Http/Requests/StoreTransactionRequest.php`, Plaid import form requests, `app/Http/Controllers/PlaidImportController.php`, `resources/js/components/DebtRepaymentReceivedOptions.vue` (new), `TransactionForm.vue`, `PlaidImportReview.vue`, `PlaidImportSplitLineOptions.vue`, `tests/Feature/DebtRepaymentTransactionTest.php`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Creditors (User A) can mark **income** as **Family member repaying a loan to me**, selecting an in-family debt from `GET /debts` `owing` list. Creates the same `is_debt_payment` income + mirrored debtor **expense** and reduces `debts.balance` as if the debtor had used **Pay toward a tracked debt**. Distinct from **expenses I covered** (`is_repayment_mode`). Available on manual create and all Plaid import income paths.
+
 ## 2026-05-17 — Repayment income on all Plaid import create paths
 
 - Files touched: `resources/js/pages/PlaidImportReview.vue`, `resources/js/components/PlaidImportRepaymentOptions.vue`, `app/Http/Requests/RestoreDismissedImportRequest.php`, `app/Http/Requests/CorrectAutoCreatedImportRequest.php`, `app/Http/Controllers/PlaidImportController.php`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`

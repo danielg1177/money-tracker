@@ -37,7 +37,9 @@ class CorrectAutoCreatedImportRequest extends FormRequest
                 'split_data' => null,
                 'debt_id' => null,
                 'is_non_necessity' => false,
-                'income_debt_mode' => $this->input('income_debt_mode', 'none'),
+                'income_debt_mode' => $this->boolean('is_debt_repayment_received')
+                    ? 'none'
+                    : $this->input('income_debt_mode', 'none'),
             ]);
         }
 
@@ -53,6 +55,25 @@ class CorrectAutoCreatedImportRequest extends FormRequest
                 'income_new_interest_enabled' => false,
                 'income_new_interest_rate' => null,
                 'is_repayment_mode' => false,
+                'is_debt_repayment_received' => false,
+                'debt_repayment_received_id' => null,
+            ]);
+        }
+
+        if ($this->boolean('is_debt_repayment_received')) {
+            $this->merge([
+                'income_debt_mode' => 'none',
+                'income_existing_debt_id' => null,
+                'is_repayment_mode' => false,
+                'repayment_for_user_id' => null,
+                'repayment_links' => [],
+            ]);
+        }
+
+        if ($this->input('income_debt_mode', 'none') !== 'none' || $this->boolean('is_repayment_mode')) {
+            $this->merge([
+                'is_debt_repayment_received' => false,
+                'debt_repayment_received_id' => null,
             ]);
         }
 

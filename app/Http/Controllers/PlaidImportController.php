@@ -572,7 +572,16 @@ class PlaidImportController extends Controller
         }
 
         if (($fields['type'] ?? '') === 'income') {
-            $payload['income_debt_mode'] = $fields['income_debt_mode'] ?? 'none';
+            $payload['is_repayment_mode'] = (bool) ($fields['is_repayment_mode'] ?? false);
+            $payload['repayment_for_user_id'] = $payload['is_repayment_mode'] ? ($fields['repayment_for_user_id'] ?? null) : null;
+            $payload['repayment_links'] = $payload['is_repayment_mode'] ? ($fields['repayment_links'] ?? []) : [];
+            $payload['is_debt_repayment_received'] = (bool) ($fields['is_debt_repayment_received'] ?? false);
+            $payload['debt_repayment_received_id'] = $payload['is_debt_repayment_received']
+                ? ($fields['debt_repayment_received_id'] ?? null)
+                : null;
+            $payload['income_debt_mode'] = $payload['is_debt_repayment_received']
+                ? 'none'
+                : ($fields['income_debt_mode'] ?? 'none');
             $payload['income_existing_debt_id'] = ($payload['income_debt_mode'] === 'existing') ? ($fields['income_existing_debt_id'] ?? null) : null;
             $payload['income_new_is_family_debt'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($fields['income_new_is_family_debt'] ?? false) : false;
             $payload['income_new_is_interfamily'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($fields['income_new_is_interfamily'] ?? false) : false;

@@ -45,6 +45,14 @@ trait TransactionPayloadValidationRules
             'income_new_interest_enabled' => ['nullable', 'boolean'],
             'income_new_interest_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'is_repayment_mode' => ['boolean'],
+            'is_debt_repayment_received' => ['boolean'],
+            'debt_repayment_received_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('debts', 'id')->where(
+                    fn ($query) => $query->where('family_id', $this->user()?->family_id ?? 0)
+                ),
+            ],
             'repayment_for_user_id' => ['nullable', 'integer', Rule::exists('users', 'id')],
             'repayment_links' => ['nullable', 'array'],
             'repayment_links.*.transaction_id' => ['required_with:repayment_links', 'integer', Rule::exists('transactions', 'id')],
@@ -152,6 +160,52 @@ trait TransactionPayloadValidationRules
                 }
 
                 $isRepaymentMode = filter_var($value('is_repayment_mode', false), FILTER_VALIDATE_BOOLEAN);
+                $isDebtRepaymentReceived = filter_var($value('is_debt_repayment_received', false), FILTER_VALIDATE_BOOLEAN);
+
+                if ($isDebtRepaymentReceived && $mode !== 'none') {
+                    $validator->errors()->add(
+                        $field('is_debt_repayment_received'),
+                        'Loan repayment received cannot be combined with income-from-debt options.',
+                    );
+                }
+
+                if ($isDebtRepaymentReceived && $isRepaymentMode) {
+                    $validator->errors()->add(
+                        $field('is_debt_repayment_received'),
+                        'Loan repayment received cannot be combined with expense repayment linking.',
+                    );
+                }
+
+                if ($isDebtRepaymentReceived) {
+                    if (! $filled('debt_repayment_received_id')) {
+                        $validator->errors()->add($field('debt_repayment_received_id'), 'Select the loan being repaid.');
+                    } else {
+                        $debt = Debt::query()
+                            ->where('family_id', $user->family_id)
+                            ->whereKey($value('debt_repayment_received_id'))
+                            ->first();
+
+                        if (! $debt) {
+                            $validator->errors()->add($field('debt_repayment_received_id'), 'The selected debt does not belong to your family.');
+                        } else {
+                            if ($debt->is_pending_closeout) {
+                                $validator->errors()->add($field('debt_repayment_received_id'), 'This debt is pending split closeout and cannot be repaid this way.');
+                            }
+
+                            if ($debt->creditor_id === null) {
+                                $validator->errors()->add($field('debt_repayment_received_id'), 'Only in-family loans can be recorded as repayment received.');
+                            } elseif ((int) $debt->creditor_id !== (int) $user->id) {
+                                $validator->errors()->add($field('debt_repayment_received_id'), 'You can only record repayment received on loans where you are the creditor.');
+                            }
+
+                            $amount = round((float) $value('amount', 0), 2);
+                            if ($amount > 0 && $amount > round((float) $debt->balance, 2)) {
+                                $validator->errors()->add($field('amount'), 'Payment amount cannot exceed the remaining debt balance.');
+                            }
+                        }
+                    }
+                }
+
                 if ($isRepaymentMode && $mode !== 'none') {
                     $validator->errors()->add(
                         $field('is_repayment_mode'),

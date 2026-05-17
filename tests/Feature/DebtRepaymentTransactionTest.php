@@ -14,6 +14,51 @@ class DebtRepaymentTransactionTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_creditor_can_record_income_as_loan_repayment_received_matching_debtor_payment(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 80.00,
+            'balance' => 80.00,
+            'is_pending_closeout' => false,
+        ]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_income' => true,
+            'is_expense' => false,
+        ]);
+
+        $this->actingAs($creditor)->postJson('/transactions', [
+            'type' => 'income',
+            'amount' => 30,
+            'category_id' => $category->id,
+            'transaction_date' => '2026-05-06',
+            'is_debt_repayment_received' => true,
+            'debt_repayment_received_id' => $debt->id,
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('debts', [
+            'id' => $debt->id,
+            'balance' => '50.00',
+        ]);
+
+        $income = Transaction::query()->where('user_id', $creditor->id)->where('type', 'income')->sole();
+        $expense = Transaction::query()->where('user_id', $debtor->id)->where('type', 'expense')->sole();
+
+        $this->assertTrue($income->is_debt_payment);
+        $this->assertTrue($expense->is_debt_payment);
+        $this->assertSame($expense->mirror_transaction_id, $income->id);
+        $this->assertSame($income->mirror_transaction_id, $expense->id);
+        $this->assertSame($debt->id, (int) $income->debt_id);
+        $this->assertSame($debtor->id, (int) $income->paid_by_user_id);
+        $this->assertSame($debtor->id, (int) $expense->paid_by_user_id);
+    }
+
     public function test_posting_expense_with_debt_id_creates_mirror_income_and_reduces_balance(): void
     {
         $family = Family::factory()->create();

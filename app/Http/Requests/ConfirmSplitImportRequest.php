@@ -155,6 +155,21 @@ class ConfirmSplitImportRequest extends FormRequest
             $line['income_new_interest_enabled'] = false;
             $line['income_new_interest_rate'] = null;
             $line['is_repayment_mode'] = false;
+            $line['is_debt_repayment_received'] = false;
+            $line['debt_repayment_received_id'] = null;
+        }
+
+        if (($line['type'] ?? '') === 'income' && ! empty($line['is_debt_repayment_received'])) {
+            $line['income_debt_mode'] = 'none';
+            $line['income_existing_debt_id'] = null;
+            $line['is_repayment_mode'] = false;
+            $line['repayment_for_user_id'] = null;
+            $line['repayment_links'] = [];
+        }
+
+        if (($line['income_debt_mode'] ?? 'none') !== 'none' || ! empty($line['is_repayment_mode'])) {
+            $line['is_debt_repayment_received'] = false;
+            $line['debt_repayment_received_id'] = null;
         }
 
         if (! empty($line['debt_id'])) {

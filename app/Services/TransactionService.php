@@ -29,6 +29,10 @@ class TransactionService
             return $this->createDebtRepaymentExpense($data, $user);
         }
 
+        if (($data['type'] ?? null) === 'income' && ! empty($data['is_debt_repayment_received'])) {
+            return $this->createDebtRepaymentReceivedIncome($data, $user);
+        }
+
         if (($data['type'] ?? null) === 'income') {
             $data['is_split'] = false;
             $data['split_data'] = null;
@@ -188,6 +192,87 @@ class TransactionService
             $debt->decrement('balance', $amount);
 
             return $payerExpense->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund']);
+        });
+    }
+
+    /**
+     * Income recorded by the creditor when a family member repays a loan — creates the same
+     * mirrored debt-payment pair as {@see createDebtRepaymentExpense()} would from the debtor.
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws InvalidArgumentException
+     */
+    private function createDebtRepaymentReceivedIncome(array $data, User $user): Transaction
+    {
+        return DB::transaction(function () use ($data, $user) {
+            $debt = Debt::query()
+                ->where('family_id', $user->family_id)
+                ->lockForUpdate()
+                ->findOrFail($data['debt_repayment_received_id']);
+
+            if ($debt->creditor_id === null) {
+                throw new InvalidArgumentException('Only in-family debts can be recorded as repayment received.');
+            }
+
+            if ((int) $debt->creditor_id !== (int) $user->id) {
+                throw new InvalidArgumentException('Only the creditor can record this repayment received.');
+            }
+
+            if ($debt->is_pending_closeout) {
+                throw new InvalidArgumentException('This debt is pending split closeout and cannot be repaid this way.');
+            }
+
+            $amount = round((float) $data['amount'], 2);
+
+            if ($amount > round((float) $debt->balance, 2)) {
+                throw new InvalidArgumentException('Payment amount cannot exceed the remaining debt balance.');
+            }
+
+            $debtorId = (int) $debt->debtor_id;
+            $description = ($data['description'] ?? null) ?: 'Debt repayment received';
+            $transactionDate = $data['transaction_date'];
+
+            $creditorIncome = Transaction::query()->create([
+                'family_id' => $user->family_id,
+                'user_id' => $user->id,
+                'category_id' => null,
+                'type' => 'income',
+                'amount' => $amount,
+                'description' => $description,
+                'transaction_date' => $transactionDate,
+                'is_debt_payment' => true,
+                'debt_id' => $debt->id,
+                'paid_by_user_id' => $debtorId,
+                'is_closeout_initiated' => false,
+                'is_split' => false,
+                'split_data' => null,
+                'advance_fund_id' => null,
+            ]);
+
+            $debtorExpense = Transaction::query()->create([
+                'family_id' => $user->family_id,
+                'user_id' => $debtorId,
+                'category_id' => null,
+                'type' => 'expense',
+                'amount' => $amount,
+                'description' => ($data['description'] ?? null) ?: 'Debt payment',
+                'transaction_date' => $transactionDate,
+                'is_debt_payment' => true,
+                'debt_id' => $debt->id,
+                'paid_by_user_id' => $debtorId,
+                'is_closeout_initiated' => false,
+                'is_split' => false,
+                'split_data' => null,
+                'advance_fund_id' => null,
+            ]);
+
+            $creditorIncome->forceFill(['mirror_transaction_id' => $debtorExpense->id])->save();
+            $debtorExpense->forceFill(['mirror_transaction_id' => $creditorIncome->id])->save();
+
+            $debt->decrement('balance', $amount);
+
+            return $creditorIncome->load(['user', 'category', 'debt.creditor', 'debt.debtor', 'debt.fund', 'mirrorTransaction']);
         });
     }
 

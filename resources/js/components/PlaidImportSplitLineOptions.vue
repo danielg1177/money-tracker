@@ -102,6 +102,12 @@
         </label>
       </div>
 
+      <DebtRepaymentReceivedOptions
+        :model="line"
+        :receivable-debts="receivableDebts"
+        :disabled="disabled"
+      />
+
       <PlaidImportRepaymentOptions
         :model="line"
         :amount="line.amount"
@@ -247,6 +253,7 @@
 <script setup>
 import { computed } from 'vue';
 import PlaidImportRepaymentOptions from './PlaidImportRepaymentOptions.vue';
+import DebtRepaymentReceivedOptions from './DebtRepaymentReceivedOptions.vue';
 import SplitEditor from './SplitEditor.vue';
 import {
   equalSplitPayloadForFamilyUsers,
@@ -279,6 +286,10 @@ const props = defineProps({
     default: () => [],
   },
   incomeAttachableDebts: {
+    type: Array,
+    default: () => [],
+  },
+  receivableDebts: {
     type: Array,
     default: () => [],
   },

@@ -10,8 +10,8 @@
       @keydown.space.prevent="!disabled && (model.is_repayment_mode = !model.is_repayment_mode)"
     >
       <div>
-            <p class="text-sm font-medium text-gray-300">Family member paying me back</p>
-            <p class="mt-0.5 text-xs text-gray-500">Another household member is reimbursing you for expenses you paid on their behalf. This creates the same mirror expense on their account as if they had recorded the repayment.</p>
+            <p class="text-sm font-medium text-gray-300">Family member paying me back for expenses I covered</p>
+            <p class="mt-0.5 text-xs text-gray-500">Links this income to specific expenses on your account and creates a matching expense on theirs.</p>
       </div>
       <div
         class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"

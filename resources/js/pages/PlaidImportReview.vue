@@ -437,6 +437,12 @@
                   </div>
                 </div>
 
+                <DebtRepaymentReceivedOptions
+                  :model="formFor(row)"
+                  :receivable-debts="receivableDebts"
+                  :disabled="actionId === row.id"
+                />
+
                 <PlaidImportRepaymentOptions
                   :model="formFor(row)"
                   :amount="importAbsAmount(row)"
@@ -768,6 +774,7 @@
                     :family-users="familyUsers"
                     :payable-debts="payableDebts"
                     :income-attachable-debts="incomeAttachableDebts"
+                    :receivable-debts="receivableDebts"
                   />
                 </div>
 
@@ -1153,6 +1160,12 @@
                     </option>
                   </select>
                 </div>
+                <DebtRepaymentReceivedOptions
+                  v-if="autoCreatedFormFor(row).type === 'income'"
+                  :model="autoCreatedFormFor(row)"
+                  :receivable-debts="receivableDebts"
+                  :disabled="actionId === row.id"
+                />
                 <PlaidImportRepaymentOptions
                   v-if="autoCreatedFormFor(row).type === 'income'"
                   :model="autoCreatedFormFor(row)"
@@ -1299,6 +1312,12 @@
                     </option>
                   </select>
                 </div>
+                <DebtRepaymentReceivedOptions
+                  v-if="dismissedFormFor(row).type === 'income'"
+                  :model="dismissedFormFor(row)"
+                  :receivable-debts="receivableDebts"
+                  :disabled="actionId === row.id"
+                />
                 <PlaidImportRepaymentOptions
                   v-if="dismissedFormFor(row).type === 'income'"
                   :model="dismissedFormFor(row)"
@@ -1364,6 +1383,7 @@ import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js'
 import SplitEditor from '../components/SplitEditor.vue';
 import PlaidImportSplitLineOptions from '../components/PlaidImportSplitLineOptions.vue';
 import PlaidImportRepaymentOptions from '../components/PlaidImportRepaymentOptions.vue';
+import DebtRepaymentReceivedOptions from '../components/DebtRepaymentReceivedOptions.vue';
 import {
   equalSplitPayloadForFamilyUsers,
   hasPositiveSplitShares,
@@ -1432,6 +1452,14 @@ const incomeAttachableDebts = computed(() => {
   const list = debtsPayload.value?.owed || [];
 
   return list.filter((d) => !d.is_pending_closeout && Number(d.balance) >= 0);
+});
+
+const receivableDebts = computed(() => {
+  const list = debtsPayload.value?.owing || [];
+
+  return list.filter(
+    (d) => !d.is_pending_closeout && Number(d.balance) > 0 && d.creditor_id != null,
+  );
 });
 
 function showToast(message, variant = 'success') {
@@ -1675,6 +1703,11 @@ function resetRepaymentFields(f) {
   f.repayment_links = [];
 }
 
+function resetDebtRepaymentReceivedFields(f) {
+  f.is_debt_repayment_received = false;
+  f.debt_repayment_received_id = null;
+}
+
 function resetExpenseOnlyFields(f) {
   f.pay_toward_debt = false;
   f.debt_id = null;
@@ -1724,6 +1757,8 @@ function ensureForm(row) {
     is_repayment_mode: false,
     repayment_for_user_id: null,
     repayment_links: [],
+    is_debt_repayment_received: false,
+    debt_repayment_received_id: null,
   };
   applyCategoryDefaults(row, { mergePlaidSuggestion: true });
 }
@@ -1789,6 +1824,7 @@ function setIncomeDebtMode(row, mode) {
   const f = formFor(row);
   if (mode !== 'none') {
     resetRepaymentFields(f);
+    resetDebtRepaymentReceivedFields(f);
   }
   f.income_debt_mode = mode;
   if (mode === 'existing') {
@@ -1937,6 +1973,8 @@ function makeSplitLine(amount = '') {
     is_repayment_mode: false,
     repayment_for_user_id: null,
     repayment_links: [],
+    is_debt_repayment_received: false,
+    debt_repayment_received_id: null,
   };
 }
 
@@ -2050,6 +2088,7 @@ function setSplitLineType(line, type) {
 function setSplitLineIncomeDebtMode(line, mode) {
   if (mode !== 'none') {
     resetRepaymentFields(line);
+    resetDebtRepaymentReceivedFields(line);
   }
   line.income_debt_mode = mode;
   if (mode === 'existing') {
@@ -2158,6 +2197,9 @@ function validateSplitLine(line) {
         }
       }
     }
+    if (line.is_debt_repayment_received && !line.debt_repayment_received_id) {
+      return 'Select which loan is being repaid.';
+    }
     if (line.is_repayment_mode) {
       if (!line.repayment_for_user_id) {
         return 'Select which family member is repaying you.';
@@ -2182,6 +2224,19 @@ function validateSplitLine(line) {
   return '';
 }
 
+function buildDebtRepaymentReceivedPayload(target) {
+  if (target.type !== 'income' || !target.is_debt_repayment_received) {
+    return { is_debt_repayment_received: false, debt_repayment_received_id: null };
+  }
+
+  return {
+    is_debt_repayment_received: true,
+    debt_repayment_received_id: target.debt_repayment_received_id,
+    is_repayment_mode: false,
+    income_debt_mode: 'none',
+  };
+}
+
 function buildRepaymentPayload(target) {
   if (target.type !== 'income' || !target.is_repayment_mode) {
     return { is_repayment_mode: false };
@@ -2194,6 +2249,8 @@ function buildRepaymentPayload(target) {
       transaction_id: link.transaction_id,
       amount: parseFloat(link.amount),
     })),
+    is_debt_repayment_received: false,
+    debt_repayment_received_id: null,
   };
 }
 
@@ -2238,9 +2295,10 @@ function buildSplitLinePayload(line) {
           income_new_interest_enabled: line.income_debt_mode === 'new' ? Boolean(line.income_new_interest_enabled) : false,
           income_new_interest_rate:
             line.income_debt_mode === 'new' && line.income_new_interest_enabled ? line.income_new_interest_rate : null,
+          ...buildDebtRepaymentReceivedPayload(line),
           ...buildSplitLineRepaymentPayload(line),
         }
-      : { is_repayment_mode: false }),
+      : { is_repayment_mode: false, is_debt_repayment_received: false }),
   };
 }
 
@@ -2330,6 +2388,8 @@ function ensureAutoCreatedForm(row) {
     is_repayment_mode: false,
     repayment_for_user_id: null,
     repayment_links: [],
+    is_debt_repayment_received: false,
+    debt_repayment_received_id: null,
   };
 }
 
@@ -2365,6 +2425,8 @@ function ensureDismissedForm(row) {
     is_repayment_mode: false,
     repayment_for_user_id: null,
     repayment_links: [],
+    is_debt_repayment_received: false,
+    debt_repayment_received_id: null,
   };
 }
 
@@ -2492,6 +2554,9 @@ function validateConfirmForm(row, f) {
         }
       }
     }
+    if (f.is_debt_repayment_received && !f.debt_repayment_received_id) {
+      return 'Select which loan is being repaid.';
+    }
     if (f.is_repayment_mode) {
       if (!f.repayment_for_user_id) {
         return 'Select which family member is repaying you.';
@@ -2551,9 +2616,10 @@ function buildConfirmPayload(row, f) {
           income_new_interest_enabled: f.income_debt_mode === 'new' ? Boolean(f.income_new_interest_enabled) : false,
           income_new_interest_rate:
             f.income_debt_mode === 'new' && f.income_new_interest_enabled ? f.income_new_interest_rate : null,
+          ...buildDebtRepaymentReceivedPayload(f),
           ...buildRepaymentPayload(f),
         }
-      : { is_repayment_mode: false }),
+      : { is_repayment_mode: false, is_debt_repayment_received: false }),
   };
   return payload;
 }
@@ -2635,6 +2701,9 @@ async function applySuggestedRepaymentGroup(row) {
 }
 
 function validateDismissedRestore(row, f) {
+  if (f.type === 'income' && f.is_debt_repayment_received && !f.debt_repayment_received_id) {
+    return 'Select which loan is being repaid.';
+  }
   if (f.type === 'income' && f.is_repayment_mode) {
     if (!f.repayment_for_user_id) {
       return 'Select which family member is repaying you.';
@@ -2652,6 +2721,9 @@ function validateDismissedRestore(row, f) {
 }
 
 function validateAutoCreatedCorrection(row, f) {
+  if (f.type === 'income' && f.is_debt_repayment_received && !f.debt_repayment_received_id) {
+    return 'Select which loan is being repaid.';
+  }
   if (f.type === 'income' && f.is_repayment_mode) {
     if (!f.repayment_for_user_id) {
       return 'Select which family member is repaying you.';
@@ -2680,7 +2752,9 @@ function buildDismissedRestorePayload(f) {
     is_split: false,
     advance_fund_id: f.type === 'expense' && !payTowardDebt ? f.advance_fund_id || null : null,
     is_non_necessity: false,
-    ...(f.type === 'income' ? buildRepaymentPayload(f) : { is_repayment_mode: false }),
+    ...(f.type === 'income'
+      ? { ...buildDebtRepaymentReceivedPayload(f), ...buildRepaymentPayload(f) }
+      : { is_repayment_mode: false, is_debt_repayment_received: false }),
   };
 }
 
@@ -2691,7 +2765,9 @@ function buildAutoCreatedCorrectionPayload(f) {
     fund_id: f.fund_id ? Number(f.fund_id) : null,
     advance_fund_id: f.advance_fund_id ?? null,
     is_non_necessity: Boolean(f.is_non_necessity),
-    ...(f.type === 'income' ? buildRepaymentPayload(f) : { is_repayment_mode: false }),
+    ...(f.type === 'income'
+      ? { ...buildDebtRepaymentReceivedPayload(f), ...buildRepaymentPayload(f) }
+      : { is_repayment_mode: false, is_debt_repayment_received: false }),
   };
 }
 
