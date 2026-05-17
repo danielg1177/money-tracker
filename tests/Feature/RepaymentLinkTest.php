@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\Family;
+use App\Models\PlaidItem;
+use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use App\Models\TransactionRepaymentLink;
 use App\Models\User;
@@ -347,5 +349,154 @@ class RepaymentLinkTest extends TestCase
 
         $response->assertUnprocessable();
         $response->assertJsonValidationErrors(['repayment_links.0.transaction_id']);
+    }
+
+    public function test_plaid_confirm_single_import_can_link_repayment(): void
+    {
+        $family = Family::factory()->create();
+        $userA = User::factory()->create(['family_id' => $family->id]);
+        $userB = User::factory()->create(['family_id' => $family->id]);
+        $expenseCategory = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+        $incomeCategory = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => false,
+            'is_income' => true,
+        ]);
+
+        $expense = Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $userA->id,
+            'category_id' => $expenseCategory->id,
+            'type' => 'expense',
+            'amount' => 50,
+            'transaction_date' => '2026-05-10',
+            'is_split' => false,
+        ]);
+
+        $item = PlaidItem::query()->create([
+            'user_id' => $userA->id,
+            'item_id' => 'item-repay-income',
+            'access_token' => 'access-sandbox-test',
+            'institution_id' => 'ins_test',
+            'institution_name' => 'Test Bank',
+            'transactions_cursor' => null,
+        ]);
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $userA->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-repay-income',
+            'plaid_account_id' => 'acc1',
+            'amount' => 50,
+            'date' => '2026-05-10',
+            'merchant_name' => 'Repayment',
+            'raw_name' => 'REPAYMENT',
+            'suggested_category_id' => $incomeCategory->id,
+            'suggested_type' => 'income',
+            'status' => 'pending',
+            'raw_payload' => [],
+        ]);
+
+        $this->actingAs($userA)->postJson("/plaid/pending-imports/{$import->id}/confirm", [
+            'type' => 'income',
+            'category_id' => $incomeCategory->id,
+            'is_repayment_mode' => true,
+            'repayment_for_user_id' => $userB->id,
+            'repayment_links' => [
+                ['transaction_id' => $expense->id, 'amount' => 50],
+            ],
+        ])->assertOk();
+
+        $import->refresh();
+        $income = Transaction::query()->findOrFail($import->transaction_id);
+        $this->assertTrue($income->is_repayment);
+        $expense->refresh();
+        $this->assertTrue($expense->is_repaid);
+    }
+
+    public function test_plaid_confirm_split_income_line_can_link_repayment(): void
+    {
+        $family = Family::factory()->create();
+        $userA = User::factory()->create(['family_id' => $family->id]);
+        $userB = User::factory()->create(['family_id' => $family->id]);
+        $expenseCategory = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+        $incomeCategory = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => false,
+            'is_income' => true,
+        ]);
+
+        $expense = Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $userA->id,
+            'category_id' => $expenseCategory->id,
+            'type' => 'expense',
+            'amount' => 30,
+            'transaction_date' => '2026-05-10',
+            'is_split' => false,
+        ]);
+
+        $item = PlaidItem::query()->create([
+            'user_id' => $userA->id,
+            'item_id' => 'item-repay-split',
+            'access_token' => 'access-sandbox-test',
+            'institution_id' => 'ins_test',
+            'institution_name' => 'Test Bank',
+            'transactions_cursor' => null,
+        ]);
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $userA->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-repay-split',
+            'plaid_account_id' => 'acc1',
+            'amount' => 50,
+            'date' => '2026-05-10',
+            'merchant_name' => 'Split repay',
+            'raw_name' => 'SPLIT REPAY',
+            'suggested_category_id' => $incomeCategory->id,
+            'suggested_type' => 'income',
+            'status' => 'pending',
+            'raw_payload' => [],
+        ]);
+
+        $this->actingAs($userA)->postJson("/plaid/pending-imports/{$import->id}/confirm-split", [
+            'lines' => [
+                [
+                    'amount' => 30,
+                    'type' => 'income',
+                    'category_id' => $incomeCategory->id,
+                    'is_split' => false,
+                    'split_data' => [],
+                    'is_repayment_mode' => true,
+                    'repayment_for_user_id' => $userB->id,
+                    'repayment_links' => [
+                        ['transaction_id' => $expense->id, 'amount' => 30],
+                    ],
+                ],
+                [
+                    'amount' => 20,
+                    'type' => 'expense',
+                    'category_id' => $expenseCategory->id,
+                    'is_split' => false,
+                    'split_data' => [],
+                ],
+            ],
+        ])->assertOk();
+
+        $repaymentIncome = Transaction::query()
+            ->where('plaid_pending_import_id', $import->id)
+            ->where('type', 'income')
+            ->sole();
+
+        $this->assertTrue($repaymentIncome->is_repayment);
+        $expense->refresh();
+        $this->assertTrue($expense->is_repaid);
     }
 }

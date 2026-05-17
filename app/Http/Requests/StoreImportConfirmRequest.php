@@ -49,6 +49,7 @@ class StoreImportConfirmRequest extends FormRequest
                 'income_new_description' => null,
                 'income_new_interest_enabled' => false,
                 'income_new_interest_rate' => null,
+                'is_repayment_mode' => false,
             ]);
         }
 

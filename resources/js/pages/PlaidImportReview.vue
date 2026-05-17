@@ -425,6 +425,14 @@
                     </div>
                   </div>
                 </div>
+
+                <PlaidImportRepaymentOptions
+                  :model="formFor(row)"
+                  :amount="importAbsAmount(row)"
+                  amount-label="import"
+                  :disabled="actionId === row.id"
+                  :family-users="familyUsers"
+                />
               </div>
 
               <div v-if="formFor(row).type === 'expense'" class="space-y-2">
@@ -1328,6 +1336,7 @@ import { useApi } from '../composables/useApi';
 import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 import SplitEditor from '../components/SplitEditor.vue';
 import PlaidImportSplitLineOptions from '../components/PlaidImportSplitLineOptions.vue';
+import PlaidImportRepaymentOptions from '../components/PlaidImportRepaymentOptions.vue';
 import {
   equalSplitPayloadForFamilyUsers,
   hasPositiveSplitShares,
@@ -1627,6 +1636,12 @@ function resetIncomeDebtFields(f) {
   f.income_new_interest_rate = 0;
 }
 
+function resetRepaymentFields(f) {
+  f.is_repayment_mode = false;
+  f.repayment_for_user_id = null;
+  f.repayment_links = [];
+}
+
 function resetExpenseOnlyFields(f) {
   f.pay_toward_debt = false;
   f.debt_id = null;
@@ -1673,6 +1688,9 @@ function ensureForm(row) {
     income_new_description: '',
     income_new_interest_enabled: false,
     income_new_interest_rate: 0,
+    is_repayment_mode: false,
+    repayment_for_user_id: null,
+    repayment_links: [],
   };
   applyCategoryDefaults(row, { mergePlaidSuggestion: true });
 }
@@ -1820,8 +1838,10 @@ function setType(row, type) {
   if (type === 'income') {
     resetExpenseOnlyFields(f);
     resetIncomeDebtFields(f);
+    resetRepaymentFields(f);
   } else {
     resetIncomeDebtFields(f);
+    resetRepaymentFields(f);
     f.pay_toward_debt = false;
     f.debt_id = null;
     applyCategoryDefaults(row);
@@ -2123,19 +2143,23 @@ function validateSplitLine(line) {
   return '';
 }
 
-function buildSplitLineRepaymentPayload(line) {
-  if (line.type !== 'income' || !line.is_repayment_mode) {
+function buildRepaymentPayload(target) {
+  if (target.type !== 'income' || !target.is_repayment_mode) {
     return { is_repayment_mode: false };
   }
 
   return {
     is_repayment_mode: true,
-    repayment_for_user_id: line.repayment_for_user_id,
-    repayment_links: (line.repayment_links || []).map((link) => ({
+    repayment_for_user_id: target.repayment_for_user_id,
+    repayment_links: (target.repayment_links || []).map((link) => ({
       transaction_id: link.transaction_id,
       amount: parseFloat(link.amount),
     })),
   };
+}
+
+function buildSplitLineRepaymentPayload(line) {
+  return buildRepaymentPayload(line);
 }
 
 function buildSplitLinePayload(line) {
@@ -2424,6 +2448,22 @@ function validateConfirmForm(row, f) {
         }
       }
     }
+    if (f.is_repayment_mode) {
+      if (!f.repayment_for_user_id) {
+        return 'Select which family member is repaying you.';
+      }
+      if (!f.repayment_links?.length) {
+        return 'Select at least one expense transaction to link this repayment to.';
+      }
+      const linksTotal = f.repayment_links.reduce(
+        (sum, link) => sum + (parseFloat(link.amount) || 0),
+        0,
+      );
+      const importAmount = importAbsAmount(row);
+      if (Math.abs(linksTotal - importAmount) >= 0.01) {
+        return 'The sum of repayment amounts must equal the import amount.';
+      }
+    }
   }
   if (f.type === 'expense' && f.is_split && !hasPositiveSplitShares(f.split_data)) {
     return 'Add split shares for each family member.';
@@ -2467,8 +2507,9 @@ function buildConfirmPayload(row, f) {
           income_new_interest_enabled: f.income_debt_mode === 'new' ? Boolean(f.income_new_interest_enabled) : false,
           income_new_interest_rate:
             f.income_debt_mode === 'new' && f.income_new_interest_enabled ? f.income_new_interest_rate : null,
+          ...buildRepaymentPayload(f),
         }
-      : {}),
+      : { is_repayment_mode: false }),
   };
   return payload;
 }

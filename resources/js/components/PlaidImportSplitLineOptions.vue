@@ -102,92 +102,13 @@
         </label>
       </div>
 
-      <div class="space-y-3 rounded-lg border border-gray-700 bg-gray-900/40 p-3">
-        <div
-          class="flex cursor-pointer items-center justify-between"
-          :class="disabled ? 'cursor-not-allowed opacity-60' : ''"
-          role="button"
-          tabindex="0"
-          @click="!disabled && (line.is_repayment_mode = !line.is_repayment_mode)"
-          @keydown.enter.prevent="!disabled && (line.is_repayment_mode = !line.is_repayment_mode)"
-          @keydown.space.prevent="!disabled && (line.is_repayment_mode = !line.is_repayment_mode)"
-        >
-          <div>
-            <p class="text-sm font-medium text-gray-300">Repayment for expenses I covered</p>
-            <p class="mt-0.5 text-xs text-gray-500">Did a family member pay you back for expenses you made for them?</p>
-          </div>
-          <div
-            class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"
-            :class="line.is_repayment_mode ? 'bg-blue-600' : 'bg-gray-700'"
-          >
-            <div
-              class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
-              :class="line.is_repayment_mode ? 'translate-x-5' : 'translate-x-1'"
-            />
-          </div>
-        </div>
-
-        <template v-if="line.is_repayment_mode">
-          <div>
-            <label class="block text-xs font-medium text-gray-400">Family member repaying you</label>
-            <select
-              v-model.number="line.repayment_for_user_id"
-              class="mt-1 min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-50"
-              :disabled="disabled"
-            >
-              <option :value="null" disabled>Select family member</option>
-              <option v-for="member in otherFamilyMembers" :key="member.id" :value="member.id">
-                {{ member.name }}
-              </option>
-            </select>
-          </div>
-
-          <div v-if="line.repayment_for_user_id">
-            <label class="block text-xs font-medium text-gray-400">Expenses being repaid</label>
-            <p class="mb-2 text-xs text-gray-500">Select the expenses from your account that this payment covers</p>
-            <div v-if="repayableExpensesLoading" class="text-xs text-gray-400">Loading expenses...</div>
-            <div v-else-if="repayableExpenses.length === 0" class="text-xs text-gray-400">No eligible expenses found</div>
-            <div v-else class="max-h-48 space-y-1.5 overflow-y-auto pr-1">
-              <div
-                v-for="tx in repayableExpenses"
-                :key="tx.id"
-                class="flex cursor-pointer items-center justify-between rounded-md border px-2.5 py-2 transition-colors"
-                :class="
-                  isRepaymentLinkSelected(tx.id)
-                    ? 'border-blue-500 bg-blue-900/20 text-blue-100'
-                    : 'border-gray-600 bg-gray-700/50 text-gray-300 hover:border-gray-500'
-                "
-                @click="!disabled && (isRepaymentLinkSelected(tx.id) ? removeRepaymentLink(tx.id) : addRepaymentLink(tx))"
-              >
-                <div class="flex min-w-0 items-center gap-2">
-                  <span v-if="tx.category?.icon" class="shrink-0 text-sm">{{ tx.category.icon }}</span>
-                  <div class="min-w-0">
-                    <p class="truncate text-xs font-medium">{{ tx.category?.name ?? 'Uncategorized' }}</p>
-                    <p v-if="tx.description" class="truncate text-[10px] text-gray-400">{{ tx.description }}</p>
-                    <p class="text-[10px] text-gray-500">{{ tx.transaction_date }}</p>
-                  </div>
-                </div>
-                <span class="ml-2 shrink-0 text-xs font-semibold text-red-400">
-                  -{{ formatCurrency(Number(tx.amount)) }}
-                </span>
-              </div>
-            </div>
-
-            <div v-if="line.repayment_links.length > 0" class="mt-2 flex justify-between text-xs">
-              <span class="text-gray-400">Selected total:</span>
-              <span
-                class="font-semibold"
-                :class="repaymentLinksTotalMatchesIncome ? 'text-green-400' : 'text-red-400'"
-              >
-                {{ formatCurrency(repaymentLinksTotal) }}
-                <span v-if="!repaymentLinksTotalMatchesIncome">
-                  (line is {{ formatCurrency(parseFloat(line.amount) || 0) }})
-                </span>
-              </span>
-            </div>
-          </div>
-        </template>
-      </div>
+      <PlaidImportRepaymentOptions
+        :model="line"
+        :amount="line.amount"
+        amount-label="line"
+        :disabled="disabled"
+        :family-users="familyUsers"
+      />
     </div>
 
     <div v-if="line.type === 'expense'" class="space-y-2">
@@ -324,9 +245,8 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
-import { useApi } from '../composables/useApi';
-import { useAuth } from '../composables/useAuth';
+import { computed } from 'vue';
+import PlaidImportRepaymentOptions from './PlaidImportRepaymentOptions.vue';
 import SplitEditor from './SplitEditor.vue';
 import {
   equalSplitPayloadForFamilyUsers,
@@ -364,67 +284,6 @@ const props = defineProps({
   },
 });
 
-const { get } = useApi();
-const { user } = useAuth();
-
-const repayableExpenses = ref([]);
-const repayableExpensesLoading = ref(false);
-
-const otherFamilyMembers = computed(() =>
-  props.familyUsers.filter((member) => Number(member.id) !== Number(user.value?.id)),
-);
-
-const repaymentLinksTotal = computed(() =>
-  props.line.repayment_links.reduce((sum, link) => sum + (parseFloat(link.amount) || 0), 0),
-);
-
-const repaymentLinksTotalMatchesIncome = computed(
-  () => Math.abs(repaymentLinksTotal.value - (parseFloat(props.line.amount) || 0)) < 0.01,
-);
-
-async function loadRepayableExpenses() {
-  repayableExpensesLoading.value = true;
-  try {
-    const data = await get('/transactions/repayable-expenses');
-    repayableExpenses.value = Array.isArray(data) ? data : [];
-  } catch {
-    repayableExpenses.value = [];
-  } finally {
-    repayableExpensesLoading.value = false;
-  }
-}
-
-function addRepaymentLink(tx) {
-  if (isRepaymentLinkSelected(tx.id)) {
-    return;
-  }
-  props.line.repayment_links.push({
-    transaction_id: tx.id,
-    amount: String(tx.amount),
-  });
-}
-
-function removeRepaymentLink(txId) {
-  props.line.repayment_links = props.line.repayment_links.filter(
-    (link) => Number(link.transaction_id) !== Number(txId),
-  );
-}
-
-function isRepaymentLinkSelected(txId) {
-  return props.line.repayment_links.some((link) => Number(link.transaction_id) === Number(txId));
-}
-
-watch(
-  () => props.line.is_repayment_mode,
-  (enabled) => {
-    if (enabled) {
-      loadRepayableExpenses();
-      return;
-    }
-    props.line.repayment_for_user_id = null;
-    props.line.repayment_links = [];
-  },
-);
 
 const splitEditorAmount = computed(() => {
   const parsed = parseFloat(props.line.amount);

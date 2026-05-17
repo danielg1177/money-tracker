@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-05-17 — Plaid import review: repayment on single confirm + shared component
+
+- Files touched: `resources/js/components/PlaidImportRepaymentOptions.vue` (new), `resources/js/components/PlaidImportSplitLineOptions.vue`, `resources/js/pages/PlaidImportReview.vue`, `app/Http/Requests/StoreImportConfirmRequest.php`, `tests/Feature/RepaymentLinkTest.php`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **To Review** single-import confirm (not only split lines) shows **Repayment for expenses I covered** when type is income; payload/validation match `TransactionForm`. Split lines reuse the same component. Plaid confirm/split repayment covered by tests.
+
 ## 2026-05-17 — Expense repayment linking: Transactions UI, Plaid banner, feature tests
 
 - Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/PlaidImportReview.vue`, `tests/Feature/RepaymentLinkTest.php`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`

@@ -138,7 +138,7 @@ class ConfirmSplitImportRequest extends FormRequest
         if (($line['type'] ?? '') === 'income') {
             $line['advance_fund_id'] = null;
             $line['is_split'] = false;
-            $line['split_data'] = null;
+            $line['split_data'] = [];
             $line['debt_id'] = null;
             $line['is_non_necessity'] = false;
             $line['income_debt_mode'] = $line['income_debt_mode'] ?? 'none';
