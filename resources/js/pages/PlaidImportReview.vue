@@ -1700,6 +1700,7 @@ function resetIncomeDebtFields(f) {
 function resetRepaymentFields(f) {
   f.is_repayment_mode = false;
   f.repayment_for_user_id = null;
+  f.is_external_repayment_mode = false;
   f.repayment_links = [];
 }
 
@@ -1756,6 +1757,7 @@ function ensureForm(row) {
     income_new_interest_rate: 0,
     is_repayment_mode: false,
     repayment_for_user_id: null,
+    is_external_repayment_mode: false,
     repayment_links: [],
     is_debt_repayment_received: false,
     debt_repayment_received_id: null,
@@ -1972,6 +1974,7 @@ function makeSplitLine(amount = '') {
     income_new_interest_rate: 0,
     is_repayment_mode: false,
     repayment_for_user_id: null,
+    is_external_repayment_mode: false,
     repayment_links: [],
     is_debt_repayment_received: false,
     debt_repayment_received_id: null,
@@ -2065,10 +2068,12 @@ function setSplitLineType(line, type) {
     line.income_new_interest_rate = 0;
     line.is_repayment_mode = false;
     line.repayment_for_user_id = null;
+    line.is_external_repayment_mode = false;
     line.repayment_links = [];
   } else {
     line.is_repayment_mode = false;
     line.repayment_for_user_id = null;
+    line.is_external_repayment_mode = false;
     line.repayment_links = [];
     line.income_debt_mode = 'none';
     line.income_existing_debt_id = null;
@@ -2216,6 +2221,19 @@ function validateSplitLine(line) {
         return 'The sum of repayment amounts must equal the line amount.';
       }
     }
+    if (line.is_external_repayment_mode) {
+      if (!line.repayment_links?.length) {
+        return 'Select at least one expense transaction to link this reimbursement to.';
+      }
+      const linksTotal = line.repayment_links.reduce(
+        (sum, link) => sum + (parseFloat(link.amount) || 0),
+        0,
+      );
+      const lineAmount = parseFloat(line.amount) || 0;
+      if (Math.abs(linksTotal - lineAmount) >= 0.01) {
+        return 'The sum of reimbursement amounts must equal the line amount.';
+      }
+    }
   }
   if (line.type === 'expense' && line.is_split && !hasPositiveSplitShares(line.split_data)) {
     return 'Add split shares for each family member.';
@@ -2254,8 +2272,26 @@ function buildRepaymentPayload(target) {
   };
 }
 
+function buildExternalRepaymentPayload(target) {
+  if (target.type !== 'income' || !target.is_external_repayment_mode) {
+    return { is_external_repayment_mode: false };
+  }
+
+  return {
+    is_external_repayment_mode: true,
+    repayment_links: (target.repayment_links || []).map((link) => ({
+      transaction_id: link.transaction_id,
+      amount: parseFloat(link.amount),
+    })),
+    is_repayment_mode: false,
+    repayment_for_user_id: null,
+    is_debt_repayment_received: false,
+    debt_repayment_received_id: null,
+  };
+}
+
 function buildSplitLineRepaymentPayload(line) {
-  return buildRepaymentPayload(line);
+  return { ...buildRepaymentPayload(line), ...buildExternalRepaymentPayload(line) };
 }
 
 function buildSplitLinePayload(line) {
@@ -2298,7 +2334,7 @@ function buildSplitLinePayload(line) {
           ...buildDebtRepaymentReceivedPayload(line),
           ...buildSplitLineRepaymentPayload(line),
         }
-      : { is_repayment_mode: false, is_debt_repayment_received: false }),
+      : { is_repayment_mode: false, is_external_repayment_mode: false, is_debt_repayment_received: false }),
   };
 }
 
@@ -2387,6 +2423,7 @@ function ensureAutoCreatedForm(row) {
     correcting: false,
     is_repayment_mode: false,
     repayment_for_user_id: null,
+    is_external_repayment_mode: false,
     repayment_links: [],
     is_debt_repayment_received: false,
     debt_repayment_received_id: null,
@@ -2424,6 +2461,7 @@ function ensureDismissedForm(row) {
     restoring: false,
     is_repayment_mode: false,
     repayment_for_user_id: null,
+    is_external_repayment_mode: false,
     repayment_links: [],
     is_debt_repayment_received: false,
     debt_repayment_received_id: null,
@@ -2573,6 +2611,19 @@ function validateConfirmForm(row, f) {
         return 'The sum of repayment amounts must equal the import amount.';
       }
     }
+    if (f.is_external_repayment_mode) {
+      if (!f.repayment_links?.length) {
+        return 'Select at least one expense transaction to link this reimbursement to.';
+      }
+      const linksTotal = f.repayment_links.reduce(
+        (sum, link) => sum + (parseFloat(link.amount) || 0),
+        0,
+      );
+      const importAmount = importAbsAmount(row);
+      if (Math.abs(linksTotal - importAmount) >= 0.01) {
+        return 'The sum of reimbursement amounts must equal the import amount.';
+      }
+    }
   }
   if (f.type === 'expense' && f.is_split && !hasPositiveSplitShares(f.split_data)) {
     return 'Add split shares for each family member.';
@@ -2618,8 +2669,9 @@ function buildConfirmPayload(row, f) {
             f.income_debt_mode === 'new' && f.income_new_interest_enabled ? f.income_new_interest_rate : null,
           ...buildDebtRepaymentReceivedPayload(f),
           ...buildRepaymentPayload(f),
+          ...buildExternalRepaymentPayload(f),
         }
-      : { is_repayment_mode: false, is_debt_repayment_received: false }),
+      : { is_repayment_mode: false, is_external_repayment_mode: false, is_debt_repayment_received: false }),
   };
   return payload;
 }
@@ -2754,7 +2806,7 @@ function buildDismissedRestorePayload(f) {
     is_non_necessity: false,
     ...(f.type === 'income'
       ? { ...buildDebtRepaymentReceivedPayload(f), ...buildRepaymentPayload(f) }
-      : { is_repayment_mode: false, is_debt_repayment_received: false }),
+      : { is_repayment_mode: false, is_external_repayment_mode: false, is_debt_repayment_received: false }),
   };
 }
 
@@ -2767,7 +2819,7 @@ function buildAutoCreatedCorrectionPayload(f) {
     is_non_necessity: Boolean(f.is_non_necessity),
     ...(f.type === 'income'
       ? { ...buildDebtRepaymentReceivedPayload(f), ...buildRepaymentPayload(f) }
-      : { is_repayment_mode: false, is_debt_repayment_received: false }),
+      : { is_repayment_mode: false, is_external_repayment_mode: false, is_debt_repayment_received: false }),
   };
 }
 

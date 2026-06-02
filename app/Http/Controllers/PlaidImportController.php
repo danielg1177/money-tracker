@@ -321,7 +321,7 @@ class PlaidImportController extends Controller
             'import_source' => 'plaid',
         ])->save();
 
-        if (! empty($validated['is_repayment_mode'])) {
+        if (! empty($validated['is_repayment_mode']) || ! empty($validated['is_external_repayment_mode'])) {
             try {
                 $this->repaymentService->handleRepaymentForTransaction($transaction, $validated);
             } catch (InvalidArgumentException $e) {
@@ -413,7 +413,7 @@ class PlaidImportController extends Controller
             'import_source' => 'plaid',
         ])->save();
 
-        if (! empty($validated['is_repayment_mode'])) {
+        if (! empty($validated['is_repayment_mode']) || ! empty($validated['is_external_repayment_mode'])) {
             $this->repaymentService->handleRepaymentForTransaction($transaction, $validated);
         }
 
@@ -512,7 +512,7 @@ class PlaidImportController extends Controller
 
                 $transaction->forceFill($overrides)->save();
 
-                if (! empty($line['is_repayment_mode'])) {
+                if (! empty($line['is_repayment_mode']) || ! empty($line['is_external_repayment_mode'])) {
                     $this->repaymentService->handleRepaymentForTransaction($transaction, $line);
                 }
 
@@ -574,7 +574,10 @@ class PlaidImportController extends Controller
         if (($fields['type'] ?? '') === 'income') {
             $payload['is_repayment_mode'] = (bool) ($fields['is_repayment_mode'] ?? false);
             $payload['repayment_for_user_id'] = $payload['is_repayment_mode'] ? ($fields['repayment_for_user_id'] ?? null) : null;
-            $payload['repayment_links'] = $payload['is_repayment_mode'] ? ($fields['repayment_links'] ?? []) : [];
+            $payload['is_external_repayment_mode'] = (bool) ($fields['is_external_repayment_mode'] ?? false);
+            $payload['repayment_links'] = ($payload['is_repayment_mode'] || $payload['is_external_repayment_mode'])
+                ? ($fields['repayment_links'] ?? [])
+                : [];
             $payload['is_debt_repayment_received'] = (bool) ($fields['is_debt_repayment_received'] ?? false);
             $payload['debt_repayment_received_id'] = $payload['is_debt_repayment_received']
                 ? ($fields['debt_repayment_received_id'] ?? null)
