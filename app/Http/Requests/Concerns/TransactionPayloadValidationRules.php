@@ -45,6 +45,7 @@ trait TransactionPayloadValidationRules
             'income_new_interest_enabled' => ['nullable', 'boolean'],
             'income_new_interest_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'is_repayment_mode' => ['boolean'],
+            'is_external_repayment_mode' => ['boolean'],
             'is_debt_repayment_received' => ['boolean'],
             'debt_repayment_received_id' => [
                 'nullable',
@@ -161,6 +162,7 @@ trait TransactionPayloadValidationRules
 
                 $isRepaymentMode = filter_var($value('is_repayment_mode', false), FILTER_VALIDATE_BOOLEAN);
                 $isDebtRepaymentReceived = filter_var($value('is_debt_repayment_received', false), FILTER_VALIDATE_BOOLEAN);
+                $isExternalRepaymentMode = filter_var($value('is_external_repayment_mode', false), FILTER_VALIDATE_BOOLEAN);
 
                 if ($isDebtRepaymentReceived && $mode !== 'none') {
                     $validator->errors()->add(
@@ -201,6 +203,51 @@ trait TransactionPayloadValidationRules
                             $amount = round((float) $value('amount', 0), 2);
                             if ($amount > 0 && $amount > round((float) $debt->balance, 2)) {
                                 $validator->errors()->add($field('amount'), 'Payment amount cannot exceed the remaining debt balance.');
+                            }
+                        }
+                    }
+                }
+
+                if ($isExternalRepaymentMode && $isRepaymentMode) {
+                    $validator->errors()->add(
+                        $field('is_external_repayment_mode'),
+                        'External reimbursement cannot be combined with family member repayment linking. Choose one or the other.',
+                    );
+                }
+                if ($isExternalRepaymentMode && $isDebtRepaymentReceived) {
+                    $validator->errors()->add(
+                        $field('is_external_repayment_mode'),
+                        'External reimbursement cannot be combined with loan repayment received.',
+                    );
+                }
+                if ($isExternalRepaymentMode && $mode !== 'none') {
+                    $validator->errors()->add(
+                        $field('is_external_repayment_mode'),
+                        'External reimbursement cannot be combined with income debt linking.',
+                    );
+                }
+                if ($isExternalRepaymentMode) {
+                    $repaymentLinks = $value('repayment_links', []);
+                    if (empty($repaymentLinks)) {
+                        $validator->errors()->add($field('repayment_links'), 'Select at least one expense transaction to link this reimbursement to.');
+                    } else {
+                        $linkedAmount = collect($repaymentLinks)->sum(fn ($l) => (float) ($l['amount'] ?? 0));
+                        $incomeAmount = round((float) $value('amount', 0), 2);
+                        if (abs($linkedAmount - $incomeAmount) > 0.01) {
+                            $validator->errors()->add($field('repayment_links'), 'The sum of reimbursement amounts must equal the income amount.');
+                        }
+                        foreach ($repaymentLinks as $i => $link) {
+                            $txId = $link['transaction_id'] ?? null;
+                            if ($txId) {
+                                $repaidTx = Transaction::query()
+                                    ->where('family_id', $user?->family_id ?? 0)
+                                    ->where('user_id', $user?->id ?? 0)
+                                    ->where('type', 'expense')
+                                    ->where('is_repaid', false)
+                                    ->find($txId);
+                                if (! $repaidTx) {
+                                    $validator->errors()->add($field("repayment_links.{$i}.transaction_id"), 'This expense transaction is invalid or has already been repaid.');
+                                }
                             }
                         }
                     }

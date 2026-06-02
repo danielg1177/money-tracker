@@ -11,6 +11,41 @@ Format:
 
 ---
 
+## 2026-06-01 — External Expense Reimbursement Feature
+
+**Summary:** Added the ability to mark income as an external reimbursement for an expense the user covered on behalf of a non-family party. Neither the income nor the linked expense(s) count toward monthly budget totals.
+
+**Files touched:**
+- `database/migrations/2026_06_02_021010_add_is_external_repayment_to_transaction_repayment_links_table.php` (new)
+- `app/Models/TransactionRepaymentLink.php` (fillable + cast)
+- `app/Services/TransactionRepaymentService.php` (new method + updated handler)
+- `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php` (new field + validation)
+- `app/Http/Requests/StoreTransactionRequest.php` (prepareForValidation)
+- `resources/js/components/TransactionForm.vue` (new UI toggle + watcher + payload builder)
+- `resources/js/pages/Transactions.vue` (badge labels + delete message)
+
+**Behavioral impact:**
+- Income linked via external reimbursement gets `is_repayment=true` and is excluded from gross income in month summary and closeout rule calculations.
+- The linked expense(s) get `is_repaid=true` and are excluded from expense totals and category breakdowns.
+- No mirror transaction is created on any family member's account.
+- The `transaction_repayment_links` table stores `is_external_repayment=true` for these links, distinguishing them from family repayment links.
+- In the transaction list, external reimbursements display as **Reimbursed externally** (repaid expenses) and **External reimbursement** (income); family repayments keep **Repaid by …** and **Repayment received**. Delete tooltip for external income explains that linked expenses will count toward the budget again.
+
+## 2026-06-02 — External expense reimbursement: TransactionForm UI
+
+- Files touched: `resources/js/components/TransactionForm.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Income transactions can toggle **Outside party reimbursed me for an expense I covered** (`is_external_repayment_mode`), select repayable expenses (same picker as family mode), and submit with `buildExternalRepaymentPayload`. Mutually exclusive with family repayment, debt received, and income debt modes. Edit mode restores mode from `repaymentLinks[0].is_external_repayment`.
+
+## 2026-06-02 — External expense reimbursement: validation
+
+- Files touched: `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `app/Http/Requests/StoreTransactionRequest.php`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Income payloads may include `is_external_repayment_mode` (mutually exclusive with `is_repayment_mode`, `is_debt_repayment_received`, and `income_debt_mode`). When set, validates `repayment_links` against the auth user's unrepped expenses (no `repayment_for_user_id`). `StoreTransactionRequest::prepareForValidation` clears conflicting fields. Plaid import requests inherit trait rules via `lines.*` prefix but do not yet normalize external mode in their own `prepareForValidation` (manual store/update only).
+
+## 2026-06-02 — External expense reimbursement: backend foundation
+
+- Files touched: `database/migrations/2026_06_02_021010_add_is_external_repayment_to_transaction_repayment_links_table.php`, `app/Models/TransactionRepaymentLink.php`, `app/Services/TransactionRepaymentService.php`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **Backend only (no HTTP/validation/UI yet).** Adds `is_external_repayment` on `transaction_repayment_links` and `TransactionRepaymentService::createExternalRepaymentLinks` — links income to the user's own repaid expenses without creating mirror rows. `handleRepaymentForTransaction` branches on `is_external_repayment_mode` vs `is_repayment_mode`. Both modes flag income/expenses for budget exclusion via existing `is_repayment` / `is_repaid` flags.
+
 ## 2026-06-01 — Bank connections: sync last month (all banks + per bank)
 
 - Files touched: `app/Http/Controllers/PlaidImportController.php`, `routes/web.php`, `resources/js/pages/BankConnections.vue`, `tests/Feature/PlaidIntegrationTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`

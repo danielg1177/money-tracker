@@ -372,6 +372,84 @@
           </div>
         </template>
       </div>
+
+      <!-- External reimbursement for covered expenses -->
+      <div class="space-y-3 rounded-lg border border-gray-700 bg-gray-800/50 p-3">
+        <div
+          class="flex items-center justify-between"
+          :class="isInteractionBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+          @click="!isInteractionBlocked && (form.is_external_repayment_mode = !form.is_external_repayment_mode)"
+        >
+          <div>
+            <p class="text-sm font-medium text-gray-300">Outside party reimbursed me for an expense I covered</p>
+            <p class="mt-0.5 text-xs text-gray-500">Links this income to expenses you paid. Neither the income nor the expense will count toward your monthly budget.</p>
+          </div>
+          <div
+            class="relative h-6 w-10 shrink-0 rounded-full transition-colors"
+            :class="form.is_external_repayment_mode ? 'bg-blue-600' : 'bg-gray-600'"
+          >
+            <span
+              class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200"
+              :class="form.is_external_repayment_mode ? 'translate-x-4' : 'translate-x-0'"
+            />
+          </div>
+        </div>
+        <template v-if="form.is_external_repayment_mode">
+          <div>
+            <label class="text-xs text-gray-400">Expenses being reimbursed</label>
+            <p class="mb-2 text-xs text-gray-500">Select the expenses on your account that this payment covers</p>
+            <div v-if="repayableExpensesLoading" class="text-xs text-gray-400">Loading expenses...</div>
+            <div v-else-if="repayableExpenses.length === 0" class="text-xs text-gray-400">No eligible expenses found</div>
+            <div v-else class="max-h-48 space-y-1.5 overflow-y-auto pr-1">
+              <div
+                v-for="tx in repayableExpenses"
+                :key="tx.id"
+                class="flex cursor-pointer items-center justify-between rounded-md border px-2.5 py-2 transition-colors"
+                :class="
+                  isRepaymentLinkSelected(tx.id)
+                    ? 'border-blue-500 bg-blue-900/20 text-blue-100'
+                    : 'border-gray-600 bg-gray-700/50 text-gray-300 hover:border-gray-500'
+                "
+                @click="isRepaymentLinkSelected(tx.id) ? removeRepaymentLink(tx.id) : addRepaymentLink(tx)"
+              >
+                <div class="flex min-w-0 items-center gap-2">
+                  <span v-if="tx.category?.icon" class="shrink-0 text-sm">{{ tx.category.icon }}</span>
+                  <div class="min-w-0">
+                    <p class="truncate text-xs font-medium">{{ tx.category?.name ?? 'Uncategorized' }}</p>
+                    <p class="truncate text-[11px] text-gray-400">{{ tx.transaction_date }} · {{ formatCurrency(Number(tx.amount)) }}</p>
+                  </div>
+                </div>
+                <div class="ml-2 shrink-0">
+                  <div
+                    class="h-4 w-4 rounded border"
+                    :class="
+                      isRepaymentLinkSelected(tx.id)
+                        ? 'border-blue-400 bg-blue-500'
+                        : 'border-gray-500 bg-transparent'
+                    "
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="form.repayment_links.length > 0" class="rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-xs text-gray-300">
+            <div class="flex justify-between">
+              <span>Reimbursement total</span>
+              <span>{{ formatCurrency(form.repayment_links.reduce((s, l) => s + parseFloat(l.amount || 0), 0)) }}</span>
+            </div>
+            <div class="mt-0.5 flex justify-between">
+              <span>Income amount</span>
+              <span>{{ formatCurrency(Number(form.amount) || 0) }}</span>
+            </div>
+            <div
+              v-if="Math.abs(form.repayment_links.reduce((s, l) => s + parseFloat(l.amount || 0), 0) - (Number(form.amount) || 0)) > 0.01"
+              class="mt-1 text-amber-400"
+            >
+              Amounts don't match — adjust the income amount or deselect expenses.
+            </div>
+          </div>
+        </template>
+      </div>
     </div>
 
     <!-- Pay toward debt (expense only) -->
@@ -602,6 +680,7 @@ const form = ref({
   income_new_interest_enabled: false,
   income_new_interest_rate: 0,
   is_repayment_mode: false,
+  is_external_repayment_mode: false,
   repayment_for_user_id: null,
   repayment_links: [],
   is_debt_repayment_received: false,
@@ -737,6 +816,24 @@ function buildRepaymentPayload() {
   };
 }
 
+function buildExternalRepaymentPayload() {
+  if (form.value.type !== 'income' || !form.value.is_external_repayment_mode) {
+    return { is_external_repayment_mode: false };
+  }
+
+  return {
+    is_external_repayment_mode: true,
+    repayment_links: form.value.repayment_links.map((link) => ({
+      transaction_id: link.transaction_id,
+      amount: parseFloat(link.amount),
+    })),
+    is_repayment_mode: false,
+    repayment_for_user_id: null,
+    is_debt_repayment_received: false,
+    debt_repayment_received_id: null,
+  };
+}
+
 function buildDebtRepaymentReceivedPayload() {
   if (form.value.type !== 'income' || !form.value.is_debt_repayment_received) {
     return { is_debt_repayment_received: false, debt_repayment_received_id: null };
@@ -847,17 +944,22 @@ watch(
         income_new_description: '',
         income_new_interest_enabled: false,
         income_new_interest_rate: 0,
-        is_repayment_mode: Boolean(newTransaction.is_repayment),
+        is_repayment_mode:
+          Boolean(newTransaction.is_repayment) &&
+          !(newTransaction.repaymentLinks || newTransaction.repayment_links)?.[0]?.is_external_repayment,
+        is_external_repayment_mode:
+          Boolean(newTransaction.is_repayment) &&
+          Boolean((newTransaction.repaymentLinks || newTransaction.repayment_links)?.[0]?.is_external_repayment),
         repayment_for_user_id:
-          newTransaction.repayment_links?.[0]?.repaid_user_id ??
-          newTransaction.repayment_links?.[0]?.repaid_user?.id ??
+          (newTransaction.repaymentLinks || newTransaction.repayment_links)?.[0]?.repaid_user_id ??
+          (newTransaction.repaymentLinks || newTransaction.repayment_links)?.[0]?.repaid_user?.id ??
           null,
-        repayment_links: (newTransaction.repayment_links || []).map((link) => ({
+        repayment_links: (newTransaction.repaymentLinks || newTransaction.repayment_links || []).map((link) => ({
           transaction_id: link.repaid_transaction_id,
           amount: String(link.amount),
         })),
       };
-      if (form.value.is_repayment_mode) {
+      if (form.value.is_repayment_mode || form.value.is_external_repayment_mode) {
         loadRepayableExpenses();
       }
       lastAllowedTransactionDate.value = normalizedDate;
@@ -940,6 +1042,7 @@ watch(() => form.value.type, (newType) => {
   }
 
   form.value.is_repayment_mode = false;
+  form.value.is_external_repayment_mode = false;
   form.value.repayment_for_user_id = null;
   form.value.repayment_links = [];
   form.value.is_debt_repayment_received = false;
@@ -960,6 +1063,7 @@ watch(() => form.value.income_debt_mode, (mode) => {
     form.value.is_debt_repayment_received = false;
     form.value.debt_repayment_received_id = null;
     form.value.is_repayment_mode = false;
+    form.value.is_external_repayment_mode = false;
     form.value.repayment_for_user_id = null;
     form.value.repayment_links = [];
   }
@@ -1018,6 +1122,7 @@ watch(
   () => form.value.is_repayment_mode,
   (enabled) => {
     if (enabled) {
+      form.value.is_external_repayment_mode = false;
       form.value.income_debt_mode = 'none';
       form.value.income_existing_debt_id = null;
       form.value.income_new_is_family_debt = false;
@@ -1031,6 +1136,30 @@ watch(
       return;
     }
     form.value.repayment_for_user_id = null;
+    form.value.repayment_links = [];
+  },
+);
+
+watch(
+  () => form.value.is_external_repayment_mode,
+  (enabled) => {
+    if (enabled) {
+      form.value.is_repayment_mode = false;
+      form.value.repayment_for_user_id = null;
+      form.value.income_debt_mode = 'none';
+      form.value.income_existing_debt_id = null;
+      form.value.income_new_is_family_debt = false;
+      form.value.income_new_is_interfamily = false;
+      form.value.income_new_creditor_id = null;
+      form.value.income_new_creditor_name = '';
+      form.value.income_new_description = '';
+      form.value.income_new_interest_enabled = false;
+      form.value.income_new_interest_rate = 0;
+      form.value.is_debt_repayment_received = false;
+      form.value.debt_repayment_received_id = null;
+      loadRepayableExpenses();
+      return;
+    }
     form.value.repayment_links = [];
   },
 );
@@ -1073,6 +1202,7 @@ function resetForm() {
     income_new_interest_enabled: false,
     income_new_interest_rate: 0,
     is_repayment_mode: false,
+    is_external_repayment_mode: false,
     repayment_for_user_id: null,
     repayment_links: [],
     is_debt_repayment_received: false,
@@ -1170,6 +1300,17 @@ async function handleSubmit() {
         return;
       }
     }
+
+    if (form.value.is_external_repayment_mode) {
+      if (form.value.repayment_links.length === 0) {
+        formError.value = 'Select at least one expense transaction to link this reimbursement to';
+        return;
+      }
+      if (!repaymentLinksTotalMatchesIncome.value) {
+        formError.value = 'The sum of reimbursement amounts must equal the income amount';
+        return;
+      }
+    }
   }
 
   try {
@@ -1225,6 +1366,7 @@ async function handleSubmit() {
                 : null,
             ...buildDebtRepaymentReceivedPayload(),
             ...buildRepaymentPayload(),
+            ...buildExternalRepaymentPayload(),
           }
         : { is_repayment_mode: false, is_debt_repayment_received: false }),
     };

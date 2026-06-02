@@ -68,6 +68,52 @@ class TransactionRepaymentService
     }
 
     /**
+     * Link an income reimbursement transaction to one or more repaid expenses — external (non-family) variant.
+     *
+     * No mirror expense is created. Both the income and the linked expenses are flagged to be
+     * excluded from monthly calculations (is_repayment / is_repaid).
+     *
+     * @param  array<int, array{transaction_id: int, amount: float}>  $links
+     */
+    public function createExternalRepaymentLinks(Transaction $repaymentIncome, array $links): void
+    {
+        DB::transaction(function () use ($repaymentIncome, $links): void {
+            $repaymentIncome->forceFill(['is_repayment' => true])->save();
+
+            foreach ($links as $entry) {
+                $repaidExpense = Transaction::query()->find($entry['transaction_id']);
+
+                if ($repaidExpense === null) {
+                    throw new InvalidArgumentException('Repaid expense transaction not found.');
+                }
+
+                if ($repaidExpense->family_id !== $repaymentIncome->family_id) {
+                    throw new InvalidArgumentException('Repaid expense must belong to the same family as the repayment income.');
+                }
+
+                if ($repaidExpense->type !== 'expense') {
+                    throw new InvalidArgumentException('Repaid transaction must be an expense.');
+                }
+
+                if ($repaidExpense->is_repaid) {
+                    throw new InvalidArgumentException('Repaid expense is already linked to a repayment.');
+                }
+
+                $repaidExpense->forceFill(['is_repaid' => true])->save();
+
+                TransactionRepaymentLink::query()->create([
+                    'repayment_transaction_id' => $repaymentIncome->id,
+                    'repaid_transaction_id' => $repaidExpense->id,
+                    'mirror_transaction_id' => null,
+                    'repaid_user_id' => $repaymentIncome->user_id,
+                    'amount' => $entry['amount'],
+                    'is_external_repayment' => true,
+                ]);
+            }
+        });
+    }
+
+    /**
      * Remove all repayment links for an income transaction and revert repaid/mirror rows.
      */
     public function deleteRepaymentLinks(Transaction $repaymentIncome): void
@@ -107,15 +153,26 @@ class TransactionRepaymentService
      */
     public function handleRepaymentForTransaction(Transaction $transaction, array $validatedData): void
     {
-        if (! ($validatedData['is_repayment_mode'] ?? false)) {
+        $isRepaymentMode = (bool) ($validatedData['is_repayment_mode'] ?? false);
+        $isExternalRepaymentMode = (bool) ($validatedData['is_external_repayment_mode'] ?? false);
+
+        if (! $isRepaymentMode && ! $isExternalRepaymentMode) {
             $this->deleteRepaymentLinks($transaction);
 
             return;
         }
 
-        $repaidUserId = $validatedData['repayment_for_user_id'] ?? null;
         $links = $validatedData['repayment_links'] ?? [];
 
+        $this->deleteRepaymentLinks($transaction);
+
+        if ($isExternalRepaymentMode) {
+            $this->createExternalRepaymentLinks($transaction, $links);
+
+            return;
+        }
+
+        $repaidUserId = $validatedData['repayment_for_user_id'] ?? null;
         $repaidUser = User::query()->find($repaidUserId);
 
         if ($repaidUser === null) {
@@ -126,7 +183,6 @@ class TransactionRepaymentService
             throw new InvalidArgumentException('Repayment recipient must belong to the same family as the transaction.');
         }
 
-        $this->deleteRepaymentLinks($transaction);
         $this->createRepaymentLinks($transaction, $links, $repaidUser);
     }
 }

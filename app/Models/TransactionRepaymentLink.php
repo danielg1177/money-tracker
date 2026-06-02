@@ -13,11 +13,13 @@ class TransactionRepaymentLink extends Model
         'mirror_transaction_id',
         'repaid_user_id',
         'amount',
+        'is_external_repayment',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'mirror_transaction_id' => 'integer',
+        'is_external_repayment' => 'bool',
     ];
 
     public function repaymentTransaction(): BelongsTo

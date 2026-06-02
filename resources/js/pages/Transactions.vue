@@ -295,13 +295,25 @@
                     {{ pill.label }}
                   </span>
                   <span
-                    v-if="transaction.is_repaid"
+                    v-if="transaction.is_repaid && transaction.repaidByLink?.is_external_repayment"
+                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
+                  >
+                    Reimbursed externally
+                  </span>
+                  <span
+                    v-else-if="transaction.is_repaid"
                     class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
                   >
                     Repaid by {{ transaction.repaidByLink?.repaymentTransaction?.user?.name ?? 'family member' }}
                   </span>
                   <span
-                    v-if="transaction.is_repayment"
+                    v-if="transaction.is_repayment && transaction.repaymentLinks?.[0]?.is_external_repayment"
+                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
+                  >
+                    External reimbursement
+                  </span>
+                  <span
+                    v-else-if="transaction.is_repayment"
                     class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
                   >
                     Repayment received
@@ -1127,6 +1139,10 @@ function deleteButtonTitle(transaction) {
     return 'Closeout-generated entries cannot be deleted here';
   }
   if (transaction?.is_repayment) {
+    if (transaction.repaymentLinks?.[0]?.is_external_repayment) {
+      return 'Deleting this will unlink it from the reimbursed expense(s), and those expenses will count toward your budget again.';
+    }
+
     return "Deleting this will remove the repayment links and the linked family member's mirror expense.";
   }
 

@@ -71,11 +71,11 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 
 | Layer | Files |
 |---|---|
-| Schema | `transaction_repayment_links` (`repayment_transaction_id`, `repaid_transaction_id`, `mirror_transaction_id`, `repaid_user_id`, `amount`); columns on `transactions` |
+| Schema | `transaction_repayment_links` (`repayment_transaction_id`, `repaid_transaction_id`, `mirror_transaction_id`, `repaid_user_id`, `amount`, `is_external_repayment`); columns on `transactions` |
 | Model | `app/Models/TransactionRepaymentLink.php`; relations on `Transaction` (`repaymentLinks`, `repaidByLink`, `mirrorRepaymentLink`) |
-| Service | `app/Services/TransactionRepaymentService.php` — `createRepaymentLinks`, `deleteRepaymentLinks`, `handleRepaymentForTransaction` |
+| Service | `app/Services/TransactionRepaymentService.php` — `createRepaymentLinks`, `createExternalRepaymentLinks`, `deleteRepaymentLinks`, `handleRepaymentForTransaction` |
 | HTTP | `TransactionController` (store/update/destroy + `GET /transactions/repayable-expenses`); `PlaidImportController` confirm, confirm-split, restore-from-dismiss, correct-auto-created |
-| Validation | `TransactionPayloadValidationRules` — `is_repayment_mode`, `repayment_for_user_id`, `repayment_links` (mutually exclusive with `income_debt_mode` on income) |
+| Validation | `TransactionPayloadValidationRules` — `is_repayment_mode`, `is_external_repayment_mode`, `repayment_for_user_id`, `repayment_links` (external mode: auth user's expenses only, no mirror; mutually exclusive with family repayment, debt received, and `income_debt_mode`) |
 | Frontend | `TransactionForm.vue` (FAB + Transactions edit/create), `PlaidImportRepaymentOptions.vue`, `PlaidImportSplitLineOptions.vue`, `PlaidImportReview.vue` (all create paths + suggested-group banner), `Transactions.vue` (totals, badges, edit lock) |
 | Plaid sync | `PlaidMatchingService::findRepaymentGroupMatch` → `raw_payload.suggested_repayment_group` on pending imports |
 

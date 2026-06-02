@@ -56,6 +56,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 || `2026_05_15_231529_add_full_settings_to_plaid_merchant_rules` | Adds `description`, `is_debt_payment`, `debt_id` (advisory, no FK), `split_data` to `plaid_merchant_rules` after `is_split` |
 || `2026_05_15_231529_add_full_settings_to_plaid_pending_imports` | Adds `suggested_description`, `suggested_is_debt_payment`, `suggested_debt_id` (advisory, no FK), `suggested_split_data` to `plaid_pending_imports` after `suggested_is_non_necessity` |
 | `2026_05_17_115724_create_transaction_repayment_links_and_repayment_columns` | Creates `transaction_repayment_links`; adds `is_repayment`, `is_repaid`, `is_repayment_mirror` to `transactions` |
+| `2026_06_02_021010_add_is_external_repayment_to_transaction_repayment_links_table` | Adds `is_external_repayment` boolean (default false) to `transaction_repayment_links` |
 
 ## Table schemas
 
@@ -175,6 +176,7 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `mirror_transaction_id` | bigint FK nullable | → `transactions.id` (`nullOnDelete`); optional mirror income for repaid user |
 | `repaid_user_id` | bigint FK | → `users.id` (`cascadeOnDelete`); member whose expense was repaid |
 | `amount` | decimal(14,2) | linked repayment amount |
+| `is_external_repayment` | boolean | default false; true when an outside party repaid the user (no mirror expense) |
 | `timestamps` | | |
 
 ### `transaction_splits`

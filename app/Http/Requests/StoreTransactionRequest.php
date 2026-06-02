@@ -41,6 +41,7 @@ class StoreTransactionRequest extends FormRequest
                 'income_new_interest_enabled' => false,
                 'income_new_interest_rate' => null,
                 'is_repayment_mode' => false,
+                'is_external_repayment_mode' => false,
                 'is_debt_repayment_received' => false,
                 'debt_repayment_received_id' => null,
             ]);
@@ -51,6 +52,7 @@ class StoreTransactionRequest extends FormRequest
                 'income_debt_mode' => 'none',
                 'income_existing_debt_id' => null,
                 'is_repayment_mode' => false,
+                'is_external_repayment_mode' => false,
                 'repayment_for_user_id' => null,
                 'repayment_links' => [],
             ]);
@@ -60,6 +62,7 @@ class StoreTransactionRequest extends FormRequest
             $this->merge([
                 'is_debt_repayment_received' => false,
                 'debt_repayment_received_id' => null,
+                'is_external_repayment_mode' => false,
             ]);
         }
 
@@ -99,6 +102,16 @@ class StoreTransactionRequest extends FormRequest
                 'income_new_description' => null,
                 'income_new_interest_enabled' => false,
                 'income_new_interest_rate' => null,
+            ]);
+        }
+
+        if ($this->boolean('is_external_repayment_mode')) {
+            $this->merge([
+                'is_repayment_mode' => false,
+                'repayment_for_user_id' => null,
+                'is_debt_repayment_received' => false,
+                'debt_repayment_received_id' => null,
+                'income_debt_mode' => 'none',
             ]);
         }
     }
