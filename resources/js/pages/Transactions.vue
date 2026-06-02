@@ -304,7 +304,7 @@
                     v-else-if="transaction.is_repaid"
                     class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
                   >
-                    Repaid by {{ transaction.repaid_by_link?.repayment_transaction?.user?.name ?? 'family member' }}
+                    Repaid by {{ transaction.repaid_by_link?.repaid_user?.name ?? 'family member' }}
                   </span>
                   <span
                     v-if="transaction.is_repayment && transaction.repayment_links?.[0]?.is_external_repayment"
