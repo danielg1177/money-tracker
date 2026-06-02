@@ -255,6 +255,7 @@ class MonthSummaryController extends Controller
                     })->orWhere('family_id', $user->family_id);
                 });
             })
+            ->where('type', '!=', 'savings_sweep')
             ->with('fund')
             ->where(function ($q) use ($year, $month, $monthTagPadded, $monthTagUnpadded, $closeoutMovementTypes): void {
                 $q->whereHas('transaction', fn ($txQuery) => $txQuery

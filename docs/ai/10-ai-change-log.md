@@ -11,6 +11,28 @@ Format:
 
 ---
 
+## 2026-06-02 — Hide savings_sweep Movements from Month View Fund In/Out
+
+**Summary:** Excluded `savings_sweep` fund movement type from the Fund In/Out section on the month summary view.
+
+**Files touched:**
+- `app/Http/Controllers/MonthSummaryController.php` (`getFundMovements` — added `where('type', '!=', 'savings_sweep')`)
+
+**Behavioral impact:** Savings sweep movements no longer appear in the Fund In/Out section on the month summary page.
+
+---
+
+## 2026-06-02 — Fix External Reimbursement Pill Labels (snake_case)
+
+**Summary:** Fixed the Transactions page pills for repaid/repayment transactions using incorrect camelCase property names to access Laravel relationship data. Laravel serializes relationship names as snake_case, so `repaidByLink` → `repaid_by_link`, `repaymentLinks` → `repayment_links`, `mirrorRepaymentLink` → `mirror_repayment_link`, and nested `repaymentTransaction` → `repayment_transaction`. The "Reimbursed externally" pill was never showing because the `is_external_repayment` check was always evaluating to `undefined`.
+
+**Files touched:**
+- `resources/js/pages/Transactions.vue` (template and JS — snake_case relationship names)
+
+**Behavioral impact:** Expenses repaid via an external reimbursement now correctly show "Reimbursed externally" instead of "Repaid by family member". The "Repaid by [name]" label now correctly resolves the repayer's name. "External reimbursement" pill on the income side and the "Needs Review" mirror pill now also reference correct data.
+
+---
+
 ## 2026-06-01 — External Expense Reimbursement Feature
 
 **Summary:** Added the ability to mark income as an external reimbursement for an expense the user covered on behalf of a non-family party. Neither the income nor the linked expense(s) count toward monthly budget totals.

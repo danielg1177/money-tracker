@@ -295,7 +295,7 @@
                     {{ pill.label }}
                   </span>
                   <span
-                    v-if="transaction.is_repaid && transaction.repaidByLink?.is_external_repayment"
+                    v-if="transaction.is_repaid && transaction.repaid_by_link?.is_external_repayment"
                     class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
                   >
                     Reimbursed externally
@@ -304,10 +304,10 @@
                     v-else-if="transaction.is_repaid"
                     class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
                   >
-                    Repaid by {{ transaction.repaidByLink?.repaymentTransaction?.user?.name ?? 'family member' }}
+                    Repaid by {{ transaction.repaid_by_link?.repayment_transaction?.user?.name ?? 'family member' }}
                   </span>
                   <span
-                    v-if="transaction.is_repayment && transaction.repaymentLinks?.[0]?.is_external_repayment"
+                    v-if="transaction.is_repayment && transaction.repayment_links?.[0]?.is_external_repayment"
                     class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
                   >
                     External reimbursement
@@ -322,7 +322,7 @@
                     v-if="transaction.is_repayment_mirror"
                     class="inline-flex shrink-0 items-center rounded-md border border-amber-700/30 bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300"
                   >
-                    Needs Review — repaid{{ transaction.mirrorRepaymentLink?.repaymentTransaction?.user?.name ? ' on behalf of ' + transaction.mirrorRepaymentLink.repaymentTransaction.user.name : '' }}
+                    Needs Review — repaid{{ transaction.mirror_repayment_link?.repayment_transaction?.user?.name ? ' on behalf of ' + transaction.mirror_repayment_link.repayment_transaction.user.name : '' }}
                   </span>
                 </div>
                 <p v-if="transaction.description" class="hidden sm:block text-gray-400 text-xs truncate">
@@ -1139,7 +1139,7 @@ function deleteButtonTitle(transaction) {
     return 'Closeout-generated entries cannot be deleted here';
   }
   if (transaction?.is_repayment) {
-    if (transaction.repaymentLinks?.[0]?.is_external_repayment) {
+    if (transaction.repayment_links?.[0]?.is_external_repayment) {
       return 'Deleting this will unlink it from the reimbursed expense(s), and those expenses will count toward your budget again.';
     }
 
