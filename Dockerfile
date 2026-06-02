@@ -33,6 +33,7 @@ RUN install-php-extensions \
     session \
     tokenizer \
     xml \
+    zip \
     redis \
     opcache
 
