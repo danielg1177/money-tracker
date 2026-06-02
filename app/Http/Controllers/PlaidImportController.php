@@ -850,27 +850,105 @@ class PlaidImportController extends Controller
         return response()->json($counts);
     }
 
+    public function syncAllMonths(Request $request): JsonResponse
+    {
+        return $this->syncAllItemsForCalendarMonth($request, lastMonth: false);
+    }
+
+    public function syncAllLastMonth(Request $request): JsonResponse
+    {
+        return $this->syncAllItemsForCalendarMonth($request, lastMonth: true);
+    }
+
     public function syncMonth(Request $request, PlaidItem $plaidItem): JsonResponse
+    {
+        return $this->syncSingleItemForCalendarMonth($request, $plaidItem, lastMonth: false);
+    }
+
+    public function syncLastMonth(Request $request, PlaidItem $plaidItem): JsonResponse
+    {
+        return $this->syncSingleItemForCalendarMonth($request, $plaidItem, lastMonth: true);
+    }
+
+    private function syncAllItemsForCalendarMonth(Request $request, bool $lastMonth): JsonResponse
+    {
+        $items = PlaidItem::query()
+            ->where('user_id', $request->user()->id)
+            ->orderBy('id')
+            ->get();
+
+        $pendingCreated = 0;
+        $autoCreated = 0;
+        $itemsSynced = 0;
+        $failedItems = [];
+
+        foreach ($items as $plaidItem) {
+            try {
+                $counts = $this->syncPlaidItemForCalendarMonth($plaidItem, $lastMonth);
+                $pendingCreated += (int) ($counts['pending_created'] ?? 0);
+                $autoCreated += (int) ($counts['auto_created'] ?? 0);
+                $itemsSynced++;
+            } catch (Throwable $e) {
+                report($e);
+                $failedItems[] = [
+                    'id' => $plaidItem->id,
+                    'institution_name' => $plaidItem->institution_name,
+                    'message' => $e->getMessage(),
+                ];
+            }
+        }
+
+        $periodLabel = $lastMonth ? 'last month' : 'this month';
+
+        if ($items->isNotEmpty() && $itemsSynced === 0) {
+            return response()->json([
+                'message' => "Failed to sync any bank for {$periodLabel}.",
+                'items_synced' => 0,
+                'pending_created' => 0,
+                'auto_created' => 0,
+                'failed_items' => $failedItems,
+            ], 502);
+        }
+
+        return response()->json([
+            'items_synced' => $itemsSynced,
+            'pending_created' => $pendingCreated,
+            'auto_created' => $autoCreated,
+            'failed_items' => $failedItems,
+        ]);
+    }
+
+    private function syncSingleItemForCalendarMonth(Request $request, PlaidItem $plaidItem, bool $lastMonth): JsonResponse
     {
         $this->assertPlaidItemOwned($request, $plaidItem);
 
-        $start = Carbon::now()->startOfMonth()->toDateString();
-        $end = Carbon::now()->endOfMonth()->toDateString();
+        $periodLabel = $lastMonth ? 'last month' : 'this month';
 
         try {
-            $rows = $this->syncService->fetchByDateRange($plaidItem, $start, $end);
+            $counts = $this->syncPlaidItemForCalendarMonth($plaidItem, $lastMonth);
         } catch (Throwable $e) {
             report($e);
 
             return response()->json([
-                'message' => 'Failed to fetch Plaid transactions for this month.',
+                'message' => "Failed to fetch Plaid transactions for {$periodLabel}.",
                 'error' => $e->getMessage(),
             ], 502);
         }
 
-        $counts = $this->syncService->ingestPlaidRowsAsPending($plaidItem, $rows);
-
         return response()->json($counts);
+    }
+
+    /**
+     * @return array{pending_created: int, auto_created: int}
+     */
+    private function syncPlaidItemForCalendarMonth(PlaidItem $plaidItem, bool $lastMonth): array
+    {
+        $anchor = $lastMonth ? Carbon::now()->subMonthNoOverflow() : Carbon::now();
+        $start = $anchor->copy()->startOfMonth()->toDateString();
+        $end = $anchor->copy()->endOfMonth()->toDateString();
+        $rows = $this->syncService->fetchByDateRange($plaidItem, $start, $end);
+
+        return $this->syncService->ingestPlaidRowsAsPending($plaidItem, $rows);
     }
 
     private function assertPlaidItemOwned(Request $request, PlaidItem $plaidItem): void

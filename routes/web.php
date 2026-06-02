@@ -138,6 +138,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/link-token', [PlaidController::class, 'linkToken']);
         Route::post('/exchange', [PlaidController::class, 'exchange']);
         Route::get('/items', [PlaidController::class, 'items']);
+        Route::post('/sync-month', [PlaidImportController::class, 'syncAllMonths']);
+        Route::post('/sync-last-month', [PlaidImportController::class, 'syncAllLastMonth']);
         Route::get('/pending-imports', [PlaidImportController::class, 'index']);
         Route::get('/pending-imports/{pendingImport}/ledger-candidates', [PlaidImportController::class, 'ledgerLinkCandidates']);
         Route::post('/pending-imports/{pendingImport}/link', [PlaidImportController::class, 'linkToLedger']);
@@ -152,6 +154,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/items/{plaidItem}/calibrate', [PlaidImportController::class, 'calibrationData']);
         Route::post('/items/{plaidItem}/calibrate', [PlaidImportController::class, 'applyCalibration']);
         Route::post('/items/{plaidItem}/sync-month', [PlaidImportController::class, 'syncMonth']);
+        Route::post('/items/{plaidItem}/sync-last-month', [PlaidImportController::class, 'syncLastMonth']);
         Route::post('/items/{plaidItem}/sync', [PlaidController::class, 'sync']);
         Route::delete('/items/{plaidItem}', [PlaidController::class, 'destroy']);
     });

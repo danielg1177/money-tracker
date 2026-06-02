@@ -58,6 +58,25 @@
       with a recent iOS—often with Wallet permission for this site. It may not appear in desktop browsers or if Apple or Plaid has not enabled the integration for your region.
     </p>
 
+    <div v-if="items.length > 0" class="mb-4 flex flex-col gap-2">
+      <button
+        type="button"
+        class="w-full min-h-[48px] rounded-xl border border-gray-600 bg-gray-800 px-4 py-3.5 text-center text-base font-semibold text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+        :disabled="syncBusy"
+        @click="syncAllThisMonth"
+      >
+        {{ syncingAllMonths ? 'Syncing all banks…' : 'Sync all banks this month' }}
+      </button>
+      <button
+        type="button"
+        class="w-full min-h-[48px] rounded-xl border border-gray-600 bg-gray-800/60 px-4 py-3.5 text-center text-base font-semibold text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+        :disabled="syncBusy"
+        @click="syncAllLastMonth"
+      >
+        {{ syncingAllLastMonths ? 'Syncing all banks…' : 'Sync all banks last month' }}
+      </button>
+    </div>
+
     <h2 class="text-lg font-semibold text-white mb-3">Connected banks</h2>
     <p v-if="loadingItems" class="text-gray-400 text-sm">Loading…</p>
     <ul v-else-if="items.length" class="space-y-3">
@@ -78,10 +97,18 @@
           <button
             type="button"
             class="min-h-[44px] rounded-lg bg-gray-700 px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-            :disabled="syncMonthId === item.id"
+            :disabled="syncBusy"
             @click="syncThisMonth(item.id)"
           >
             {{ syncMonthId === item.id ? 'Syncing…' : 'Sync this month' }}
+          </button>
+          <button
+            type="button"
+            class="min-h-[44px] rounded-lg border border-gray-600 bg-gray-800 px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="syncBusy"
+            @click="syncLastMonth(item.id)"
+          >
+            {{ syncLastMonthId === item.id ? 'Syncing…' : 'Sync last month' }}
           </button>
           <div class="flex flex-wrap gap-2">
             <button
@@ -130,7 +157,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
 
@@ -143,6 +170,17 @@ const loadingItems = ref(true);
 const items = ref([]);
 const connecting = ref(false);
 const syncMonthId = ref(null);
+const syncLastMonthId = ref(null);
+const syncingAllMonths = ref(false);
+const syncingAllLastMonths = ref(false);
+
+const syncBusy = computed(
+  () =>
+    syncingAllMonths.value ||
+    syncingAllLastMonths.value ||
+    syncMonthId.value !== null ||
+    syncLastMonthId.value !== null,
+);
 const statusMessage = ref('');
 const pendingCount = ref(0);
 const linkedSuccessItem = ref(null);
@@ -269,31 +307,96 @@ async function openPlaidLink() {
   }
 }
 
+function formatSyncMonthToast(res, { allBanks = false, lastMonth = false } = {}) {
+  const q = Number(res?.pending_created ?? 0);
+  const a = Number(res?.auto_created ?? 0);
+  const failed = Array.isArray(res?.failed_items) ? res.failed_items : [];
+  const periodLabel = lastMonth ? 'last month' : 'this month';
+  let msg = allBanks
+    ? `All banks are up to date for ${periodLabel}.`
+    : `${lastMonth ? 'Last' : 'This'} month is up to date.`;
+  if (q > 0 || a > 0) {
+    const parts = [];
+    if (q > 0) {
+      parts.push(`${q} queued for review`);
+    }
+    if (a > 0) {
+      parts.push(`${a} auto-created`);
+    }
+    const prefix = allBanks ? `Sync complete for all banks (${periodLabel})` : 'Sync complete';
+    msg = `${prefix}: ${parts.join(', ')}.`;
+  }
+  if (failed.length > 0) {
+    const names = failed
+      .map((row) => row.institution_name || 'Bank')
+      .filter(Boolean)
+      .join(', ');
+    msg = `${msg} ${failed.length} bank${failed.length === 1 ? '' : 's'} failed${names ? ` (${names})` : ''}.`;
+  }
+  return { msg, variant: failed.length > 0 && q === 0 && a === 0 ? 'error' : 'success' };
+}
+
 async function syncThisMonth(id) {
   statusMessage.value = '';
   syncMonthId.value = id;
   try {
     const res = await post(`/plaid/items/${id}/sync-month`, {});
-    const q = Number(res?.pending_created ?? 0);
-    const a = Number(res?.auto_created ?? 0);
-    let msg = 'This month is up to date.';
-    if (q > 0 || a > 0) {
-      const parts = [];
-      if (q > 0) {
-        parts.push(`${q} queued for review`);
-      }
-      if (a > 0) {
-        parts.push(`${a} auto-created`);
-      }
-      msg = `Sync complete: ${parts.join(', ')}.`;
-    }
-    showToast(msg, 'success');
+    const { msg, variant } = formatSyncMonthToast(res);
+    showToast(msg, variant);
     await loadPendingCount();
   } catch (err) {
     console.error(err);
     showToast(err.response?.data?.message || 'Sync failed.', 'error');
   } finally {
     syncMonthId.value = null;
+  }
+}
+
+async function syncAllThisMonth() {
+  statusMessage.value = '';
+  syncingAllMonths.value = true;
+  try {
+    const res = await post('/plaid/sync-month', {});
+    const { msg, variant } = formatSyncMonthToast(res, { allBanks: true });
+    showToast(msg, variant);
+    await loadPendingCount();
+  } catch (err) {
+    console.error(err);
+    showToast(err.response?.data?.message || 'Sync failed.', 'error');
+  } finally {
+    syncingAllMonths.value = false;
+  }
+}
+
+async function syncLastMonth(id) {
+  statusMessage.value = '';
+  syncLastMonthId.value = id;
+  try {
+    const res = await post(`/plaid/items/${id}/sync-last-month`, {});
+    const { msg, variant } = formatSyncMonthToast(res, { lastMonth: true });
+    showToast(msg, variant);
+    await loadPendingCount();
+  } catch (err) {
+    console.error(err);
+    showToast(err.response?.data?.message || 'Sync failed.', 'error');
+  } finally {
+    syncLastMonthId.value = null;
+  }
+}
+
+async function syncAllLastMonth() {
+  statusMessage.value = '';
+  syncingAllLastMonths.value = true;
+  try {
+    const res = await post('/plaid/sync-last-month', {});
+    const { msg, variant } = formatSyncMonthToast(res, { allBanks: true, lastMonth: true });
+    showToast(msg, variant);
+    await loadPendingCount();
+  } catch (err) {
+    console.error(err);
+    showToast(err.response?.data?.message || 'Sync failed.', 'error');
+  } finally {
+    syncingAllLastMonths.value = false;
   }
 }
 

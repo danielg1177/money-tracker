@@ -8,6 +8,7 @@ use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\PlaidTransactionSyncService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -302,5 +303,188 @@ class PlaidIntegrationTest extends TestCase
         $this->actingAs($user)->getJson('/plaid/pending-imports?count_only=1')
             ->assertOk()
             ->assertJson(['count' => 2]);
+    }
+
+    public function test_sync_all_months_fetches_current_month_for_each_linked_item(): void
+    {
+        Carbon::setTestNow('2026-05-15 12:00:00');
+
+        Http::fake([
+            'https://sandbox.plaid.com/transactions/get' => function (Request $request) {
+                $body = $request->data();
+                $token = $body['access_token'] ?? '';
+                $txnId = match ($token) {
+                    'access-bank-a' => 'txn-sync-all-a',
+                    'access-bank-b' => 'txn-sync-all-b',
+                    default => 'txn-unknown',
+                };
+
+                return Http::response([
+                    'transactions' => [
+                        [
+                            'transaction_id' => $txnId,
+                            'amount' => 12.34,
+                            'date' => '2026-05-10',
+                            'merchant_name' => 'Test Merchant',
+                        ],
+                    ],
+                    'total_transactions' => 1,
+                ], 200);
+            },
+        ]);
+
+        $user = $this->familyUser();
+        PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-a',
+            'access_token' => 'access-bank-a',
+            'institution_name' => 'Bank A',
+        ]);
+        PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-b',
+            'access_token' => 'access-bank-b',
+            'institution_name' => 'Bank B',
+        ]);
+
+        $otherUser = $this->familyUser();
+        PlaidItem::query()->create([
+            'user_id' => $otherUser->id,
+            'item_id' => 'item-other',
+            'access_token' => 'access-other',
+        ]);
+
+        $response = $this->actingAs($user)->postJson('/plaid/sync-month')->assertOk();
+
+        $response->assertJson([
+            'items_synced' => 2,
+            'pending_created' => 2,
+            'auto_created' => 0,
+            'failed_items' => [],
+        ]);
+
+        Http::assertSent(function (Request $request) {
+            if (! str_contains($request->url(), '/transactions/get')) {
+                return false;
+            }
+            $body = $request->data();
+
+            return ($body['start_date'] ?? null) === '2026-05-01'
+                && ($body['end_date'] ?? null) === '2026-05-31';
+        });
+
+        $this->assertDatabaseHas('plaid_pending_imports', [
+            'plaid_transaction_id' => 'txn-sync-all-a',
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseHas('plaid_pending_imports', [
+            'plaid_transaction_id' => 'txn-sync-all-b',
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseMissing('plaid_pending_imports', [
+            'plaid_transaction_id' => 'txn-unknown',
+        ]);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_sync_all_months_with_no_items_returns_zero_counts(): void
+    {
+        $user = $this->familyUser();
+
+        $this->actingAs($user)->postJson('/plaid/sync-month')
+            ->assertOk()
+            ->assertJson([
+                'items_synced' => 0,
+                'pending_created' => 0,
+                'auto_created' => 0,
+                'failed_items' => [],
+            ]);
+    }
+
+    public function test_sync_all_last_month_uses_previous_calendar_month(): void
+    {
+        Carbon::setTestNow('2026-05-15 12:00:00');
+
+        Http::fake([
+            'https://sandbox.plaid.com/transactions/get' => Http::response([
+                'transactions' => [
+                    [
+                        'transaction_id' => 'txn-last-month-1',
+                        'amount' => 9.99,
+                        'date' => '2026-04-12',
+                        'merchant_name' => 'April Merchant',
+                    ],
+                ],
+                'total_transactions' => 1,
+            ], 200),
+        ]);
+
+        $user = $this->familyUser();
+        PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-last-month',
+            'access_token' => 'access-last-month',
+        ]);
+
+        $this->actingAs($user)->postJson('/plaid/sync-last-month')
+            ->assertOk()
+            ->assertJson([
+                'items_synced' => 1,
+                'pending_created' => 1,
+                'auto_created' => 0,
+                'failed_items' => [],
+            ]);
+
+        Http::assertSent(function (Request $request) {
+            if (! str_contains($request->url(), '/transactions/get')) {
+                return false;
+            }
+            $body = $request->data();
+
+            return ($body['start_date'] ?? null) === '2026-04-01'
+                && ($body['end_date'] ?? null) === '2026-04-30';
+        });
+
+        $this->assertDatabaseHas('plaid_pending_imports', [
+            'plaid_transaction_id' => 'txn-last-month-1',
+            'status' => 'pending',
+        ]);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_sync_last_month_for_single_item(): void
+    {
+        Carbon::setTestNow('2026-05-15 12:00:00');
+
+        Http::fake([
+            'https://sandbox.plaid.com/transactions/get' => Http::response([
+                'transactions' => [
+                    [
+                        'transaction_id' => 'txn-item-last-month',
+                        'amount' => 4.5,
+                        'date' => '2026-04-20',
+                    ],
+                ],
+                'total_transactions' => 1,
+            ], 200),
+        ]);
+
+        $user = $this->familyUser();
+        $item = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-single-last',
+            'access_token' => 'access-single-last',
+        ]);
+
+        $this->actingAs($user)->postJson("/plaid/items/{$item->id}/sync-last-month")
+            ->assertOk()
+            ->assertJson([
+                'pending_created' => 1,
+                'auto_created' => 0,
+            ]);
+
+        Carbon::setTestNow();
     }
 }

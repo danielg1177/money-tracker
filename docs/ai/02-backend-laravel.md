@@ -202,7 +202,10 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `linkToLedger(LinkPlaidPendingImportRequest, PlaidPendingImport)` — `POST …/link`; owner-only; non-transfer pending; validates family `Transaction`, `canLinkPendingImportToLedger`, no duplicate `plaid_transaction_id` on another row; `learnFromConfirmation` + sets `plaid_transaction_id` / `import_source` on ledger; pending `confirmed`; **no** `ClosedMonthGuard` (allows linking Plaid ids onto historical closed-month rows).
 - `calibrationData(Request, PlaidItem)` — `GET /plaid/items/{plaidItem}/calibrate`; owner-only; `PlaidCalibrationService::buildCalibrationMatches` with ledger rows serialized to `{id, date, amount, description, type, fund_id, category}`.
 - `applyCalibration(ApplyPlaidCalibrationRequest, PlaidItem)` — `POST /plaid/items/{plaidItem}/calibrate`; `applyCalibrationResults`; JSON counts `{ confirmed_linked, imported_pending }`.
+- `syncAllMonths(Request)` — `POST /plaid/sync-month`; runs current-month sync for each auth user `PlaidItem`; aggregates `{ items_synced, pending_created, auto_created, failed_items }`; `502` when the user has linked items but every item failed.
+- `syncAllLastMonth(Request)` — `POST /plaid/sync-last-month`; same as `syncAllMonths` for the previous calendar month.
 - `syncMonth(Request, PlaidItem)` — `POST /plaid/items/{plaidItem}/sync-month`; current month `fetchByDateRange` + `ingestPlaidRowsAsPending`; JSON `{ pending_created, auto_created }` or `502` on Plaid errors.
+- `syncLastMonth(Request, PlaidItem)` — `POST /plaid/items/{plaidItem}/sync-last-month`; previous calendar month; same behavior as `syncMonth`.
 
 ### PlaidWebhookController
 - `__invoke(Request)` — `POST /plaid/webhook` (CSRF-excluded); on `webhook_type=TRANSACTIONS`, loads `PlaidItem` by `item_id` and runs `PlaidTransactionSyncService::syncItem` to advance the sync cursor and process `added` / `modified` / `removed` into pending imports (and optional auto-ledger creates)

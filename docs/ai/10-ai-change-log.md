@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-06-01 — Bank connections: sync last month (all banks + per bank)
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `routes/web.php`, `resources/js/pages/BankConnections.vue`, `tests/Feature/PlaidIntegrationTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **Bank connections** adds **Sync all banks last month** and per-bank **Sync last month** alongside the existing this-month controls. `POST /plaid/sync-last-month` and `POST /plaid/items/{id}/sync-last-month` use the previous calendar month’s date range with the same Plaid fetch + pending ingest as this-month sync.
+
+## 2026-06-01 — Bank connections: sync all banks this month
+
+- Files touched: `app/Http/Controllers/PlaidImportController.php`, `routes/web.php`, `resources/js/pages/BankConnections.vue`, `tests/Feature/PlaidIntegrationTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **Bank connections** shows **Sync all banks this month** when the user has at least one linked item. `POST /plaid/sync-month` runs the same current-month Plaid fetch + pending ingest as per-item sync for every owned `PlaidItem`, returning aggregated `pending_created` / `auto_created` and per-bank `failed_items` on partial failure.
+
 ## 2026-05-17 — Creditor can record loan repayment received (mirror debtor payment)
 
 - Files touched: `app/Services/TransactionService.php`, `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `app/Http/Requests/StoreTransactionRequest.php`, Plaid import form requests, `app/Http/Controllers/PlaidImportController.php`, `resources/js/components/DebtRepaymentReceivedOptions.vue` (new), `TransactionForm.vue`, `PlaidImportReview.vue`, `PlaidImportSplitLineOptions.vue`, `tests/Feature/DebtRepaymentTransactionTest.php`, `docs/ai/10-ai-change-log.md`
