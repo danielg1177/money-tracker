@@ -15,7 +15,7 @@ COPY public/ ./public/
 RUN npm run build
 
 # ── PHP / FrankenPHP stage ────────────────────────────────────────────────────
-FROM dunglas/frankenphp:1-php8.3-alpine
+FROM dunglas/frankenphp:1-php8.3-bookworm
 
 # install-php-extensions is bundled in the FrankenPHP image
 RUN install-php-extensions \
