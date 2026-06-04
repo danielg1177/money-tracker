@@ -186,7 +186,7 @@ class ConfirmSplitImportRequest extends FormRequest
             $line['is_non_necessity'] = false;
         }
 
-        if (($line['income_debt_mode'] ?? 'none') === 'existing') {
+        if (in_array($line['income_debt_mode'] ?? 'none', ['existing', 'receipt'], true)) {
             $line['income_new_is_family_debt'] = false;
             $line['income_new_is_interfamily'] = false;
             $line['income_new_creditor_id'] = null;

@@ -11,6 +11,27 @@ Format:
 
 ---
 
+## 2026-06-04 — Plaid import review: undo confirmed imports (Recent tab)
+
+- **Files touched:** `app/Http/Controllers/PlaidImportController.php`, `routes/web.php`, `resources/js/pages/PlaidImportReview.vue`, `tests/Feature/PlaidImportTest.php`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** `GET /plaid/pending-imports` returns **`recently_confirmed`** (confirmed imports from the last 30 days with linked transactions). Import Review **Recent** tab lists them with **Undo**, calling `POST …/undo-confirm` to delete the ledger transaction (full `TransactionService` teardown + repayment link cleanup) and restore the Plaid row to **Review** (`status=pending`). Blocked when the transaction’s month is closed.
+
+---
+
+## 2026-06-04 — Income debt `receipt` mode (link bank deposit without changing balance)
+
+- **Files touched:** `database/migrations/2026_06_04_194211_add_is_loan_receipt_to_transactions_table.php`, `app/Models/Transaction.php`, `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, import/transaction Form Requests, `app/Services/TransactionService.php`, `app/Http/Controllers/DebtController.php`, `app/Http/Controllers/PlaidImportController.php`, `resources/js/pages/Debts.vue`, `resources/js/components/TransactionForm.vue`, `resources/js/pages/PlaidImportReview.vue`, `resources/js/components/PlaidImportSplitLineOptions.vue`, `tests/Feature/TransactionTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** New `income_debt_mode=receipt` links an income transaction to an existing debt with `is_loan_receipt=true` without changing `amount` or `balance`. Debt payment history shows **Loan Received** (`loan_receipt`) entries. Transaction form and Plaid import review expose a fourth income-debt option.
+
+---
+
+## 2026-06-04 — Debt income additions: preserve principal in history
+
+- **Files touched:** `database/migrations/2026_06_04_193747_add_income_additions_to_debts_table.php`, `app/Models/Debt.php`, `app/Services/TransactionService.php`, `app/Http/Controllers/DebtController.php`, `resources/js/pages/Debts.vue`, `tests/Feature/TransactionTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** `income_debt_mode=existing` no longer increments `debt.amount` (original principal). Additions are stored in `debts.income_additions` and shown in payment history as `income_addition` timeline rows (violet UI). Rollback/delete of those income transactions removes the addition entry and decrements balance only; legacy transactions without `income_additions` still use the old amount+balance rollback.
+
+---
+
 ## 2026-06-04 — Plaid link-to-sweep: legacy fund family guard
 
 - **Fix:** `linkToSweep` family check uses `fund.family_id` with fallback to `fund_movements.user.family_id`, matching `sweepCandidates` / `findSweepMatchWithScore` for old funds without `funds.family_id`.

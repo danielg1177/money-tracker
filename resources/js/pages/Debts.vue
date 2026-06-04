@@ -684,7 +684,11 @@
                       ? 'border-blue-700/50 bg-blue-900/20'
                       : payment.type === 'interest_accrual'
                         ? 'border-amber-700/50 bg-amber-900/20'
-                      : 'border-gray-700'
+                        : payment.type === 'income_addition'
+                          ? 'border-violet-700/50 bg-violet-900/20'
+                          : payment.type === 'loan_receipt'
+                            ? 'border-indigo-700/50 bg-indigo-900/20'
+                            : 'border-gray-700'
                   ]"
                 >
                   <div class="flex items-start justify-between gap-3">
@@ -702,6 +706,18 @@
                           class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-900/30 text-amber-300 border border-amber-700/50"
                         >
                           Monthly Interest Accrued
+                        </span>
+                        <span
+                          v-else-if="payment.type === 'income_addition'"
+                          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-violet-900/30 text-violet-300 border border-violet-700/50"
+                        >
+                          Loan Addition
+                        </span>
+                        <span
+                          v-else-if="payment.type === 'loan_receipt'"
+                          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-900/30 text-indigo-300 border border-indigo-700/50"
+                        >
+                          Loan Received
                         </span>
                         <!-- Regular payment description -->
                         <p v-else class="text-sm font-medium text-white">{{ payment.description || 'Debt payment' }}</p>
@@ -980,7 +996,12 @@ function getSplitParticipantLabel(userId, userName) {
 }
 
 function paymentAmountPrefix(payment) {
-  if (payment.type === 'initial_value' || payment.type === 'interest_accrual') {
+  if (
+    payment.type === 'initial_value'
+    || payment.type === 'interest_accrual'
+    || payment.type === 'income_addition'
+    || payment.type === 'loan_receipt'
+  ) {
     return '+';
   }
 
@@ -994,6 +1015,14 @@ function paymentAmountClass(payment) {
 
   if (payment.type === 'interest_accrual') {
     return 'text-amber-400';
+  }
+
+  if (payment.type === 'income_addition') {
+    return 'text-violet-400';
+  }
+
+  if (payment.type === 'loan_receipt') {
+    return 'text-indigo-400';
   }
 
   return 'text-green-400';

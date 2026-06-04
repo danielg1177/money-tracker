@@ -233,6 +233,82 @@ class PlaidImportTest extends TestCase
         ]);
     }
 
+    public function test_pending_imports_index_includes_recently_confirmed_within_thirty_days(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import, 'category' => $category] = $this->createPendingImportForUser($user, 'txn-recent-confirmed-1');
+
+        $this->actingAs($user)->postJson(
+            "/plaid/pending-imports/{$import->id}/confirm",
+            [
+                'category_id' => $category->id,
+                'type' => 'expense',
+            ]
+        )->assertOk();
+
+        $import->refresh();
+        $transactionId = $import->transaction_id;
+        $this->assertNotNull($transactionId);
+
+        $response = $this->actingAs($user)->getJson('/plaid/pending-imports');
+        $response->assertOk();
+
+        $confirmedIds = collect($response->json('recently_confirmed'))->pluck('id')->all();
+        $this->assertContains($import->id, $confirmedIds);
+
+        $import->forceFill(['updated_at' => now()->subDays(31)])->save();
+
+        $response = $this->actingAs($user)->getJson('/plaid/pending-imports');
+        $confirmedIds = collect($response->json('recently_confirmed'))->pluck('id')->all();
+        $this->assertNotContains($import->id, $confirmedIds);
+    }
+
+    public function test_undo_confirm_deletes_transaction_and_restores_pending_import(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import, 'category' => $category] = $this->createPendingImportForUser($user, 'txn-undo-confirm-1');
+
+        $this->actingAs($user)->postJson(
+            "/plaid/pending-imports/{$import->id}/confirm",
+            [
+                'category_id' => $category->id,
+                'type' => 'expense',
+            ]
+        )->assertOk();
+
+        $import->refresh();
+        $transactionId = $import->transaction_id;
+        $this->assertNotNull($transactionId);
+
+        $response = $this->actingAs($user)->postJson(
+            "/plaid/pending-imports/{$import->id}/undo-confirm",
+            []
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('pending_import.status', 'pending')
+            ->assertJsonPath('pending_import.transaction_id', null);
+
+        $this->assertDatabaseMissing('transactions', ['id' => $transactionId]);
+        $this->assertDatabaseHas('plaid_pending_imports', [
+            'id' => $import->id,
+            'status' => 'pending',
+            'transaction_id' => null,
+        ]);
+    }
+
+    public function test_undo_confirm_returns_422_when_import_is_not_confirmed(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import] = $this->createPendingImportForUser($user, 'txn-undo-confirm-pending');
+
+        $this->actingAs($user)
+            ->postJson("/plaid/pending-imports/{$import->id}/undo-confirm", [])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'This import is not confirmed.');
+    }
+
     public function test_confirm_pending_import_with_debt_id_creates_debt_payment_expense(): void
     {
         $family = Family::factory()->create();

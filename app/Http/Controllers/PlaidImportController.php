@@ -137,12 +137,27 @@ class PlaidImportController extends Controller
                 );
             });
 
+        $recentlyConfirmed = PlaidPendingImport::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'confirmed')
+            ->whereNotNull('transaction_id')
+            ->where('updated_at', '>=', now()->subDays(30))
+            ->with([
+                'plaidItem',
+                'transaction.category',
+                'transaction.debt.creditor',
+                'transaction.debt.debtor',
+            ])
+            ->orderByDesc('updated_at')
+            ->get();
+
         return response()->json([
             'pending' => $pending,
             'transfers' => $transfers,
             'auto_created' => $autoCreated,
             'dismissed' => $dismissed,
             'manually_dismissed' => $manuallyDismissed,
+            'recently_confirmed' => $recentlyConfirmed,
         ]);
     }
 
@@ -676,7 +691,9 @@ class PlaidImportController extends Controller
             $payload['income_debt_mode'] = $payload['is_debt_repayment_received']
                 ? 'none'
                 : ($fields['income_debt_mode'] ?? 'none');
-            $payload['income_existing_debt_id'] = ($payload['income_debt_mode'] === 'existing') ? ($fields['income_existing_debt_id'] ?? null) : null;
+            $payload['income_existing_debt_id'] = in_array($payload['income_debt_mode'] ?? '', ['existing', 'receipt'], true)
+                ? ($fields['income_existing_debt_id'] ?? null)
+                : null;
             $payload['income_new_is_family_debt'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($fields['income_new_is_family_debt'] ?? false) : false;
             $payload['income_new_is_interfamily'] = ($payload['income_debt_mode'] === 'new') ? (bool) ($fields['income_new_is_interfamily'] ?? false) : false;
             $payload['income_new_creditor_id'] = ($payload['income_debt_mode'] === 'new' && ($payload['income_new_is_interfamily'] ?? false))
@@ -775,6 +792,44 @@ class PlaidImportController extends Controller
 
         $merchantLabel = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
         $this->matchingService->deleteDismissRule($pendingImport->user_id, $merchantLabel);
+
+        return response()->json([
+            'success' => true,
+            'pending_import' => $pendingImport->fresh(),
+        ]);
+    }
+
+    public function undoConfirm(Request $request, PlaidPendingImport $pendingImport): JsonResponse
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'confirmed') {
+            return response()->json(['message' => 'This import is not confirmed.'], 422);
+        }
+
+        $transaction = $pendingImport->transaction;
+        if ($transaction === null) {
+            return response()->json(['message' => 'No linked transaction found.'], 422);
+        }
+
+        $user = $request->user();
+
+        try {
+            $this->closedMonthGuard->assertTransactionMutationOpen($transaction);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        DB::transaction(function () use ($pendingImport, $transaction): void {
+            $this->repaymentService->deleteRepaymentLinks($transaction);
+            $this->transactionService->deleteTransaction($transaction);
+            $pendingImport->forceFill([
+                'status' => 'pending',
+                'transaction_id' => null,
+            ])->save();
+        });
 
         return response()->json([
             'success' => true,

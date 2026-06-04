@@ -53,7 +53,8 @@ This document maps each user-visible feature to the backend and frontend files t
 
 **Debt association sub-feature (income):** Optional `income_debt_mode` on income payloads:
 - `none`: regular income
-- `existing`: links income to a debt the user owes and increments that debt's `amount` + `balance`
+- `existing`: links income to a debt the user owes, increments `balance`, and records the draw in `debts.income_additions` (principal `amount` unchanged)
+- `receipt`: links income to an existing debt as bank proof of receipt (`is_loan_receipt`); balance and principal unchanged
 - `new`: creates a debt inline (external creditor name or family-member creditor) and links the income row
 These rows remain regular income (`is_debt_payment=false`) and continue to count toward closeout gross-income calculations.
 

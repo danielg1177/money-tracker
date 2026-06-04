@@ -61,9 +61,12 @@ class TransactionService
                 'advance_fund_id' => $data['advance_fund_id'] ?? null,
                 'is_non_necessity' => ! empty($data['is_non_necessity']) && ($data['type'] ?? null) === 'expense' && empty($data['is_split']) && ! empty($data['advance_fund_id']),
                 'debt_id' => $incomeDebt?->id,
+                'is_loan_receipt' => ($data['income_debt_mode'] ?? 'none') === 'receipt',
             ];
 
             $transaction = Transaction::query()->create($transactionData);
+
+            $this->patchIncomeAdditionTransactionId($incomeDebt, $transaction, $data);
 
             if ($data['is_split'] && ! empty($data['split_data'])) {
                 $allocatedSplits = SplitCalculator::allocate($data['amount'], $data['split_data']);
@@ -318,9 +321,12 @@ class TransactionService
                 'advance_fund_id' => $data['advance_fund_id'] ?? null,
                 'is_non_necessity' => ! empty($data['is_non_necessity']) && ($data['type'] ?? null) === 'expense' && empty($data['is_split']) && ! empty($data['advance_fund_id']),
                 'debt_id' => $incomeDebt?->id,
+                'is_loan_receipt' => ($data['income_debt_mode'] ?? 'none') === 'receipt',
             ];
 
             $transaction->update($transactionData);
+
+            $this->patchIncomeAdditionTransactionId($incomeDebt, $transaction, $data);
 
             $transaction->splits()->delete();
             Debt::query()->where('transaction_id', $transaction->id)->delete();
@@ -549,10 +555,24 @@ class TransactionService
                 ->lockForUpdate()
                 ->findOrFail($data['income_existing_debt_id']);
 
-            $debt->increment('amount', $amount);
             $debt->increment('balance', $amount);
 
+            $additions = $debt->fresh()->income_additions ?? [];
+            $additions[] = [
+                'transaction_id' => null,
+                'amount' => $amount,
+                'date' => $data['transaction_date'] ?? now()->toDateString(),
+            ];
+            $debt->update(['income_additions' => $additions]);
+
             return $debt->fresh();
+        }
+
+        if ($mode === 'receipt') {
+            return Debt::query()
+                ->where('family_id', $user->family_id)
+                ->lockForUpdate()
+                ->findOrFail($data['income_existing_debt_id']);
         }
 
         if ($mode !== 'new') {
@@ -579,6 +599,10 @@ class TransactionService
 
     private function rollbackIncomeDebtAssociation(Transaction $transaction): void
     {
+        if ($transaction->is_loan_receipt) {
+            return;
+        }
+
         if ($transaction->type !== 'income' || $transaction->is_debt_payment || ! $transaction->debt_id) {
             return;
         }
@@ -589,12 +613,56 @@ class TransactionService
         }
 
         $amount = round((float) $transaction->amount, 2);
+        $additions = $debt->income_additions ?? [];
+        $matchKey = null;
+        foreach ($additions as $k => $entry) {
+            if ((int) ($entry['transaction_id'] ?? 0) === $transaction->id) {
+                $matchKey = $k;
+                break;
+            }
+        }
+
+        if ($matchKey !== null) {
+            $nextBalance = max(0, round((float) $debt->balance - $amount, 2));
+            unset($additions[$matchKey]);
+            $debt->update([
+                'balance' => $nextBalance,
+                'income_additions' => array_values($additions),
+            ]);
+
+            return;
+        }
+
         $nextAmount = max(0, round((float) $debt->amount - $amount, 2));
         $nextBalance = max(0, round((float) $debt->balance - $amount, 2));
         $debt->update([
             'amount' => $nextAmount,
             'balance' => $nextBalance,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function patchIncomeAdditionTransactionId(?Debt $incomeDebt, Transaction $transaction, array $data): void
+    {
+        if ($incomeDebt === null || ($data['income_debt_mode'] ?? 'none') !== 'existing') {
+            return;
+        }
+
+        $freshDebt = $incomeDebt->fresh();
+        $additions = $freshDebt->income_additions ?? [];
+        $lastKey = null;
+        foreach ($additions as $k => $entry) {
+            if ($entry['transaction_id'] === null && abs((float) $entry['amount'] - round((float) $transaction->amount, 2)) < 0.005) {
+                $lastKey = $k;
+            }
+        }
+
+        if ($lastKey !== null) {
+            $additions[$lastKey]['transaction_id'] = $transaction->id;
+            $freshDebt->update(['income_additions' => $additions]);
+        }
     }
 
     private function resolveMirrorPartner(Transaction $transaction): ?Transaction

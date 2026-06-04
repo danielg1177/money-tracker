@@ -292,7 +292,7 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
    ```
 4. `StoreTransactionRequest` still strips expense-only fields (`is_split`, `split_data`, `advance_fund_id`, `debt_id`) for income, then validates income debt mode
 5. `TransactionService::createTransaction` runs in `DB::transaction`:
-   - `existing`: locks debt and increments both `amount` and `balance`
+   - `existing`: locks debt, increments `balance`, appends `income_additions` (principal `amount` unchanged)
    - `new`: creates debt with `amount=income amount`, `balance=income amount`, and `loan_received_date=transaction_date`
    - stores resulting debt id on `transactions.debt_id`
 6. Transaction remains a regular `income` row (`is_debt_payment=false`)

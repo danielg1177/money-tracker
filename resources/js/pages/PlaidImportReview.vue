@@ -76,7 +76,7 @@
         </span>
       </button>
       <button
-        v-if="recentlyDismissed.length > 0"
+        v-if="recentlyDismissed.length > 0 || recentlyConfirmed.length > 0"
         type="button"
         role="tab"
         aria-label="Recent"
@@ -93,7 +93,7 @@
         <span
           class="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-indigo-900/80 px-1.5 text-xs font-bold text-indigo-100 ring-1 ring-indigo-700/50"
         >
-          {{ recentlyDismissed.length }}
+          {{ recentlyDismissed.length + recentlyConfirmed.length }}
         </span>
       </button>
       <button
@@ -395,7 +395,7 @@
                   <p class="text-sm font-medium text-gray-300">Income from taking debt?</p>
                   <p class="mt-0.5 text-xs text-gray-500">Optional — attach to an existing loan or record new debt</p>
                 </div>
-                <div class="grid grid-cols-3 gap-2">
+                <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <button
                     type="button"
                     class="min-h-[40px] rounded-lg px-2 py-2 text-xs font-medium transition-colors"
@@ -435,8 +435,24 @@
                   >
                     New
                   </button>
+                  <button
+                    type="button"
+                    class="min-h-[40px] rounded-lg px-2 py-2 text-xs font-medium transition-colors"
+                    :class="
+                      formFor(row).income_debt_mode === 'receipt'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    "
+                    :disabled="actionId === row.id"
+                    @click="setIncomeDebtMode(row, 'receipt')"
+                  >
+                    Loan receipt
+                  </button>
                 </div>
-                <div v-if="formFor(row).income_debt_mode === 'existing'" class="space-y-1">
+                <div
+                  v-if="formFor(row).income_debt_mode === 'existing' || formFor(row).income_debt_mode === 'receipt'"
+                  class="space-y-1"
+                >
                   <label class="block text-xs font-medium text-gray-400" :for="`inc-debt-${row.id}`">Attach to debt</label>
                   <select
                     :id="`inc-debt-${row.id}`"
@@ -451,6 +467,9 @@
                   </select>
                   <p v-if="incomeAttachableDebts.length === 0" class="text-xs text-amber-400">
                     No debts available to attach.
+                  </p>
+                  <p v-if="formFor(row).income_debt_mode === 'receipt'" class="mt-1 text-xs text-gray-500">
+                    Links this bank transaction to the loan as proof of receipt. The debt balance stays unchanged.
                   </p>
                 </div>
                 <div v-if="formFor(row).income_debt_mode === 'new'" class="space-y-3">
@@ -1421,6 +1440,56 @@
         <p class="mb-3 text-sm text-gray-400 leading-relaxed">
           Transactions you dismissed manually. Undo to send them back to Review or Transfers.
         </p>
+        <div v-if="recentlyConfirmed.length > 0" class="mb-5">
+          <p class="mb-3 text-sm text-gray-400 leading-relaxed">
+            Transactions you confirmed in the last 30 days. Undo to send them back to Review.
+          </p>
+          <ul class="space-y-3">
+            <li
+              v-for="row in recentlyConfirmed"
+              :key="'rc-' + row.id"
+              class="overflow-hidden rounded-xl border border-gray-700 bg-gray-800/80"
+            >
+              <div class="px-4 py-3">
+                <div class="flex items-start gap-3">
+                  <div class="min-w-0 flex-1">
+                    <p class="font-bold text-white truncate">
+                      {{ row.merchant_name || row.raw_name || 'Transaction' }}
+                    </p>
+                    <p class="mt-1 text-sm text-gray-400">
+                      {{ formatDate(row.date) }}
+                      <span class="mx-1.5 text-gray-600">·</span>
+                      <span :class="displayType(row) === 'income' ? 'text-emerald-400' : 'text-red-400'">
+                        {{ displayType(row) === 'income' ? '+' : '−' }}{{ formatMoney(row.amount) }}
+                      </span>
+                    </p>
+                    <p v-if="row.transaction" class="mt-1 text-xs text-gray-500">
+                      Linked: {{ row.transaction.description || '(no description)' }}
+                      <template v-if="row.transaction.category">
+                        · {{ row.transaction.category.name }}
+                      </template>
+                    </p>
+                    <p class="mt-1.5 text-xs text-gray-500">
+                      <template v-if="institutionName(row)">{{ institutionName(row) }}</template>
+                    </p>
+                  </div>
+                  <span class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-900/50 text-emerald-200 ring-1 ring-emerald-700/40 mt-0.5">
+                    Confirmed
+                  </span>
+                </div>
+                <p v-if="rowErrors[row.id]" class="mt-2 text-sm text-red-300">{{ rowErrors[row.id] }}</p>
+                <button
+                  type="button"
+                  class="mt-3 min-h-[48px] w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="actionId === row.id"
+                  @click="undoConfirm(row)"
+                >
+                  {{ actionId === row.id ? 'Working…' : 'Undo' }}
+                </button>
+              </div>
+            </li>
+          </ul>
+        </div>
         <p v-if="recentlyDismissed.length === 0" class="text-sm text-gray-500">
           No recent dismissals.
         </p>
@@ -1681,6 +1750,7 @@ const autoCreatedImports = ref([]);
 const autoCreatedForms = reactive({});
 const dismissedImports = ref([]);
 const recentlyDismissed = ref([]);
+const recentlyConfirmed = ref([]);
 const dismissedForms = reactive({});
 const dismissedMatchSuggestions = reactive(new Set());
 const expandedId = ref(null);
@@ -1713,7 +1783,8 @@ const allEmpty = computed(
     transferImports.value.length === 0 &&
     autoCreatedImports.value.length === 0 &&
     dismissedImports.value.length === 0 &&
-    recentlyDismissed.value.length === 0,
+    recentlyDismissed.value.length === 0 &&
+    recentlyConfirmed.value.length === 0,
 );
 
 const showTabs = computed(
@@ -1724,7 +1795,8 @@ const showTabs = computed(
       transferImports.value.length > 0 ||
       autoCreatedImports.value.length > 0 ||
       dismissedImports.value.length > 0 ||
-      recentlyDismissed.value.length > 0),
+      recentlyDismissed.value.length > 0 ||
+      recentlyConfirmed.value.length > 0),
 );
 
 const payableDebts = computed(() => {
@@ -2474,6 +2546,9 @@ function validateSplitLine(line) {
     if (line.income_debt_mode === 'existing' && !line.income_existing_debt_id) {
       return 'Select which existing debt this income belongs to.';
     }
+    if (line.income_debt_mode === 'receipt' && !line.income_existing_debt_id) {
+      return 'Select which debt this income is a receipt for.';
+    }
     if (line.income_debt_mode === 'new') {
       if (line.income_new_is_interfamily && !line.income_new_creditor_id) {
         return 'Select which family member is the creditor.';
@@ -2603,7 +2678,9 @@ function buildSplitLinePayload(line) {
     ...(line.type === 'income'
       ? {
           income_debt_mode: line.income_debt_mode,
-          income_existing_debt_id: line.income_debt_mode === 'existing' ? line.income_existing_debt_id : null,
+          income_existing_debt_id: ['existing', 'receipt'].includes(line.income_debt_mode)
+            ? line.income_existing_debt_id
+            : null,
           income_new_is_family_debt: line.income_debt_mode === 'new' ? Boolean(line.income_new_is_family_debt) : false,
           income_new_is_interfamily: line.income_debt_mode === 'new' ? Boolean(line.income_new_is_interfamily) : false,
           income_new_creditor_id:
@@ -2913,6 +2990,24 @@ async function undoDismiss(row) {
   }
 }
 
+async function undoConfirm(row) {
+  actionId.value = row.id;
+  rowErrors[row.id] = null;
+  try {
+    await post(`/plaid/pending-imports/${row.id}/undo-confirm`, {});
+    const i = recentlyConfirmed.value.findIndex((r) => r.id === row.id);
+    if (i !== -1) {
+      recentlyConfirmed.value.splice(i, 1);
+    }
+    await loadAll();
+  } catch (err) {
+    rowErrors[row.id] =
+      err?.response?.data?.message || 'Failed to undo. Try again.';
+  } finally {
+    actionId.value = null;
+  }
+}
+
 async function restoreFromDismiss(row) {
   rowErrors[row.id] = '';
   const f = dismissedFormFor(row);
@@ -2955,6 +3050,9 @@ function validateConfirmForm(row, f) {
   if (f.type === 'income') {
     if (f.income_debt_mode === 'existing' && !f.income_existing_debt_id) {
       return 'Select which existing debt this income belongs to.';
+    }
+    if (f.income_debt_mode === 'receipt' && !f.income_existing_debt_id) {
+      return 'Select which debt this income is a receipt for.';
     }
     if (f.income_debt_mode === 'new') {
       if (f.income_new_is_interfamily && !f.income_new_creditor_id) {
@@ -3031,7 +3129,7 @@ function buildConfirmPayload(row, f) {
     ...(f.type === 'income'
       ? {
           income_debt_mode: f.income_debt_mode,
-          income_existing_debt_id: f.income_debt_mode === 'existing' ? f.income_existing_debt_id : null,
+          income_existing_debt_id: ['existing', 'receipt'].includes(f.income_debt_mode) ? f.income_existing_debt_id : null,
           income_new_is_family_debt: f.income_debt_mode === 'new' ? Boolean(f.income_new_is_family_debt) : false,
           income_new_is_interfamily: f.income_debt_mode === 'new' ? Boolean(f.income_new_is_interfamily) : false,
           income_new_creditor_id:
@@ -3071,6 +3169,9 @@ async function loadAll() {
     dismissedImports.value = Array.isArray(pendingRes.data?.dismissed) ? pendingRes.data.dismissed : [];
     recentlyDismissed.value = Array.isArray(pendingRes.data?.manually_dismissed)
       ? pendingRes.data.manually_dismissed
+      : [];
+    recentlyConfirmed.value = Array.isArray(pendingRes.data?.recently_confirmed)
+      ? pendingRes.data.recently_confirmed
       : [];
     categories.value = Array.isArray(catRes.data) ? catRes.data : [];
     funds.value = Array.isArray(fundRes.data) ? fundRes.data : [];

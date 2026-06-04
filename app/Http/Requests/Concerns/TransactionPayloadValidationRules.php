@@ -35,7 +35,7 @@ trait TransactionPayloadValidationRules
                     fn ($query) => $query->where('family_id', $this->user()?->family_id ?? 0)
                 ),
             ],
-            'income_debt_mode' => ['nullable', 'in:none,existing,new'],
+            'income_debt_mode' => ['nullable', 'in:none,existing,new,receipt'],
             'income_existing_debt_id' => ['nullable', 'integer', 'exists:debts,id'],
             'income_new_is_family_debt' => ['nullable', 'boolean'],
             'income_new_is_interfamily' => ['nullable', 'boolean'],
@@ -133,6 +133,27 @@ trait TransactionPayloadValidationRules
 
                             if ((int) $debt->debtor_id !== (int) $user->id) {
                                 $validator->errors()->add($field('income_existing_debt_id'), 'You can only attach this income to debts where you are the debtor.');
+                            }
+                        }
+                    }
+                } elseif ($mode === 'receipt') {
+                    if (! $filled('income_existing_debt_id')) {
+                        $validator->errors()->add($field('income_existing_debt_id'), 'Select a debt to link this income to.');
+                    } else {
+                        $debt = Debt::query()
+                            ->where('family_id', $user->family_id)
+                            ->whereKey($value('income_existing_debt_id'))
+                            ->first();
+
+                        if (! $debt) {
+                            $validator->errors()->add($field('income_existing_debt_id'), 'The selected debt does not belong to your family.');
+                        } else {
+                            if ($debt->is_pending_closeout) {
+                                $validator->errors()->add($field('income_existing_debt_id'), 'Cannot link a receipt to a pending split closeout debt.');
+                            }
+
+                            if ((int) $debt->debtor_id !== (int) $user->id) {
+                                $validator->errors()->add($field('income_existing_debt_id'), 'You can only link receipts to debts where you are the debtor.');
                             }
                         }
                     }

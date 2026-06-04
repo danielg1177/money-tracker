@@ -5,7 +5,7 @@
         <p class="text-sm font-medium text-gray-300">Income from taking debt?</p>
         <p class="mt-0.5 text-xs text-gray-500">Optional — attach to an existing loan or record new debt</p>
       </div>
-      <div class="grid grid-cols-3 gap-2">
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <button
           type="button"
           class="min-h-[40px] rounded-lg px-2 py-2 text-xs font-medium transition-colors"
@@ -33,8 +33,17 @@
         >
           New
         </button>
+        <button
+          type="button"
+          class="min-h-[40px] rounded-lg px-2 py-2 text-xs font-medium transition-colors"
+          :class="line.income_debt_mode === 'receipt' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+          :disabled="disabled"
+          @click="setIncomeDebtMode('receipt')"
+        >
+          Loan receipt
+        </button>
       </div>
-      <div v-if="line.income_debt_mode === 'existing'" class="space-y-1">
+      <div v-if="line.income_debt_mode === 'existing' || line.income_debt_mode === 'receipt'" class="space-y-1">
         <label class="block text-xs font-medium text-gray-400">Attach to debt</label>
         <select
           v-model.number="line.income_existing_debt_id"
@@ -46,6 +55,9 @@
             {{ incomeDebtSelectLabel(d) }} — {{ formatCurrency(Number(d.balance) || 0) }}
           </option>
         </select>
+        <p v-if="line.income_debt_mode === 'receipt'" class="mt-1 text-xs text-gray-500">
+          Links this bank transaction to the loan as proof of receipt. The debt balance stays unchanged.
+        </p>
       </div>
       <div v-if="line.income_debt_mode === 'new'" class="space-y-3">
         <div class="grid grid-cols-2 gap-2">

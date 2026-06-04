@@ -115,8 +115,55 @@ class TransactionTest extends TestCase
         ])->assertStatus(201);
 
         $debt->refresh();
-        $this->assertEqualsWithDelta(275.00, (float) $debt->amount, 0.01);
+        $this->assertEqualsWithDelta(200.00, (float) $debt->amount, 0.01);
         $this->assertEqualsWithDelta(200.00, (float) $debt->balance, 0.01);
+        $this->assertCount(1, $debt->income_additions);
+        $this->assertEqualsWithDelta(75.00, (float) $debt->income_additions[0]['amount'], 0.01);
+        $this->assertNotNull($debt->income_additions[0]['transaction_id']);
+    }
+
+    public function test_income_transaction_can_link_loan_receipt_without_changing_debt_balance(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_income' => true,
+            'is_expense' => false,
+        ]);
+
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $user->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 3000.00,
+            'balance' => 3000.00,
+            'is_pending_closeout' => false,
+        ]);
+
+        $response = $this->actingAs($user)->postJson('/transactions', [
+            'category_id' => $category->id,
+            'amount' => 3000.00,
+            'description' => 'Bank deposit for loan',
+            'type' => 'income',
+            'transaction_date' => now()->toDateString(),
+            'income_debt_mode' => 'receipt',
+            'income_existing_debt_id' => $debt->id,
+        ])->assertStatus(201);
+
+        $debt->refresh();
+        $this->assertEqualsWithDelta(3000.00, (float) $debt->amount, 0.01);
+        $this->assertEqualsWithDelta(3000.00, (float) $debt->balance, 0.01);
+
+        $transaction = Transaction::query()->findOrFail($response->json('id'));
+        $this->assertTrue($transaction->is_loan_receipt);
+        $this->assertSame($debt->id, $transaction->debt_id);
+
+        $history = collect($this->actingAs($user)->getJson("/debts/{$debt->id}/payments")->assertOk()->json());
+        $receiptEntry = $history->first(fn (array $entry): bool => ($entry['type'] ?? '') === 'loan_receipt');
+        $this->assertNotNull($receiptEntry);
+        $this->assertEqualsWithDelta(3000.0, (float) ($receiptEntry['amount'] ?? 0), 0.01);
     }
 
     public function test_transaction_requires_type_and_date(): void

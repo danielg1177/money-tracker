@@ -132,7 +132,7 @@
         <p class="mt-0.5 text-xs text-gray-500">Keep as regular income while optionally creating or adding debt</p>
       </div>
 
-      <div class="grid grid-cols-3 gap-2">
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <button
           type="button"
           @click="form.income_debt_mode = 'none'"
@@ -163,10 +163,22 @@
         >
           New Debt
         </button>
+        <button
+          type="button"
+          @click="form.income_debt_mode = 'receipt'"
+          :class="[
+            'rounded-lg px-2 py-2 text-xs font-medium transition-colors',
+            form.income_debt_mode === 'receipt' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          ]"
+        >
+          Loan receipt
+        </button>
       </div>
 
-      <div v-if="form.income_debt_mode === 'existing'" class="space-y-1">
-        <label for="income-existing-debt" class="block text-xs font-medium text-gray-400">Attach to debt</label>
+      <div v-if="form.income_debt_mode === 'existing' || form.income_debt_mode === 'receipt'" class="space-y-1">
+        <label for="income-existing-debt" class="block text-xs font-medium text-gray-400">
+          {{ form.income_debt_mode === 'receipt' ? 'Link to debt' : 'Attach to debt' }}
+        </label>
         <select
           id="income-existing-debt"
           v-model.number="form.income_existing_debt_id"
@@ -178,6 +190,9 @@
             {{ incomeDebtSelectLabel(d) }} — now {{ formatCurrency(Number(d.balance) || 0) }}
           </option>
         </select>
+        <p v-if="form.income_debt_mode === 'receipt'" class="text-xs text-gray-500">
+          This bank transaction is the original receipt of this loan. The debt balance stays unchanged.
+        </p>
       </div>
 
       <div v-if="form.income_debt_mode === 'new'" class="space-y-3">
@@ -935,7 +950,11 @@ watch(
         advance_fund_id: newTransaction.advance_fund_id ?? null,
         is_non_necessity: newTransaction.is_non_necessity ?? false,
         debt_id: newTransaction.debt_id ?? null,
-        income_debt_mode: newTransaction.type === 'income' && newTransaction.debt_id ? 'existing' : 'none',
+        income_debt_mode: newTransaction.is_loan_receipt
+          ? 'receipt'
+          : newTransaction.type === 'income' && newTransaction.debt_id
+            ? 'existing'
+            : 'none',
         income_existing_debt_id: newTransaction.type === 'income' ? (newTransaction.debt_id ?? null) : null,
         income_new_is_family_debt: false,
         income_new_is_interfamily: false,
@@ -1261,6 +1280,11 @@ async function handleSubmit() {
       return;
     }
 
+    if (form.value.income_debt_mode === 'receipt' && !form.value.income_existing_debt_id) {
+      formError.value = 'Select which debt this income is a receipt for';
+      return;
+    }
+
     if (form.value.income_debt_mode === 'new') {
       if (form.value.income_new_is_interfamily && !form.value.income_new_creditor_id) {
         formError.value = 'Select which family member is the creditor';
@@ -1340,8 +1364,9 @@ async function handleSubmit() {
       ...(form.value.type === 'income'
         ? {
             income_debt_mode: form.value.income_debt_mode,
-            income_existing_debt_id:
-              form.value.income_debt_mode === 'existing' ? form.value.income_existing_debt_id : null,
+            income_existing_debt_id: ['existing', 'receipt'].includes(form.value.income_debt_mode)
+              ? form.value.income_existing_debt_id
+              : null,
             income_new_is_family_debt:
               form.value.income_debt_mode === 'new' ? Boolean(form.value.income_new_is_family_debt) : false,
             income_new_is_interfamily:

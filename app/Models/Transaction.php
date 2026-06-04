@@ -37,6 +37,7 @@ class Transaction extends Model
         'is_repayment',
         'is_repaid',
         'is_repayment_mirror',
+        'is_loan_receipt',
     ];
 
     protected $casts = [
@@ -51,6 +52,7 @@ class Transaction extends Model
         'is_repayment' => 'bool',
         'is_repaid' => 'bool',
         'is_repayment_mirror' => 'bool',
+        'is_loan_receipt' => 'bool',
         'advance_fund_id' => 'integer',
     ];
 

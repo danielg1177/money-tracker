@@ -8,6 +8,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Services\ClosedMonthGuard;
 use App\Services\DebtService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -249,6 +250,44 @@ class DebtController extends Controller
             })
             ->filter(fn (array $entry): bool => ! empty($entry['transaction_date']));
 
+        $incomeAdditionEntries = collect($debt->income_additions ?? [])
+            ->filter(fn (array $entry): bool => isset($entry['date']) && isset($entry['amount']))
+            ->map(function (array $entry): array {
+                return [
+                    'id' => $entry['transaction_id'] ?? null,
+                    'amount' => (float) $entry['amount'],
+                    'description' => 'Loan Addition',
+                    'transaction_date' => $entry['date'],
+                    'type' => 'income_addition',
+                    'created_at' => $entry['date'],
+                    'paid_by_user_id' => null,
+                    'is_closeout_initiated' => false,
+                    'paid_by_user' => null,
+                ];
+            });
+
+        $receiptEntries = Transaction::query()
+            ->where('debt_id', $debt->id)
+            ->where('type', 'income')
+            ->where('is_loan_receipt', true)
+            ->orderByDesc('transaction_date')
+            ->get()
+            ->map(function (Transaction $tx): array {
+                return [
+                    'id' => $tx->id,
+                    'amount' => (float) $tx->amount,
+                    'description' => $tx->description ?: 'Loan Received',
+                    'transaction_date' => $tx->transaction_date instanceof Carbon
+                        ? $tx->transaction_date->toDateString()
+                        : (string) $tx->transaction_date,
+                    'type' => 'loan_receipt',
+                    'created_at' => $tx->created_at,
+                    'paid_by_user_id' => null,
+                    'is_closeout_initiated' => false,
+                    'paid_by_user' => null,
+                ];
+            });
+
         $closeoutContributionsTotal = collect($debt->contributions ?? [])
             ->sum(static fn (array $contribution): float => (float) ($contribution['amount'] ?? 0.0));
         $initialPrincipalAmount = max(0.0, round((float) $debt->amount - (float) $closeoutContributionsTotal, 2));
@@ -267,6 +306,8 @@ class DebtController extends Controller
 
         $timeline = $payments
             ->concat($interestAccrualEntries)
+            ->concat($incomeAdditionEntries)
+            ->concat($receiptEntries)
             ->sortByDesc(function (array $entry) {
                 return sprintf('%s|%s', (string) $entry['transaction_date'], (string) $entry['created_at']);
             })

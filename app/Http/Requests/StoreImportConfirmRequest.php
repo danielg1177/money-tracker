@@ -90,7 +90,7 @@ class StoreImportConfirmRequest extends FormRequest
             $this->merge(['is_non_necessity' => false]);
         }
 
-        if ($this->input('income_debt_mode') === 'existing') {
+        if (in_array($this->input('income_debt_mode'), ['existing', 'receipt'], true)) {
             $this->merge([
                 'income_new_is_family_debt' => false,
                 'income_new_is_interfamily' => false,
