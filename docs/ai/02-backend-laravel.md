@@ -53,11 +53,12 @@
 ### PlaidPendingImport (`app/Models/PlaidPendingImport.php`)
 - Staging row for a Plaid transaction before ledger confirm; table `plaid_pending_imports` (see migration `2026_05_11_210000_add_plaid_import_infrastructure.php`).
 - `resolveRouteBinding` scopes `{pendingImport}` routes to `user_id` = authenticated user.
-- Casts: `amount` decimal:2, `date` date, `raw_payload` array, `suggested_is_non_necessity` bool, `suggested_is_debt_payment` bool, `suggested_split_data` array, `confidence_score` decimal:4, `reviewed_at` datetime.
+- Casts: `amount` decimal:2, `date` date, `raw_payload` array, `suggested_is_non_necessity` bool, `suggested_is_debt_payment` bool, `suggested_split_data` array, `confidence_score` decimal:4, `ledger_match_score` decimal:4, `reviewed_at` datetime.
 - `suggested_description` / `suggested_is_debt_payment` / `suggested_debt_id` / `suggested_split_data` — learned fields populated from `PlaidMerchantRule` at sync time; advisory (`suggested_debt_id` has no FK constraint).
 - `dismiss_source` — nullable varchar(16); `'auto'` when dismissed by a merchant rule during sync, `'manual'` when dismissed by the user via the UI (dismiss / always-ignore). Null on non-dismissed rows.
 - `reviewed_at` — nullable timestamp; set when a user reviews/audits an auto-dismissed entry so it stops appearing in the review queue.
-- Relations: `belongsTo(User)`, `belongsTo(PlaidItem)` as `plaidItem`, `belongsTo(Transaction)` as `transaction`.
+- `suggested_ledger_match_id` / `ledger_match_score` — populated during Plaid sync when a ledger auto-match is found; advisory until the user confirms or links.
+- Relations: `belongsTo(User)`, `belongsTo(PlaidItem)` as `plaidItem`, `belongsTo(Transaction)` as `transaction`, `belongsTo(Transaction, 'suggested_ledger_match_id')` as `suggestedLedgerMatch`.
 - `scopePending` — `status = pending`. `isAutoCreateEligible()` always `false` (merchant rules gate auto-create).
 
 ### PlaidMerchantRule (`app/Models/PlaidMerchantRule.php`)
@@ -192,8 +193,10 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `destroy(Request, PlaidItem)` — calls Plaid `/item/remove`, deletes local row
 
 ### PlaidImportController
-- `index(Request)` — `GET /plaid/pending-imports`; JSON `{ pending, transfers, auto_created, dismissed }` (`pending` / `transfers` = `status=pending` by `is_transfer`; **`auto_created`** = `status=auto_created` **and** `reviewed_at` null, eager-loads `suggestedCategory`, `plaidItem`, and **`transaction`** with `user`, `category`, `splits.user`, `debt.*`, `advanceFund`, `fund`, `paidByUser` for import-review **Auto** tab detail; **`dismissed`** = `status=dismissed`, `dismiss_source=auto`, `reviewed_at` null). `?count_only=1` → `{ count, auto_created_count, dismissed_count }` (nav badge).
+- `index(Request)` — `GET /plaid/pending-imports`; JSON `{ pending, transfers, auto_created, dismissed }` (`pending` / `transfers` = `status=pending` by `is_transfer`, with `suggestedLedgerMatch` for match UI; **`auto_created`** = `status` in `auto_created` \| `auto_linked` **and** `reviewed_at` null, eager-loads `transaction` bundle + `suggestedLedgerMatch.category`; **`dismissed`** = auto-dismissed, unreviewed). `?count_only=1` → `{ count, auto_created_count, dismissed_count }` (`auto_created_count` includes unreviewed `auto_linked`).
 - `approveAutoCreated` — `POST …/approve-auto-created`; reinforces rule via `learnFromConfirmation` from linked transaction; sets **`reviewed_at`** on the pending row so it leaves the **auto_created** queue.
+- `approveAutoLinked` — `POST …/approve-auto-linked`; same learning pattern for `auto_linked` rows; sets **`reviewed_at`**.
+- `rejectAutoLinked` — `POST …/reject-auto-linked`; clears Plaid metadata on the linked ledger row and returns the pending import to `status=pending` for manual review.
 - `correctAutoCreated` — `POST …/correct-auto-created`; updates linked transaction + `learnFromConfirmation`; sets **`reviewed_at`** on the pending row.
 - `confirm(StoreImportConfirmRequest, PlaidPendingImport)` — `POST /plaid/pending-imports/{pendingImport}/confirm`; owner-only; validates with the same shared transaction payload rules as manual creates (splits, pay-toward-debt, advance fund + non-necessity, income-debt modes); server merges pending **amount** and **date** into the request for validation; `TransactionService::createTransaction` + `plaid_transaction_id` / `import_source=plaid`; `transactions.fund_id` is set from request `fund_id` when present, otherwise from **`advance_fund_id`** for qualifying expenses (merchant rule `fund_id`/`advance_fund_id` learned the same way); `learnFromConfirmation` (passes `is_split`), pending `confirmed` + `transaction_id`; `ClosedMonthGuard` on payload; `403` without `family_id`.
 - `dismiss(Request, PlaidPendingImport)` — `POST /plaid/pending-imports/{pendingImport}/dismiss`; `status=dismissed`, `recordSeen` on matching merchant rule; `204`.
@@ -241,7 +244,20 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - Constructor: `PlaidClient`, `PlaidMatchingService`, `TransactionService`.
 - `hydrateInstitution(PlaidItem)` — `/item/get` plus `/institutions/get_by_id` for display name.
 - `syncItem(PlaidItem)` — loops `/transactions/sync` using stored cursor; persists `transactions_cursor`; then `processSyncedTransactions` for the accumulated `added` / `modified` / `removed` arrays. Returns aggregated `counts`, `added`, `modified`, `removed`, and deduped `accounts` (raw Plaid shapes).
-- `processSyncedTransactions(PlaidItem, added, modified, removed)` — **Added:** skip if `plaid_pending_imports` already holds `plaid_transaction_id` (any status) or the family already has a `transactions` row with that Plaid id; `getSuggestion`; if the matching `PlaidMerchantRule` has `action=dismiss`, insert a `PlaidPendingImport` with `status=dismissed`, `dismiss_source='auto'` — all `suggested_*` fields including `suggested_description`, `suggested_is_debt_payment`, `suggested_split_data` populated from suggestion, `recordSeen`, skip auto-create; otherwise create `PlaidPendingImport` (`status=pending`) with all suggested fields including new three; **auto-create gate:** `is_auto_eligible` + user has `family_id`; when `is_debt_payment=true` also validates `debt_id` resolves to an active debt (`debtor_id=user`, `is_pending_closeout=false`, `balance > 0`) — skips auto-create when not found; **`buildAutoCreateTransactionPayload`**: description prefers `rule->description` over merchant raw name; split resolution prefers `rule->split_data` (validated via `SplitCalculator::validate`) before falling back to equal family split in both category and non-category branches; expense payload includes `is_debt_payment=true` + `debt_id` when the rule is a debt-payment rule with a valid learned debt; then `TransactionService::createTransaction`, optional `fund_id` tag, `plaid_transaction_id` + `import_source=plaid`, mark pending `auto_created` (failures leave pending); `recordSeen` on matching `PlaidMerchantRule` when present. **Modified:** pending rows (`status=pending`) get `amount`/`date`/`raw_payload` refresh; **Removed:** deletes still-`pending` `plaid_pending_imports`.
+- `processSyncedTransactions(PlaidItem, added, modified, removed)` — **Added** (`processAddedRow`): skip if `plaid_pending_imports` already holds `plaid_transaction_id` (any status) or the family already has a `transactions` row with that Plaid id; `getSuggestion`; ledger match + auto-link (see **Ledger match auto-linking** below); if the matching `PlaidMerchantRule` has `action=dismiss`, insert `status=dismissed` + `dismiss_source='auto'`, `recordSeen`, return; otherwise create `PlaidPendingImport` (`status=pending` initially); merchant-rule **auto-create** when eligible and no ledger match; `recordSeen` on rule when present. **Modified:** pending rows get `amount`/`date`/`raw_payload` refresh; **Removed:** deletes still-`pending` `plaid_pending_imports`.
+
+#### Ledger match auto-linking
+
+During `processAddedRow`, `PlaidMatchingService::findLedgerMatchWithScore` is called for every new Plaid transaction. Results:
+
+- **Score ≥ 0.85** → status `auto_linked`; existing ledger row gets `plaid_transaction_id`, `import_source`, and `plaid_pending_import_id` set.
+- **Score 0.3–0.84** → status `pending` + `suggested_ledger_match_id` / `ledger_match_score` stored; **Possible match** banner shown in Review tab (`PlaidImportReview.vue`).
+- **No match** (below 0.3) → existing behavior (pending, or `auto_created` via merchant rule when eligible).
+
+When any ledger match exists, `findRepaymentGroupMatch` is skipped and merchant-rule auto-create does not run.
+
+Auto-linked items appear in the Auto tab (same queue as `auto_created`; `GET /plaid/pending-imports` uses `whereIn` on both statuses). New endpoints: `POST …/approve-auto-linked` (reinforce rule, `reviewed_at`), `POST …/reject-auto-linked` (clear Plaid fields on ledger, reset pending to Review).
+
 - `fetchByDateRange(PlaidItem, startDate, endDate)` — paginated `POST /transactions/get` (`options.count` 500 + `offset`) until `total_transactions` is satisfied; returns merged `transactions` rows (calibration).
 - `ingestPlaidRowsAsPending(PlaidItem, rows)` — for each Plaid row array, reuses the same skip + `processAddedRow` path as sync **added**; returns `{ pending_created, auto_created }` (counts by resulting `PlaidPendingImport.status`).
 

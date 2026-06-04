@@ -57,6 +57,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 || `2026_05_15_231529_add_full_settings_to_plaid_pending_imports` | Adds `suggested_description`, `suggested_is_debt_payment`, `suggested_debt_id` (advisory, no FK), `suggested_split_data` to `plaid_pending_imports` after `suggested_is_non_necessity` |
 | `2026_05_17_115724_create_transaction_repayment_links_and_repayment_columns` | Creates `transaction_repayment_links`; adds `is_repayment`, `is_repaid`, `is_repayment_mirror` to `transactions` |
 | `2026_06_02_021010_add_is_external_repayment_to_transaction_repayment_links_table` | Adds `is_external_repayment` boolean (default false) to `transaction_repayment_links` |
+| `2026_06_04_170306_add_ledger_match_columns_to_plaid_pending_imports` | Adds `suggested_ledger_match_id` (nullable FK → `transactions.id`, null on delete) and `ledger_match_score` decimal(5,4) nullable after `transaction_id` |
 
 ## Table schemas
 
@@ -273,8 +274,10 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `suggested_debt_id` | bigint unsigned nullable | Advisory debt reference from merchant rule (no FK constraint) |
 | `suggested_split_data` | json nullable | Suggested split template from merchant rule: `[{user_id, share_percentage}]` |
 | `confidence_score` | decimal(6,4) nullable | Merchant rule confidence (0.0–1.0) |
-| `status` | varchar | `pending` \| `auto_created` \| `confirmed` \| `dismissed` |
+| `status` | varchar | `pending` \| `auto_created` \| `auto_linked` \| `confirmed` \| `dismissed` |
 | `transaction_id` | bigint FK nullable | → `transactions.id`; set when confirmed or auto-created |
+| `suggested_ledger_match_id` | bigint FK nullable | → `transactions.id`; best ledger-match candidate from sync (not yet linked) |
+| `ledger_match_score` | decimal(5,4) nullable | Score for `suggested_ledger_match_id` (0.0–1.0) |
 | `raw_payload` | json nullable | Full Plaid transaction payload |
 | `is_transfer` | boolean | default false; true when Plaid classified as transfer |
 | `plaid_category_primary` | varchar nullable | Plaid PFC primary category |

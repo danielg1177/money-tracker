@@ -50,7 +50,7 @@ class PlaidImportController extends Controller
 
             $autoCreatedCount = PlaidPendingImport::query()
                 ->where('user_id', $user->id)
-                ->where('status', 'auto_created')
+                ->whereIn('status', ['auto_created', 'auto_linked'])
                 ->whereNull('reviewed_at')
                 ->count();
 
@@ -72,7 +72,7 @@ class PlaidImportController extends Controller
             ->where('user_id', $user->id)
             ->pending()
             ->where('is_transfer', false)
-            ->with(['suggestedCategory', 'plaidItem'])
+            ->with(['suggestedCategory', 'plaidItem', 'suggestedLedgerMatch.category'])
             ->orderByDesc('date')
             ->get();
 
@@ -80,13 +80,13 @@ class PlaidImportController extends Controller
             ->where('user_id', $user->id)
             ->pending()
             ->where('is_transfer', true)
-            ->with(['suggestedCategory', 'plaidItem'])
+            ->with(['suggestedCategory', 'plaidItem', 'suggestedLedgerMatch'])
             ->orderByDesc('date')
             ->get();
 
         $autoCreated = PlaidPendingImport::query()
             ->where('user_id', $user->id)
-            ->where('status', 'auto_created')
+            ->whereIn('status', ['auto_created', 'auto_linked'])
             ->whereNull('reviewed_at')
             ->with([
                 'suggestedCategory',
@@ -100,6 +100,7 @@ class PlaidImportController extends Controller
                 'transaction.advanceFund',
                 'transaction.fund',
                 'transaction.paidByUser',
+                'suggestedLedgerMatch.category',
             ])
             ->orderByDesc('date')
             ->get();
@@ -152,6 +153,72 @@ class PlaidImportController extends Controller
         ]);
 
         $pendingImport->forceFill(['reviewed_at' => now()])->save();
+
+        return response()->noContent();
+    }
+
+    public function approveAutoLinked(Request $request, PlaidPendingImport $pendingImport): Response
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'auto_linked') {
+            abort(422, 'This import was not auto-linked.');
+        }
+
+        $transaction = $pendingImport->transaction;
+        if ($transaction === null) {
+            abort(422, 'No linked transaction found.');
+        }
+
+        $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
+        $this->matchingService->learnFromConfirmation($request->user()->id, $merchantName, [
+            'category_id' => $transaction->category_id,
+            'type' => $transaction->type,
+            'fund_id' => $transaction->fund_id,
+            'advance_fund_id' => $transaction->advance_fund_id,
+            'is_non_necessity' => (bool) $transaction->is_non_necessity,
+            'is_split' => (bool) $transaction->is_split,
+            'action' => 'categorize',
+            'description' => $transaction->description,
+            'is_debt_payment' => (bool) $transaction->is_debt_payment,
+            'debt_id' => $transaction->debt_id,
+            'split_data' => $transaction->is_split ? $transaction->split_data : null,
+        ]);
+
+        $pendingImport->forceFill(['reviewed_at' => now()])->save();
+
+        return response()->noContent();
+    }
+
+    public function rejectAutoLinked(Request $request, PlaidPendingImport $pendingImport): Response
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'auto_linked') {
+            abort(422, 'This import was not auto-linked.');
+        }
+
+        $transaction = $pendingImport->transaction;
+        if ($transaction === null) {
+            abort(422, 'No linked transaction found.');
+        }
+
+        DB::transaction(function () use ($pendingImport, $transaction): void {
+            $transaction->forceFill([
+                'plaid_transaction_id' => null,
+                'import_source' => null,
+                'plaid_pending_import_id' => null,
+            ])->save();
+
+            $pendingImport->forceFill([
+                'status' => 'pending',
+                'transaction_id' => null,
+            ])->save();
+        });
 
         return response()->noContent();
     }

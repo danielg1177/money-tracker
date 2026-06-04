@@ -12,10 +12,13 @@ use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 class PlaidTransactionSyncService
 {
+    private const AUTO_LINK_SCORE_THRESHOLD = 0.85;
+
     public function __construct(
         private PlaidClient $plaidClient,
         private PlaidMatchingService $matchingService,
@@ -247,9 +250,11 @@ class PlaidTransactionSyncService
 
         $suggestion = $this->matchingService->getSuggestion($row, $item->user_id);
 
-        $ledgerMatch = $familyId !== null
-            ? $this->matchingService->findLedgerMatch($row, $familyId)
+        $ledgerMatchResult = $familyId !== null
+            ? $this->matchingService->findLedgerMatchWithScore($row, $familyId)
             : null;
+        $ledgerMatch = $ledgerMatchResult !== null ? $ledgerMatchResult['transaction'] : null;
+        $ledgerMatchScore = $ledgerMatchResult !== null ? (float) $ledgerMatchResult['score'] : null;
 
         $repaymentGroupMatch = null;
         if ($ledgerMatch === null) {
@@ -288,6 +293,7 @@ class PlaidTransactionSyncService
                 'suggested_is_non_necessity' => $suggestion['is_non_necessity'],
                 'suggested_description' => $suggestion['description'] ?? null,
                 'suggested_is_debt_payment' => (bool) ($suggestion['is_debt_payment'] ?? false),
+                'suggested_debt_id' => $suggestion['debt_id'] ?? null,
                 'suggested_split_data' => $suggestion['split_data'] ?? null,
                 'confidence_score' => $suggestion['confidence_score'],
                 'status' => 'dismissed',
@@ -319,6 +325,7 @@ class PlaidTransactionSyncService
             'suggested_is_non_necessity' => $suggestion['is_non_necessity'],
             'suggested_description' => $suggestion['description'] ?? null,
             'suggested_is_debt_payment' => (bool) ($suggestion['is_debt_payment'] ?? false),
+            'suggested_debt_id' => $suggestion['debt_id'] ?? null,
             'suggested_split_data' => $suggestion['split_data'] ?? null,
             'confidence_score' => $suggestion['confidence_score'],
             'status' => 'pending',
@@ -329,8 +336,41 @@ class PlaidTransactionSyncService
             'plaid_category_detailed' => $this->extractPlaidCategoryDetailed($row),
         ]);
 
+        if ($ledgerMatch !== null && $ledgerMatchScore !== null) {
+            $pending->forceFill([
+                'suggested_ledger_match_id' => $ledgerMatch->id,
+                'ledger_match_score' => $ledgerMatchScore,
+            ])->save();
+        }
+
+        if ($ledgerMatch !== null && $ledgerMatchScore !== null && $ledgerMatchScore >= self::AUTO_LINK_SCORE_THRESHOLD) {
+            try {
+                DB::transaction(function () use ($pending, $ledgerMatch, $plaidTransactionId): void {
+                    $ledgerMatch->forceFill([
+                        'plaid_transaction_id' => $plaidTransactionId,
+                        'import_source' => 'plaid',
+                        'plaid_pending_import_id' => $pending->id,
+                    ])->save();
+
+                    $pending->forceFill([
+                        'status' => 'auto_linked',
+                        'transaction_id' => $ledgerMatch->id,
+                    ])->save();
+                });
+            } catch (Throwable) {
+                // Leave pending row for manual resolution.
+            }
+
+            if ($rule !== null) {
+                $this->matchingService->recordSeen($rule);
+            }
+
+            return;
+        }
+
         $canAutoCreate = $suggestion['is_auto_eligible'] && $user->family_id !== null
-            && $repaymentGroupMatch === null;
+            && $repaymentGroupMatch === null
+            && $ledgerMatchResult === null;
 
         if ($canAutoCreate && ($suggestion['is_debt_payment'] ?? false)) {
             $learnedDebtId = $suggestion['debt_id'] ?? null;

@@ -29,6 +29,8 @@ class PlaidPendingImport extends Model
         'confidence_score',
         'status',
         'transaction_id',
+        'suggested_ledger_match_id',
+        'ledger_match_score',
         'raw_payload',
         'is_transfer',
         'plaid_category_primary',
@@ -50,6 +52,7 @@ class PlaidPendingImport extends Model
             'suggested_is_debt_payment' => 'bool',
             'suggested_split_data' => 'array',
             'confidence_score' => 'decimal:4',
+            'ledger_match_score' => 'decimal:4',
             'is_transfer' => 'bool',
             'reviewed_at' => 'datetime',
         ];
@@ -68,6 +71,11 @@ class PlaidPendingImport extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class, 'transaction_id');
+    }
+
+    public function suggestedLedgerMatch(): BelongsTo
+    {
+        return $this->belongsTo(Transaction::class, 'suggested_ledger_match_id');
     }
 
     public function suggestedCategory(): BelongsTo

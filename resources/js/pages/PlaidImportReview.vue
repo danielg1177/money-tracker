@@ -190,6 +190,33 @@
             </div>
 
             <div
+              v-if="row.suggested_ledger_match && !dismissedMatchSuggestions.has(row.id)"
+              class="mx-4 mb-2 space-y-2 rounded-md border border-indigo-700/30 bg-indigo-950/10 px-3 py-2 text-xs text-indigo-300"
+            >
+              <p>
+                Possible match: your existing "{{ row.suggested_ledger_match.description || 'transaction' }}" on {{ formatDate(row.suggested_ledger_match.date) }}
+                <span class="ml-1 text-indigo-400/70">({{ formatConfidence(row.ledger_match_score) }} confidence)</span>
+              </p>
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  class="min-h-[36px] rounded-lg border border-indigo-600/50 bg-indigo-900/40 px-3 py-1.5 text-xs font-semibold text-indigo-100 hover:bg-indigo-900/60 disabled:opacity-50"
+                  :disabled="actionId === row.id"
+                  @click="acceptLedgerMatchSuggestion(row)"
+                >
+                  Accept match
+                </button>
+                <button
+                  type="button"
+                  class="min-h-[36px] rounded-lg border border-gray-700/50 bg-gray-900/40 px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200"
+                  @click="dismissedMatchSuggestions.add(row.id)"
+                >
+                  Ignore
+                </button>
+              </div>
+            </div>
+
+            <div
               v-show="expandedId === row.id"
               class="space-y-3 border-t border-gray-700/80 px-4 pb-4 pt-3"
             >
@@ -869,7 +896,7 @@
 
       <div v-show="activeTab === 'auto-created'">
         <p class="mb-3 text-sm text-gray-400 leading-relaxed">
-          These transactions were created automatically based on your past history. Approve them if correct, or correct them to improve future accuracy.
+          These transactions were either created or matched automatically. Confirm them if correct.
           <span class="mt-1 block text-gray-500">Tap a row to see the full ledger transaction (splits, funds, debt flags, Plaid link).</span>
         </p>
         <p v-if="autoCreatedImports.length === 0" class="text-sm text-gray-500">
@@ -899,6 +926,9 @@
                       {{ (row.transaction?.type ?? row.suggested_type) === 'income' ? '+' : '−' }}{{ formatMoney(row.amount) }}
                     </span>
                   </p>
+                  <p v-if="row.status === 'auto_linked'" class="mt-0.5 text-xs text-indigo-300/80">
+                    Matched to your existing entry
+                  </p>
                   <div class="mt-2 flex flex-wrap items-center gap-2">
                     <span
                       v-if="row.transaction?.category"
@@ -922,9 +952,16 @@
                   </div>
                 </div>
                 <div class="flex shrink-0 flex-col items-end gap-1.5 pt-0.5">
-                  <span class="inline-flex items-center rounded-full bg-emerald-900/40 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-emerald-700/50">
-                    Auto
-                  </span>
+                  <template v-if="row.status === 'auto_linked'">
+                    <span class="inline-flex items-center rounded-full bg-indigo-900/40 px-2 py-0.5 text-xs font-medium text-indigo-300 ring-1 ring-indigo-700/50">
+                      Linked
+                    </span>
+                  </template>
+                  <template v-else>
+                    <span class="inline-flex items-center rounded-full bg-emerald-900/40 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-emerald-700/50">
+                      Auto
+                    </span>
+                  </template>
                   <span class="text-gray-500" aria-hidden="true">
                     <svg
                       class="h-5 w-5 transition-transform"
@@ -1090,22 +1127,42 @@
 
               <!-- Actions -->
               <div v-if="!autoCreatedFormFor(row).correcting" class="mt-3 flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  class="min-h-[44px] flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
-                  :disabled="actionId === row.id"
-                  @click="approveAutoCreated(row)"
-                >
-                  {{ actionId === row.id ? 'Saving…' : '✓ Looks Correct' }}
-                </button>
-                <button
-                  type="button"
-                  class="min-h-[44px] flex-1 rounded-xl border border-gray-600 bg-transparent px-4 py-2.5 text-sm font-semibold text-gray-200 transition-colors hover:bg-gray-800 disabled:opacity-50"
-                  :disabled="actionId === row.id"
-                  @click="openAutoCreatedCorrect(row)"
-                >
-                  Correct It
-                </button>
+                <template v-if="row.status === 'auto_linked'">
+                  <button
+                    type="button"
+                    class="min-h-[44px] flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                    :disabled="actionId === row.id"
+                    @click="approveAutoLinked(row)"
+                  >
+                    {{ actionId === row.id ? 'Saving…' : '✓ Confirm Match' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-[44px] flex-1 rounded-xl border border-gray-600 px-4 py-2.5 text-sm font-semibold text-gray-300 transition-colors hover:border-gray-500 hover:text-white disabled:opacity-50"
+                    :disabled="actionId === row.id"
+                    @click="rejectAutoLinked(row)"
+                  >
+                    Not a Match
+                  </button>
+                </template>
+                <template v-else>
+                  <button
+                    type="button"
+                    class="min-h-[44px] flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+                    :disabled="actionId === row.id"
+                    @click="approveAutoCreated(row)"
+                  >
+                    {{ actionId === row.id ? 'Saving…' : '✓ Looks Correct' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-[44px] flex-1 rounded-xl border border-gray-600 bg-transparent px-4 py-2.5 text-sm font-semibold text-gray-200 transition-colors hover:bg-gray-800 disabled:opacity-50"
+                    :disabled="actionId === row.id"
+                    @click="openAutoCreatedCorrect(row)"
+                  >
+                    Correct It
+                  </button>
+                </template>
               </div>
               <!-- Correction form -->
               <div v-else class="mt-3 space-y-3 border-t border-gray-700/80 pt-3">
@@ -1404,6 +1461,7 @@ const autoCreatedImports = ref([]);
 const autoCreatedForms = reactive({});
 const dismissedImports = ref([]);
 const dismissedForms = reactive({});
+const dismissedMatchSuggestions = reactive(new Set());
 const expandedId = ref(null);
 const expandedAutoCreatedId = ref(null);
 const forms = reactive({});
@@ -1740,8 +1798,8 @@ function ensureForm(row) {
     type: t,
     category_id: catId,
     description: '',
-    pay_toward_debt: false,
-    debt_id: null,
+    pay_toward_debt: !!(row.suggested_is_debt_payment && row.suggested_debt_id),
+    debt_id: (row.suggested_is_debt_payment && row.suggested_debt_id) ? row.suggested_debt_id : null,
     is_split: false,
     split_data: [],
     advance_fund_id: null,
@@ -2496,6 +2554,35 @@ async function approveAutoCreated(row) {
   }
 }
 
+async function approveAutoLinked(row) {
+  actionId.value = row.id;
+  try {
+    await post(`/plaid/pending-imports/${row.id}/approve-auto-linked`, {});
+    removeAutoCreatedRow(row.id);
+    showToast('Match confirmed.', 'success');
+  } catch (err) {
+    rowErrors[row.id] = err?.response?.data?.message ?? 'Could not confirm. Try again.';
+  } finally {
+    actionId.value = null;
+  }
+}
+
+async function rejectAutoLinked(row) {
+  actionId.value = row.id;
+  try {
+    await post(`/plaid/pending-imports/${row.id}/reject-auto-linked`, {});
+    removeAutoCreatedRow(row.id);
+    const pendingRes = await get('/plaid/pending-imports');
+    pendingImports.value = Array.isArray(pendingRes?.pending) ? pendingRes.pending : [];
+    transferImports.value = Array.isArray(pendingRes?.transfers) ? pendingRes.transfers : [];
+    showToast('Moved back to Review.', 'success');
+  } catch (err) {
+    rowErrors[row.id] = err?.response?.data?.message ?? 'Could not reject. Try again.';
+  } finally {
+    actionId.value = null;
+  }
+}
+
 async function submitAutoCreatedCorrection(row) {
   rowErrors[row.id] = '';
   const f = autoCreatedFormFor(row);
@@ -2711,6 +2798,24 @@ async function loadAll() {
     transferImports.value = [];
   } finally {
     loading.value = false;
+  }
+}
+
+async function acceptLedgerMatchSuggestion(row) {
+  if (!row.suggested_ledger_match) {
+    return;
+  }
+  actionId.value = row.id;
+  try {
+    await post(`/plaid/pending-imports/${row.id}/link`, {
+      transaction_id: row.suggested_ledger_match.id,
+    });
+    removePendingRow(row.id);
+    showToast('Linked to your existing transaction. Merchant rule updated.', 'success');
+  } catch (err) {
+    rowErrors[row.id] = err?.response?.data?.message ?? 'Could not link. Try again.';
+  } finally {
+    actionId.value = null;
   }
 }
 

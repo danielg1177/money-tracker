@@ -11,6 +11,38 @@ Format:
 
 ---
 
+## 2026-06-04 — Fix: Plaid import debt payment suggestion not pre-populated
+
+- **Bug fixed:** `processAddedRow` in `PlaidTransactionSyncService` was not storing
+  `suggested_debt_id` on newly created `PlaidPendingImport` rows, causing silent data loss
+  from the merchant rule's debt linkage suggestion.
+- **Bug fixed:** `ensureForm` in `PlaidImportReview.vue` always initialized
+  `pay_toward_debt: false`, ignoring `row.suggested_is_debt_payment` / `row.suggested_debt_id`.
+  Users would confirm Plaid imports without the debt toggle enabled, creating plain expenses
+  instead of debt payment transactions.
+- **Files touched:**
+  - `app/Services/PlaidTransactionSyncService.php`
+  - `resources/js/pages/PlaidImportReview.vue`
+- **Behavioral impact:** Plaid import cards for merchants with a debt-payment merchant rule
+  now open with the "Pay toward debt" toggle pre-enabled and the correct debt pre-selected.
+
+---
+
+## 2026-06-04 — Plaid ledger-match suggestion & auto-link
+
+- **Summary:** Plaid sync now stores the best-matching manually-entered ledger transaction on each new pending import (`suggested_ledger_match_id`, `ledger_match_score`). If the match score is ≥ 0.85, the pending import is immediately auto-linked to the existing transaction (status `auto_linked`) and surfaces in the Auto tab for one-tap confirmation. If score is 0.3–0.84, a "Possible match" banner appears in the Review tab.
+- **Files touched:**
+  - `database/migrations/2026_06_04_170306_add_ledger_match_columns_to_plaid_pending_imports.php` (new)
+  - `app/Models/PlaidPendingImport.php`
+  - `app/Services/PlaidTransactionSyncService.php`
+  - `app/Http/Controllers/PlaidImportController.php`
+  - `resources/js/pages/PlaidImportReview.vue`
+  - `routes/web.php` (two new routes: `approve-auto-linked`, `reject-auto-linked` — Plaid import routes live here, not `routes/api.php`)
+  - `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/08-api-routes.md`
+- **Behavioral impact:** Duplicate manual + bank entries are now automatically reconciled rather than silently queuing as separate pending items.
+
+---
+
 ## 2026-06-02 — Hide savings_sweep Movements from Month View Fund In/Out
 
 **Summary:** Excluded `savings_sweep` fund movement type from the Fund In/Out section on the month summary view.
