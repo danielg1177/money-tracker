@@ -1000,7 +1000,14 @@ class PlaidImportController extends Controller
         }
 
         $pendingImport->loadMissing('user');
-        if ((int) $fundMovement->fund?->family_id !== (int) $pendingImport->user?->family_id) {
+        $fundMovement->loadMissing('user');
+        // Prefer fund.family_id; fall back to movement.user.family_id for
+        // older funds where family_id was not yet set on the fund record.
+        $movementFamilyId = (int) ($fundMovement->fund?->family_id
+            ?? $fundMovement->user?->family_id
+            ?? 0);
+        $userFamilyId = (int) ($pendingImport->user?->family_id ?? 0);
+        if ($movementFamilyId === 0 || $movementFamilyId !== $userFamilyId) {
             abort(403);
         }
 

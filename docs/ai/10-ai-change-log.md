@@ -11,6 +11,14 @@ Format:
 
 ---
 
+## 2026-06-04 — Plaid link-to-sweep: legacy fund family guard
+
+- **Fix:** `linkToSweep` family check uses `fund.family_id` with fallback to `fund_movements.user.family_id`, matching `sweepCandidates` / `findSweepMatchWithScore` for old funds without `funds.family_id`.
+- **Files touched:** `app/Http/Controllers/PlaidImportController.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** Users can confirm sweep links for movements on legacy personal funds that are still family-scoped via the movement owner’s `user_id`.
+
+---
+
 ## 2026-06-04 — Plaid sweep candidates: family scoping + no date window
 
 - **Fix:** `sweepCandidates` and `findSweepMatchWithScore` now scope sweeps to the family via `funds.family_id` **or** `fund_movements.user_id` in the family (legacy personal funds without `family_id` on the fund row).
