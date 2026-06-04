@@ -11,6 +11,17 @@ Format:
 
 ---
 
+## 2026-06-04 — Plaid sweep candidates: family scoping + no date window
+
+- **Fix:** `sweepCandidates` and `findSweepMatchWithScore` now scope sweeps to the family via `funds.family_id` **or** `fund_movements.user_id` in the family (legacy personal funds without `family_id` on the fund row).
+- **Files touched:**
+  - `app/Http/Controllers/PlaidImportController.php` (`sweepCandidates`)
+  - `app/Services/PlaidMatchingService.php` (`findSweepMatchWithScore`)
+  - `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** Manual sweep picker lists all unlinked family sweeps (max 30), sorted by date proximity to the import — no ±60 day cutoff. Sync sweep suggestions can match sweeps on older funds that only tie to the family through the movement’s `user_id`.
+
+---
+
 ## 2026-06-04 — Plaid import review: Recent tab + undo manual dismiss
 
 - **Feature:** Manually dismissed imports (`dismiss_source=manual`, unreviewed) appear in a **Recent** tab on Import Review; **Undo** restores `status=pending`, clears `dismiss_source`, and deletes a learned `action=dismiss` merchant rule when present.

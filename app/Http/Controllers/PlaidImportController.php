@@ -14,6 +14,7 @@ use App\Models\PlaidItem;
 use App\Models\PlaidMerchantRule;
 use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
+use App\Models\User;
 use App\Services\ClosedMonthGuard;
 use App\Services\PlaidCalibrationService;
 use App\Services\PlaidMatchingService;
@@ -940,14 +941,17 @@ class PlaidImportController extends Controller
         $date = Carbon::parse($pendingImport->date);
         $dateString = $date->toDateString();
 
+        $familyUserIds = User::query()
+            ->where('family_id', $familyId)
+            ->pluck('id');
+
         $movementsQuery = FundMovement::query()
-            ->whereHas('fund', fn ($query) => $query->where('family_id', $familyId))
             ->where('type', 'savings_sweep')
             ->whereNull('plaid_pending_import_id')
-            ->whereBetween('created_at', [
-                $date->copy()->subDays(60)->startOfDay(),
-                $date->copy()->addDays(60)->endOfDay(),
-            ]);
+            ->where(function ($q) use ($familyId, $familyUserIds) {
+                $q->whereHas('fund', fn ($fq) => $fq->where('family_id', $familyId))
+                    ->orWhereIn('user_id', $familyUserIds);
+            });
 
         if (DB::connection()->getDriverName() === 'sqlite') {
             $movementsQuery->orderByRaw('ABS(julianday(date(created_at)) - julianday(?))', [$dateString]);
@@ -956,7 +960,7 @@ class PlaidImportController extends Controller
         }
 
         $movements = $movementsQuery
-            ->limit(20)
+            ->limit(30)
             ->with('fund')
             ->get();
 

@@ -7,6 +7,7 @@ use App\Models\PlaidMerchantRule;
 use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use App\Models\TransactionRepaymentLink;
+use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
@@ -206,7 +207,13 @@ class PlaidMatchingService
                 $importDay->copy()->subDays(7)->startOfDay(),
                 $importDay->copy()->addDays(7)->endOfDay(),
             ])
-            ->whereHas('fund', fn ($query) => $query->where('family_id', $familyId))
+            ->where(function ($q) use ($familyId) {
+                $familyUserIds = User::query()
+                    ->where('family_id', $familyId)
+                    ->pluck('id');
+                $q->whereHas('fund', fn ($fq) => $fq->where('family_id', $familyId))
+                    ->orWhereIn('user_id', $familyUserIds);
+            })
             ->orderBy('created_at')
             ->first();
 
