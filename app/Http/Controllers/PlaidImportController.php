@@ -115,11 +115,33 @@ class PlaidImportController extends Controller
             ->orderByDesc('date')
             ->get();
 
+        $manuallyDismissed = PlaidPendingImport::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'dismissed')
+            ->where('dismiss_source', 'manual')
+            ->whereNull('reviewed_at')
+            ->with(['plaidItem'])
+            ->orderByDesc('updated_at')
+            ->get()
+            ->each(function (PlaidPendingImport $import): void {
+                $merchantLabel = (string) ($import->merchant_name ?? $import->raw_name ?? '');
+                $key = $this->matchingService->normalizeMerchantKey($merchantLabel);
+                $import->setAttribute(
+                    'has_learned_dismiss_rule',
+                    PlaidMerchantRule::query()
+                        ->where('user_id', $import->user_id)
+                        ->where('merchant_key', $key)
+                        ->where('action', 'dismiss')
+                        ->exists()
+                );
+            });
+
         return response()->json([
             'pending' => $pending,
             'transfers' => $transfers,
             'auto_created' => $autoCreated,
             'dismissed' => $dismissed,
+            'manually_dismissed' => $manuallyDismissed,
         ]);
     }
 
@@ -735,6 +757,30 @@ class PlaidImportController extends Controller
         return response()->noContent();
     }
 
+    public function undoDismiss(Request $request, PlaidPendingImport $pendingImport): JsonResponse
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'dismissed' || $pendingImport->dismiss_source !== 'manual') {
+            abort(422, 'This import cannot be undone.');
+        }
+
+        $pendingImport->forceFill([
+            'status' => 'pending',
+            'dismiss_source' => null,
+        ])->save();
+
+        $merchantLabel = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
+        $this->matchingService->deleteDismissRule($pendingImport->user_id, $merchantLabel);
+
+        return response()->json([
+            'success' => true,
+            'pending_import' => $pendingImport->fresh(),
+        ]);
+    }
+
     public function ledgerLinkCandidates(Request $request, PlaidPendingImport $pendingImport): JsonResponse
     {
         if ($pendingImport->user_id !== $request->user()->id) {
@@ -891,18 +937,25 @@ class PlaidImportController extends Controller
             return response()->json([]);
         }
 
-        $absAmount = abs((float) $pendingImport->amount);
         $date = Carbon::parse($pendingImport->date);
+        $dateString = $date->toDateString();
 
-        $movements = FundMovement::query()
+        $movementsQuery = FundMovement::query()
             ->whereHas('fund', fn ($query) => $query->where('family_id', $familyId))
             ->where('type', 'savings_sweep')
             ->whereNull('plaid_pending_import_id')
             ->whereBetween('created_at', [
                 $date->copy()->subDays(60)->startOfDay(),
                 $date->copy()->addDays(60)->endOfDay(),
-            ])
-            ->orderByRaw('ABS(amount - ?)', [$absAmount])
+            ]);
+
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            $movementsQuery->orderByRaw('ABS(julianday(date(created_at)) - julianday(?))', [$dateString]);
+        } else {
+            $movementsQuery->orderByRaw('ABS(DATEDIFF(created_at, ?))', [$dateString]);
+        }
+
+        $movements = $movementsQuery
             ->limit(20)
             ->with('fund')
             ->get();

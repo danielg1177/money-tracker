@@ -11,6 +11,20 @@ Format:
 
 ---
 
+## 2026-06-04 — Plaid import review: Recent tab + undo manual dismiss
+
+- **Feature:** Manually dismissed imports (`dismiss_source=manual`, unreviewed) appear in a **Recent** tab on Import Review; **Undo** restores `status=pending`, clears `dismiss_source`, and deletes a learned `action=dismiss` merchant rule when present.
+- **Files touched:**
+  - `app/Services/PlaidMatchingService.php` (`deleteDismissRule`)
+  - `app/Http/Controllers/PlaidImportController.php` (`index` → `manually_dismissed` + `has_learned_dismiss_rule`; `undoDismiss`)
+  - `routes/web.php` (`POST …/undo-dismiss`)
+  - `resources/js/pages/PlaidImportReview.vue` (Recent tab, `undoDismiss`, dismiss handlers track Recent)
+  - `tests/Feature/PlaidUndoDismissTest.php`
+  - `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** **Always Ignore** / **Dismiss Once** / **Dismiss** no longer hide rows without recourse — they land in **Recent** until undone or the user leaves the page. Undo moves the row back to **Review** or **Transfers** by `is_transfer`. **Ignored** tab remains for sync auto-dismiss (`dismiss_source=auto`) only.
+
+---
+
 ## 2026-06-04 — Plaid sweep match (link bank debits to savings sweeps)
 
 - **Feature:** Match a Plaid-imported bank transaction to an existing `savings_sweep` `FundMovement` record, closing the loop between in-app sweeps and bank activity.

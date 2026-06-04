@@ -366,6 +366,20 @@ class PlaidMatchingService
     }
 
     /**
+     * Remove a learned auto-dismiss rule for this merchant key (used when undoing manual dismiss).
+     */
+    public function deleteDismissRule(int $userId, string $merchantLabel): void
+    {
+        $key = $this->normalizeMerchantKey($merchantLabel);
+
+        PlaidMerchantRule::query()
+            ->where('user_id', $userId)
+            ->where('merchant_key', $key)
+            ->where('action', 'dismiss')
+            ->delete();
+    }
+
+    /**
      * Ledger rows that plausibly match a pending import (wider date window than auto-calibration matching).
      *
      * Only transactions **recorded by the pending import's user** (`transactions.user_id` = `PlaidPendingImport.user_id`)

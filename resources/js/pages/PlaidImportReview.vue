@@ -76,6 +76,27 @@
         </span>
       </button>
       <button
+        v-if="recentlyDismissed.length > 0"
+        type="button"
+        role="tab"
+        aria-label="Recent"
+        :aria-selected="activeTab === 'recent'"
+        class="flex min-h-[44px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-1 py-2 text-xs font-semibold transition-colors"
+        :class="
+          activeTab === 'recent'
+            ? 'bg-gray-800 text-white shadow-sm'
+            : 'text-gray-400 hover:text-gray-200'
+        "
+        @click="activeTab = 'recent'"
+      >
+        <span>Recent</span>
+        <span
+          class="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-indigo-900/80 px-1.5 text-xs font-bold text-indigo-100 ring-1 ring-indigo-700/50"
+        >
+          {{ recentlyDismissed.length }}
+        </span>
+      </button>
+      <button
         type="button"
         role="tab"
         aria-label="Ignored"
@@ -279,6 +300,16 @@
                   {{ actionId === row.id ? 'Linking…' : 'Confirm Sweep Match' }}
                 </button>
               </div>
+
+              <!-- NEW: sweep toggle button, sits right below the banner/picker -->
+              <button
+                type="button"
+                class="min-h-[44px] w-full rounded-lg border border-emerald-700/40 bg-emerald-950/10 px-3 py-2 text-left text-sm font-medium text-emerald-300 hover:bg-emerald-950/20 disabled:opacity-50"
+                :disabled="actionId === row.id"
+                @click="toggleSweepPicker(row)"
+              >
+                {{ showSweepPicker[row.id] ? 'Hide savings sweep options' : 'Link to savings sweep →' }}
+              </button>
 
               <button
                 type="button"
@@ -761,14 +792,6 @@
                   Dismiss
                 </button>
               </div>
-              <button
-                type="button"
-                class="min-h-[44px] text-xs text-emerald-400 underline hover:text-emerald-300 disabled:opacity-50"
-                :disabled="actionId === row.id"
-                @click="toggleSweepPicker(row)"
-              >
-                {{ showSweepPicker[row.id] ? 'Hide sweep picker' : 'Link to savings sweep' }}
-              </button>
               </template>
 
               <template v-if="isSplitMode(row)">
@@ -1003,11 +1026,11 @@
 
             <button
               type="button"
-              class="mt-2 min-h-[44px] text-xs text-emerald-400 underline hover:text-emerald-300 disabled:opacity-50"
+              class="mt-2 min-h-[44px] w-full rounded-lg border border-emerald-700/40 bg-emerald-950/10 px-3 py-2 text-left text-sm font-medium text-emerald-300 hover:bg-emerald-950/20 disabled:opacity-50"
               :disabled="actionId === row.id"
               @click="toggleSweepPicker(row)"
             >
-              {{ showSweepPicker[row.id] ? 'Hide sweep picker' : 'Link to savings sweep' }}
+              {{ showSweepPicker[row.id] ? 'Hide savings sweep options' : 'Link to savings sweep →' }}
             </button>
 
             <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -1394,6 +1417,65 @@
         </ul>
       </div>
 
+      <div v-show="activeTab === 'recent'">
+        <p class="mb-3 text-sm text-gray-400 leading-relaxed">
+          Transactions you dismissed manually. Undo to send them back to Review or Transfers.
+        </p>
+        <p v-if="recentlyDismissed.length === 0" class="text-sm text-gray-500">
+          No recent dismissals.
+        </p>
+        <ul v-else class="space-y-3">
+          <li
+            v-for="row in recentlyDismissed"
+            :key="'rd-' + row.id"
+            class="overflow-hidden rounded-xl border border-gray-700 bg-gray-800/80"
+          >
+            <div class="px-4 py-3">
+              <div class="flex items-start gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="font-bold text-white truncate">
+                    {{ row.merchant_name || row.raw_name || 'Transaction' }}
+                  </p>
+                  <p class="mt-1 text-sm text-gray-400">
+                    {{ formatDate(row.date) }}
+                    <span class="mx-1.5 text-gray-600">·</span>
+                    <span :class="displayType(row) === 'income' ? 'text-emerald-400' : 'text-red-400'">
+                      {{ displayType(row) === 'income' ? '+' : '−' }}{{ formatMoney(row.amount) }}
+                    </span>
+                  </p>
+                  <p class="mt-1.5 text-xs text-gray-500">
+                    <span v-if="formatPlaidCategoryLabel(row)">{{ formatPlaidCategoryLabel(row) }}</span>
+                    <template v-if="institutionName(row)">
+                      <span class="mx-1.5 text-gray-600">·</span>
+                      <span>{{ institutionName(row) }}</span>
+                    </template>
+                  </p>
+                </div>
+                <span
+                  class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium mt-0.5"
+                  :class="
+                    manualDismissLabel(row) === 'Always Ignored'
+                      ? 'bg-blue-900/50 text-blue-200 ring-1 ring-blue-700/40'
+                      : 'bg-gray-700 text-gray-300'
+                  "
+                >
+                  {{ manualDismissLabel(row) }}
+                </span>
+              </div>
+              <p v-if="rowErrors[row.id]" class="mt-2 text-sm text-red-300">{{ rowErrors[row.id] }}</p>
+              <button
+                type="button"
+                class="mt-3 min-h-[48px] w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="actionId === row.id"
+                @click="undoDismiss(row)"
+              >
+                {{ actionId === row.id ? 'Working…' : 'Undo' }}
+              </button>
+            </div>
+          </li>
+        </ul>
+      </div>
+
       <div v-show="activeTab === 'ignored'">
         <p class="mb-3 text-sm text-gray-400 leading-relaxed">
           These transactions were automatically skipped based on rules you've set. Confirm they're correct, or restore them if the app made a mistake.
@@ -1598,6 +1680,7 @@ const familyUsers = ref([]);
 const autoCreatedImports = ref([]);
 const autoCreatedForms = reactive({});
 const dismissedImports = ref([]);
+const recentlyDismissed = ref([]);
 const dismissedForms = reactive({});
 const dismissedMatchSuggestions = reactive(new Set());
 const expandedId = ref(null);
@@ -1629,7 +1712,8 @@ const allEmpty = computed(
     pendingImports.value.length === 0 &&
     transferImports.value.length === 0 &&
     autoCreatedImports.value.length === 0 &&
-    dismissedImports.value.length === 0,
+    dismissedImports.value.length === 0 &&
+    recentlyDismissed.value.length === 0,
 );
 
 const showTabs = computed(
@@ -1639,7 +1723,8 @@ const showTabs = computed(
     (pendingImports.value.length > 0 ||
       transferImports.value.length > 0 ||
       autoCreatedImports.value.length > 0 ||
-      dismissedImports.value.length > 0),
+      dismissedImports.value.length > 0 ||
+      recentlyDismissed.value.length > 0),
 );
 
 const payableDebts = computed(() => {
@@ -2703,6 +2788,27 @@ function removeDismissedRow(id) {
   delete rowErrors[id];
 }
 
+function removeRecentlyDismissedRow(id) {
+  const i = recentlyDismissed.value.findIndex((r) => r.id === id);
+  if (i !== -1) {
+    recentlyDismissed.value.splice(i, 1);
+  }
+  delete rowErrors[id];
+}
+
+function manualDismissLabel(row) {
+  return row?.has_learned_dismiss_rule ? 'Always Ignored' : 'Dismissed';
+}
+
+function trackManuallyDismissed(row, learned) {
+  recentlyDismissed.value.unshift({
+    ...row,
+    status: 'dismissed',
+    dismiss_source: 'manual',
+    has_learned_dismiss_rule: learned,
+  });
+}
+
 async function approveAutoCreated(row) {
   rowErrors[row.id] = '';
   actionId.value = row.id;
@@ -2780,6 +2886,28 @@ async function acknowledgeAutoDismiss(row) {
     showToast('Confirmed — this merchant will continue to be auto-ignored.', 'success');
   } catch (err) {
     rowErrors[row.id] = err.response?.data?.message || 'Could not acknowledge.';
+  } finally {
+    actionId.value = null;
+  }
+}
+
+async function undoDismiss(row) {
+  rowErrors[row.id] = '';
+  actionId.value = row.id;
+  try {
+    const { data } = await post(`/plaid/pending-imports/${row.id}/undo-dismiss`, {});
+    const restored = data?.pending_import ?? row;
+    removeRecentlyDismissedRow(row.id);
+    if (restored.is_transfer) {
+      transferImports.value.unshift(restored);
+      activeTab.value = 'transfers';
+    } else {
+      pendingImports.value.unshift(restored);
+      activeTab.value = 'review';
+    }
+    showToast('Restored for review.', 'success');
+  } catch (err) {
+    rowErrors[row.id] = err.response?.data?.message || 'Could not undo.';
   } finally {
     actionId.value = null;
   }
@@ -2941,6 +3069,9 @@ async function loadAll() {
     transferImports.value = Array.isArray(pendingRes.data?.transfers) ? pendingRes.data.transfers : [];
     autoCreatedImports.value = Array.isArray(pendingRes.data?.auto_created) ? pendingRes.data.auto_created : [];
     dismissedImports.value = Array.isArray(pendingRes.data?.dismissed) ? pendingRes.data.dismissed : [];
+    recentlyDismissed.value = Array.isArray(pendingRes.data?.manually_dismissed)
+      ? pendingRes.data.manually_dismissed
+      : [];
     categories.value = Array.isArray(catRes.data) ? catRes.data : [];
     funds.value = Array.isArray(fundRes.data) ? fundRes.data : [];
     const db = debtsRes.data;
@@ -3123,6 +3254,7 @@ async function dismissRow(row) {
   actionId.value = row.id;
   try {
     await post(`/plaid/pending-imports/${row.id}/dismiss`, {});
+    trackManuallyDismissed(row, false);
     removePendingRow(row.id);
   } catch (err) {
     console.error(err);
@@ -3228,6 +3360,7 @@ async function dismissPendingAsTransfer(row, learn) {
   try {
     const qs = learn ? '?learn=true' : '';
     await post(`/plaid/pending-imports/${row.id}/dismiss-as-transfer${qs}`, {});
+    trackManuallyDismissed(row, learn);
     removePendingRow(row.id);
     if (learn) {
       showToast(`Future payments from ${merchantDisplayName(row)} will be automatically ignored`, 'success');
@@ -3245,6 +3378,7 @@ async function dismissTransfer(row, learn) {
   try {
     const qs = learn ? '?learn=true' : '';
     await post(`/plaid/pending-imports/${row.id}/dismiss-as-transfer${qs}`, {});
+    trackManuallyDismissed(row, learn);
     removeTransferRow(row.id);
     if (learn) {
       showToast(`Future payments from ${merchantDisplayName(row)} will be automatically ignored`, 'success');

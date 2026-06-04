@@ -149,6 +149,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/pending-imports/{pendingImport}/confirm-split', [PlaidImportController::class, 'confirmSplit']);
         Route::post('/pending-imports/{pendingImport}/dismiss', [PlaidImportController::class, 'dismiss']);
         Route::post('/pending-imports/{pendingImport}/dismiss-as-transfer', [PlaidImportController::class, 'dismissAsTransfer']);
+        Route::post('/pending-imports/{pendingImport}/undo-dismiss', [PlaidImportController::class, 'undoDismiss']);
         Route::post('/pending-imports/{pendingImport}/approve-auto-created', [PlaidImportController::class, 'approveAutoCreated']);
         Route::post('/pending-imports/{pendingImport}/approve-auto-linked', [PlaidImportController::class, 'approveAutoLinked']);
         Route::post('/pending-imports/{pendingImport}/reject-auto-linked', [PlaidImportController::class, 'rejectAutoLinked']);
