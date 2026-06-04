@@ -62,7 +62,7 @@ money-tracker/
 │   ├── web.php                # All application routes (SPA views + JSON endpoints)
 │   └── console.php            # Artisan `inspire`; optional commented `Schedule` for `plaid:daily-sync` when enabled
 ├── tests/
-│   ├── Feature/               # 19 PHPUnit feature classes (see `tests/Feature/`; includes `PlaidIntegrationTest`, `PlaidImportTest`, `PlaidMatchingServiceTest`, `PlaidCalibrationServiceTest`)
+│   ├── Feature/               # 20+ PHPUnit feature classes (see `tests/Feature/`; includes `PlaidIntegrationTest`, `PlaidImportTest`, `PlaidMatchingServiceTest`, `PlaidCalibrationServiceTest`, `PlaidSweepMatchTest`)
 │   └── Unit/                  # ExampleTest stub
 ├── config/                    # Standard Laravel config files + fortify.php + plaid.php
 ├── Caddyfile                  # FrankenPHP/Caddy runtime config (binds to `$PORT`, serves `/app/public`)

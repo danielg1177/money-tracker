@@ -143,6 +143,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/pending-imports', [PlaidImportController::class, 'index']);
         Route::get('/pending-imports/{pendingImport}/ledger-candidates', [PlaidImportController::class, 'ledgerLinkCandidates']);
         Route::post('/pending-imports/{pendingImport}/link', [PlaidImportController::class, 'linkToLedger']);
+        Route::get('/pending-imports/{pendingImport}/sweep-candidates', [PlaidImportController::class, 'sweepCandidates']);
+        Route::post('/pending-imports/{pendingImport}/link-to-sweep', [PlaidImportController::class, 'linkToSweep']);
         Route::post('/pending-imports/{pendingImport}/confirm', [PlaidImportController::class, 'confirm']);
         Route::post('/pending-imports/{pendingImport}/confirm-split', [PlaidImportController::class, 'confirmSplit']);
         Route::post('/pending-imports/{pendingImport}/dismiss', [PlaidImportController::class, 'dismiss']);

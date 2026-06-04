@@ -58,6 +58,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_05_17_115724_create_transaction_repayment_links_and_repayment_columns` | Creates `transaction_repayment_links`; adds `is_repayment`, `is_repaid`, `is_repayment_mirror` to `transactions` |
 | `2026_06_02_021010_add_is_external_repayment_to_transaction_repayment_links_table` | Adds `is_external_repayment` boolean (default false) to `transaction_repayment_links` |
 | `2026_06_04_170306_add_ledger_match_columns_to_plaid_pending_imports` | Adds `suggested_ledger_match_id` (nullable FK → `transactions.id`, null on delete) and `ledger_match_score` decimal(5,4) nullable after `transaction_id` |
+| `2026_06_04_175148_add_sweep_match_columns_to_fund_movements_and_plaid_pending_imports` | Adds sweep-match columns on `fund_movements` (`plaid_pending_import_id`, `plaid_transaction_id`) and `plaid_pending_imports` (`suggested_sweep_match_id`, `sweep_match_score`, `fund_movement_id`) |
 
 ## Table schemas
 
@@ -223,6 +224,8 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `amount` | decimal(15,2) | |
 | `description` | text nullable | |
 | `transaction_id` | bigint FK nullable | → `transactions.id` |
+| `plaid_pending_import_id` | bigint FK nullable | → `plaid_pending_imports.id` (`nullOnDelete`); set when user confirms sweep match via `link-to-sweep` |
+| `plaid_transaction_id` | varchar nullable | Plaid transaction id from the linked import (no unique constraint) |
 | `timestamps` | | |
 
 ### `closeout_title_savings`
@@ -278,6 +281,9 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `transaction_id` | bigint FK nullable | → `transactions.id`; set when confirmed or auto-created |
 | `suggested_ledger_match_id` | bigint FK nullable | → `transactions.id`; best ledger-match candidate from sync (not yet linked) |
 | `ledger_match_score` | decimal(5,4) nullable | Score for `suggested_ledger_match_id` (0.0–1.0) |
+| `suggested_sweep_match_id` | bigint FK nullable | → `fund_movements.id` (`nullOnDelete`); best `savings_sweep` candidate from sync (advisory — user must confirm) |
+| `sweep_match_score` | decimal(5,4) nullable | Score for `suggested_sweep_match_id` (0.0–1.0) |
+| `fund_movement_id` | bigint FK nullable | → `fund_movements.id` (`nullOnDelete`); set when user confirms sweep match via `link-to-sweep` |
 | `raw_payload` | json nullable | Full Plaid transaction payload |
 | `is_transfer` | boolean | default false; true when Plaid classified as transfer |
 | `plaid_category_primary` | varchar nullable | Plaid PFC primary category |
@@ -317,7 +323,9 @@ families ──< users ──< funds ──< fund_rules
                 ├──< transactions ──< transaction_splits
                 │                 └──< debts (transaction_id)
                 │                 └──< plaid_pending_imports (transaction_id)
+                │                 └──< plaid_pending_imports (fund_movement_id / suggested_sweep_match_id → fund_movements)
                 └──< plaid_items ──< plaid_pending_imports
+fund_movements.plaid_pending_import_id → plaid_pending_imports (sweep link)
 users ──< plaid_merchant_rules
 debts: debtor_id → users, creditor_id → users (nullable)
 ```

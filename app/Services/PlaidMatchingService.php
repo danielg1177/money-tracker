@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\FundMovement;
 use App\Models\PlaidMerchantRule;
 use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
@@ -175,6 +176,66 @@ class PlaidMatchingService
         }
 
         return null;
+    }
+
+    /**
+     * Find an unlinked savings_sweep fund movement that plausibly matches a pending Plaid import.
+     *
+     * @return array{fund_movement: FundMovement, score: float}|null
+     */
+    public function findSweepMatchWithScore(PlaidPendingImport $import): ?array
+    {
+        $import->loadMissing(['user', 'plaidItem.user']);
+
+        $familyId = $import->user?->family_id ?? $import->plaidItem?->user?->family_id;
+        if ($familyId === null) {
+            return null;
+        }
+
+        $absAmount = abs((float) $import->amount);
+
+        $importDay = $import->date instanceof CarbonInterface
+            ? $import->date->copy()->startOfDay()
+            : Carbon::parse((string) $import->date)->startOfDay();
+
+        $fundMovement = FundMovement::query()
+            ->where('type', 'savings_sweep')
+            ->whereNull('plaid_pending_import_id')
+            ->whereBetween('amount', [$absAmount - 0.01, $absAmount + 0.01])
+            ->whereBetween('created_at', [
+                $importDay->copy()->subDays(7)->startOfDay(),
+                $importDay->copy()->addDays(7)->endOfDay(),
+            ])
+            ->whereHas('fund', fn ($query) => $query->where('family_id', $familyId))
+            ->orderBy('created_at')
+            ->first();
+
+        if ($fundMovement === null) {
+            return null;
+        }
+
+        $score = 0.80;
+
+        if (round((float) $fundMovement->amount, 2) === round($absAmount, 2)) {
+            $score += 0.15;
+        }
+
+        $movementDay = $fundMovement->created_at instanceof CarbonInterface
+            ? $fundMovement->created_at->copy()->startOfDay()
+            : Carbon::parse((string) $fundMovement->created_at)->startOfDay();
+
+        $dayDiff = (int) $importDay->diffInDays($movementDay, absolute: true);
+
+        if ($dayDiff === 0) {
+            $score += 0.05;
+        } elseif ($dayDiff <= 2) {
+            $score += 0.02;
+        }
+
+        return [
+            'fund_movement' => $fundMovement,
+            'score' => min(1.0, $score),
+        ];
     }
 
     public function normalizeMerchantKey(string $name): string

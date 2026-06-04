@@ -16,6 +16,8 @@ class FundMovement extends Model
         'type',
         'amount',
         'transaction_id',
+        'plaid_pending_import_id',
+        'plaid_transaction_id',
         'description',
     ];
 
@@ -36,5 +38,10 @@ class FundMovement extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);
+    }
+
+    public function plaidPendingImport(): BelongsTo
+    {
+        return $this->belongsTo(PlaidPendingImport::class);
     }
 }

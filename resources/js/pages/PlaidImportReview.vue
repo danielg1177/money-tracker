@@ -220,6 +220,66 @@
               v-show="expandedId === row.id"
               class="space-y-3 border-t border-gray-700/80 px-4 pb-4 pt-3"
             >
+              <div
+                v-if="row.suggested_sweep_match_id && !showSweepPicker[row.id]"
+                class="mb-3 flex flex-col gap-3 rounded-lg border border-emerald-700/30 bg-emerald-950/10 p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p class="text-sm font-medium text-emerald-200">Possible savings sweep match</p>
+                  <p v-if="row.sweep_match_score != null" class="text-xs text-emerald-400/80">
+                    Score: {{ Math.round(Number(row.sweep_match_score) * 100) }}%
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="min-h-[44px] shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                  :disabled="actionId === row.id"
+                  @click="openSweepPicker(row)"
+                >
+                  Match to Sweep
+                </button>
+              </div>
+
+              <div
+                v-if="showSweepPicker[row.id]"
+                class="mb-3 space-y-3 rounded-lg border border-gray-700 bg-gray-900/40 p-3"
+              >
+                <p class="text-sm font-semibold text-gray-200">Select matching sweep record</p>
+                <p v-if="!sweepCandidatesLoaded[row.id]" class="text-sm text-gray-400">Loading…</p>
+                <p v-else-if="!sweepCandidatesMap[row.id]?.length" class="text-sm text-gray-400">
+                  No sweep records found nearby.
+                </p>
+                <ul v-else class="space-y-2">
+                  <li
+                    v-for="sm in sweepCandidatesMap[row.id]"
+                    :key="sm.id"
+                    role="button"
+                    tabindex="0"
+                    class="flex min-h-[44px] cursor-pointer touch-manipulation items-center justify-between rounded-md border p-2 text-sm"
+                    :class="
+                      sweepSelectedId[row.id] === sm.id
+                        ? 'border-emerald-500 bg-emerald-950/30'
+                        : 'border-gray-700 hover:border-gray-600'
+                    "
+                    @click="sweepSelectedId[row.id] = sm.id"
+                    @keydown.enter.prevent="sweepSelectedId[row.id] = sm.id"
+                    @keydown.space.prevent="sweepSelectedId[row.id] = sm.id"
+                  >
+                    <span class="font-medium text-gray-100">{{ sm.fund_name }}</span>
+                    <span class="text-gray-400">{{ sm.date }} · {{ formatMoney(sm.amount) }}</span>
+                  </li>
+                </ul>
+                <button
+                  v-if="sweepSelectedId[row.id]"
+                  type="button"
+                  class="min-h-[48px] w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                  :disabled="actionId === row.id"
+                  @click="confirmSweepLink(row)"
+                >
+                  {{ actionId === row.id ? 'Linking…' : 'Confirm Sweep Match' }}
+                </button>
+              </div>
+
               <button
                 type="button"
                 class="flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors"
@@ -701,6 +761,14 @@
                   Dismiss
                 </button>
               </div>
+              <button
+                type="button"
+                class="min-h-[44px] text-xs text-emerald-400 underline hover:text-emerald-300 disabled:opacity-50"
+                :disabled="actionId === row.id"
+                @click="toggleSweepPicker(row)"
+              >
+                {{ showSweepPicker[row.id] ? 'Hide sweep picker' : 'Link to savings sweep' }}
+              </button>
               </template>
 
               <template v-if="isSplitMode(row)">
@@ -872,6 +940,76 @@
                 <span>{{ institutionName(row) }}</span>
               </template>
             </p>
+
+            <div
+              v-if="row.suggested_sweep_match_id && !showSweepPicker[row.id]"
+              class="mt-3 flex flex-col gap-3 rounded-lg border border-emerald-700/30 bg-emerald-950/10 p-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div>
+                <p class="text-sm font-medium text-emerald-200">Possible savings sweep match</p>
+                <p v-if="row.sweep_match_score != null" class="text-xs text-emerald-400/80">
+                  Score: {{ Math.round(Number(row.sweep_match_score) * 100) }}%
+                </p>
+              </div>
+              <button
+                type="button"
+                class="min-h-[44px] shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                :disabled="actionId === row.id"
+                @click="openSweepPicker(row)"
+              >
+                Match to Sweep
+              </button>
+            </div>
+
+            <div
+              v-if="showSweepPicker[row.id]"
+              class="mt-3 space-y-3 rounded-lg border border-gray-700 bg-gray-900/40 p-3"
+            >
+              <p class="text-sm font-semibold text-gray-200">Select matching sweep record</p>
+              <p v-if="!sweepCandidatesLoaded[row.id]" class="text-sm text-gray-400">Loading…</p>
+              <p v-else-if="!sweepCandidatesMap[row.id]?.length" class="text-sm text-gray-400">
+                No sweep records found nearby.
+              </p>
+              <ul v-else class="space-y-2">
+                <li
+                  v-for="sm in sweepCandidatesMap[row.id]"
+                  :key="'t-sweep-' + sm.id"
+                  role="button"
+                  tabindex="0"
+                  class="flex min-h-[44px] cursor-pointer touch-manipulation items-center justify-between rounded-md border p-2 text-sm"
+                  :class="
+                    sweepSelectedId[row.id] === sm.id
+                      ? 'border-emerald-500 bg-emerald-950/30'
+                      : 'border-gray-700 hover:border-gray-600'
+                  "
+                  @click="sweepSelectedId[row.id] = sm.id"
+                  @keydown.enter.prevent="sweepSelectedId[row.id] = sm.id"
+                  @keydown.space.prevent="sweepSelectedId[row.id] = sm.id"
+                >
+                  <span class="font-medium text-gray-100">{{ sm.fund_name }}</span>
+                  <span class="text-gray-400">{{ sm.date }} · {{ formatMoney(sm.amount) }}</span>
+                </li>
+              </ul>
+              <button
+                v-if="sweepSelectedId[row.id]"
+                type="button"
+                class="min-h-[48px] w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                :disabled="actionId === row.id"
+                @click="confirmSweepLink(row)"
+              >
+                {{ actionId === row.id ? 'Linking…' : 'Confirm Sweep Match' }}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              class="mt-2 min-h-[44px] text-xs text-emerald-400 underline hover:text-emerald-300 disabled:opacity-50"
+              :disabled="actionId === row.id"
+              @click="toggleSweepPicker(row)"
+            >
+              {{ showSweepPicker[row.id] ? 'Hide sweep picker' : 'Link to savings sweep' }}
+            </button>
+
             <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <button
                 type="button"
@@ -1473,6 +1611,10 @@ const linkCandidatesMap = reactive({});
 const linkCandidatesLoaded = reactive({});
 const linkSelectedId = reactive({});
 const loadingLinkCandidatesId = ref(null);
+const sweepCandidatesMap = reactive({});
+const sweepCandidatesLoaded = reactive({});
+const sweepSelectedId = reactive({});
+const showSweepPicker = reactive({});
 
 let toastTimer = null;
 
@@ -2000,6 +2142,7 @@ function removePendingRow(id) {
   delete linkCandidatesLoaded[id];
   delete linkSelectedId[id];
   delete splitModes[id];
+  clearSweepPickerState(id);
   if (expandedId.value === id) {
     expandedId.value = null;
   }
@@ -2464,6 +2607,26 @@ function removeTransferRow(id) {
   const i = transferImports.value.findIndex((r) => r.id === id);
   if (i !== -1) {
     transferImports.value.splice(i, 1);
+  }
+  clearSweepPickerState(id);
+}
+
+function clearSweepPickerState(id) {
+  delete sweepCandidatesMap[id];
+  delete sweepCandidatesLoaded[id];
+  delete sweepSelectedId[id];
+  delete showSweepPicker[id];
+}
+
+function openSweepPicker(row) {
+  showSweepPicker[row.id] = true;
+  void loadSweepCandidates(row);
+}
+
+function toggleSweepPicker(row) {
+  showSweepPicker[row.id] = !showSweepPicker[row.id];
+  if (showSweepPicker[row.id]) {
+    void loadSweepCandidates(row);
   }
 }
 
@@ -2964,6 +3127,55 @@ async function dismissRow(row) {
   } catch (err) {
     console.error(err);
     rowErrors[row.id] = err.response?.data?.message || 'Could not dismiss.';
+  } finally {
+    actionId.value = null;
+  }
+}
+
+async function loadSweepCandidates(row) {
+  if (sweepCandidatesLoaded[row.id]) {
+    return;
+  }
+  rowErrors[row.id] = '';
+  try {
+    const { data } = await window.axios.get(`/plaid/pending-imports/${row.id}/sweep-candidates`);
+    const list = Array.isArray(data) ? data : [];
+    sweepCandidatesMap[row.id] = list;
+    sweepCandidatesLoaded[row.id] = true;
+    if (!sweepSelectedId[row.id] && list.length === 1) {
+      sweepSelectedId[row.id] = list[0].id;
+    }
+    if (row.suggested_sweep_match_id && !sweepSelectedId[row.id]) {
+      const suggested = list.find((sm) => sm.id === row.suggested_sweep_match_id);
+      if (suggested) {
+        sweepSelectedId[row.id] = suggested.id;
+      }
+    }
+  } catch (err) {
+    console.error(err);
+    rowErrors[row.id] = err.response?.data?.message || 'Could not load sweep records.';
+    sweepCandidatesMap[row.id] = [];
+    sweepCandidatesLoaded[row.id] = true;
+  }
+}
+
+async function confirmSweepLink(row) {
+  const movementId = sweepSelectedId[row.id];
+  if (!movementId) {
+    return;
+  }
+  rowErrors[row.id] = '';
+  actionId.value = row.id;
+  try {
+    await post(`/plaid/pending-imports/${row.id}/link-to-sweep`, {
+      fund_movement_id: movementId,
+    });
+    removePendingRow(row.id);
+    removeTransferRow(row.id);
+    showToast('Linked to savings sweep.', 'success');
+  } catch (err) {
+    console.error(err);
+    rowErrors[row.id] = err.response?.data?.message || 'Could not link sweep.';
   } finally {
     actionId.value = null;
   }

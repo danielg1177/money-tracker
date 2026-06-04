@@ -9,6 +9,7 @@ use App\Http\Requests\LinkPlaidPendingImportRequest;
 use App\Http\Requests\RestoreDismissedImportRequest;
 use App\Http\Requests\StoreImportConfirmRequest;
 use App\Models\Category;
+use App\Models\FundMovement;
 use App\Models\PlaidItem;
 use App\Models\PlaidMerchantRule;
 use App\Models\PlaidPendingImport;
@@ -876,6 +877,90 @@ class PlaidImportController extends Controller
         return response()->json(
             $ledger->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund'])
         );
+    }
+
+    public function sweepCandidates(Request $request, PlaidPendingImport $pendingImport): JsonResponse
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        $pendingImport->loadMissing('user');
+        $familyId = $pendingImport->user?->family_id;
+        if ($familyId === null) {
+            return response()->json([]);
+        }
+
+        $absAmount = abs((float) $pendingImport->amount);
+        $date = Carbon::parse($pendingImport->date);
+
+        $movements = FundMovement::query()
+            ->whereHas('fund', fn ($query) => $query->where('family_id', $familyId))
+            ->where('type', 'savings_sweep')
+            ->whereNull('plaid_pending_import_id')
+            ->whereBetween('created_at', [
+                $date->copy()->subDays(60)->startOfDay(),
+                $date->copy()->addDays(60)->endOfDay(),
+            ])
+            ->orderByRaw('ABS(amount - ?)', [$absAmount])
+            ->limit(20)
+            ->with('fund')
+            ->get();
+
+        $payload = $movements->map(fn (FundMovement $movement): array => [
+            'id' => $movement->id,
+            'amount' => $movement->amount,
+            'description' => $movement->description,
+            'date' => $movement->created_at?->format('Y-m-d'),
+            'fund_name' => $movement->fund?->name,
+        ])->values()->all();
+
+        return response()->json($payload);
+    }
+
+    public function linkToSweep(Request $request, PlaidPendingImport $pendingImport): JsonResponse
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if (! in_array($pendingImport->status, ['pending', 'auto_linked'], true)) {
+            abort(422);
+        }
+
+        $validated = $request->validate([
+            'fund_movement_id' => 'required|integer|exists:fund_movements,id',
+        ]);
+
+        $fundMovement = FundMovement::query()->with('fund')->findOrFail($validated['fund_movement_id']);
+
+        if ($fundMovement->type !== 'savings_sweep') {
+            abort(422);
+        }
+
+        if ($fundMovement->plaid_pending_import_id !== null) {
+            abort(422, 'Already linked');
+        }
+
+        $pendingImport->loadMissing('user');
+        if ((int) $fundMovement->fund?->family_id !== (int) $pendingImport->user?->family_id) {
+            abort(403);
+        }
+
+        $fundMovement->update([
+            'plaid_transaction_id' => $pendingImport->plaid_transaction_id,
+            'plaid_pending_import_id' => $pendingImport->id,
+        ]);
+
+        $pendingImport->update([
+            'status' => 'confirmed',
+            'fund_movement_id' => $fundMovement->id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'fund_movement_id' => $fundMovement->id,
+        ]);
     }
 
     public function calibrationData(Request $request, PlaidItem $plaidItem): JsonResponse

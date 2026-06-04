@@ -343,6 +343,16 @@ class PlaidTransactionSyncService
             ])->save();
         }
 
+        if ($ledgerMatchResult === null) {
+            $sweepMatchResult = $this->matchingService->findSweepMatchWithScore($pending);
+            if ($sweepMatchResult !== null) {
+                $pending->forceFill([
+                    'suggested_sweep_match_id' => $sweepMatchResult['fund_movement']->id,
+                    'sweep_match_score' => $sweepMatchResult['score'],
+                ])->save();
+            }
+        }
+
         if ($ledgerMatch !== null && $ledgerMatchScore !== null && $ledgerMatchScore >= self::AUTO_LINK_SCORE_THRESHOLD) {
             try {
                 DB::transaction(function () use ($pending, $ledgerMatch, $plaidTransactionId): void {

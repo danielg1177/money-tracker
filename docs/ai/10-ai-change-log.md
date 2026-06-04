@@ -11,6 +11,23 @@ Format:
 
 ---
 
+## 2026-06-04 — Plaid sweep match (link bank debits to savings sweeps)
+
+- **Feature:** Match a Plaid-imported bank transaction to an existing `savings_sweep` `FundMovement` record, closing the loop between in-app sweeps and bank activity.
+- **Files touched:**
+  - `database/migrations/2026_06_04_175148_add_sweep_match_columns_to_fund_movements_and_plaid_pending_imports.php`
+  - `app/Models/FundMovement.php`, `app/Models/PlaidPendingImport.php`
+  - `app/Services/PlaidMatchingService.php` (`findSweepMatchWithScore`)
+  - `app/Services/PlaidTransactionSyncService.php` (sweep suggestion on sync when no ledger match)
+  - `app/Http/Controllers/PlaidImportController.php` (`sweepCandidates`, `linkToSweep`)
+  - `routes/web.php` (`GET/POST …/sweep-candidates`, `…/link-to-sweep`)
+  - `resources/js/pages/PlaidImportReview.vue` (emerald banner + picker on Review and Transfers tabs)
+  - `tests/Feature/PlaidSweepMatchTest.php`
+  - `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/08-api-routes.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/00-repo-overview.md`
+- **Behavioral impact:** Users can link a Plaid bank debit to an existing savings sweep instead of creating a duplicate transaction or dismissing. Sync stores `suggested_sweep_match_id` / `sweep_match_score` when a nearby unlinked sweep is found (no auto-link). Manual picker lists family-fund sweeps within ±60 days; confirm sets import `status=confirmed` and links both sides.
+
+---
+
 ## 2026-06-04 — Fix: Plaid import debt payment suggestion not pre-populated
 
 - **Bug fixed:** `processAddedRow` in `PlaidTransactionSyncService` was not storing

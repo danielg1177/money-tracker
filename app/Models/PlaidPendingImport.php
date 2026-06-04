@@ -31,6 +31,9 @@ class PlaidPendingImport extends Model
         'transaction_id',
         'suggested_ledger_match_id',
         'ledger_match_score',
+        'suggested_sweep_match_id',
+        'sweep_match_score',
+        'fund_movement_id',
         'raw_payload',
         'is_transfer',
         'plaid_category_primary',
@@ -53,6 +56,7 @@ class PlaidPendingImport extends Model
             'suggested_split_data' => 'array',
             'confidence_score' => 'decimal:4',
             'ledger_match_score' => 'decimal:4',
+            'sweep_match_score' => 'decimal:4',
             'is_transfer' => 'bool',
             'reviewed_at' => 'datetime',
         ];
@@ -76,6 +80,16 @@ class PlaidPendingImport extends Model
     public function suggestedLedgerMatch(): BelongsTo
     {
         return $this->belongsTo(Transaction::class, 'suggested_ledger_match_id');
+    }
+
+    public function suggestedSweepMatch(): BelongsTo
+    {
+        return $this->belongsTo(FundMovement::class, 'suggested_sweep_match_id');
+    }
+
+    public function fundMovement(): BelongsTo
+    {
+        return $this->belongsTo(FundMovement::class, 'fund_movement_id');
     }
 
     public function suggestedCategory(): BelongsTo

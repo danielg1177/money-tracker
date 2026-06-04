@@ -53,12 +53,13 @@
 ### PlaidPendingImport (`app/Models/PlaidPendingImport.php`)
 - Staging row for a Plaid transaction before ledger confirm; table `plaid_pending_imports` (see migration `2026_05_11_210000_add_plaid_import_infrastructure.php`).
 - `resolveRouteBinding` scopes `{pendingImport}` routes to `user_id` = authenticated user.
-- Casts: `amount` decimal:2, `date` date, `raw_payload` array, `suggested_is_non_necessity` bool, `suggested_is_debt_payment` bool, `suggested_split_data` array, `confidence_score` decimal:4, `ledger_match_score` decimal:4, `reviewed_at` datetime.
+- Casts: `amount` decimal:2, `date` date, `raw_payload` array, `suggested_is_non_necessity` bool, `suggested_is_debt_payment` bool, `suggested_split_data` array, `confidence_score` decimal:4, `ledger_match_score` decimal:4, `sweep_match_score` decimal:4, `reviewed_at` datetime.
 - `suggested_description` / `suggested_is_debt_payment` / `suggested_debt_id` / `suggested_split_data` — learned fields populated from `PlaidMerchantRule` at sync time; advisory (`suggested_debt_id` has no FK constraint).
 - `dismiss_source` — nullable varchar(16); `'auto'` when dismissed by a merchant rule during sync, `'manual'` when dismissed by the user via the UI (dismiss / always-ignore). Null on non-dismissed rows.
 - `reviewed_at` — nullable timestamp; set when a user reviews/audits an auto-dismissed entry so it stops appearing in the review queue.
 - `suggested_ledger_match_id` / `ledger_match_score` — populated during Plaid sync when a ledger auto-match is found; advisory until the user confirms or links.
-- Relations: `belongsTo(User)`, `belongsTo(PlaidItem)` as `plaidItem`, `belongsTo(Transaction)` as `transaction`, `belongsTo(Transaction, 'suggested_ledger_match_id')` as `suggestedLedgerMatch`.
+- `suggested_sweep_match_id` / `sweep_match_score` — populated during Plaid sync when an unlinked `savings_sweep` `FundMovement` is a near match; advisory only (no auto-link). `fund_movement_id` set when the user confirms via `link-to-sweep`.
+- Relations: `belongsTo(User)`, `belongsTo(PlaidItem)` as `plaidItem`, `belongsTo(Transaction)` as `transaction`, `belongsTo(Transaction, 'suggested_ledger_match_id')` as `suggestedLedgerMatch`, `belongsTo(FundMovement, 'suggested_sweep_match_id')` as `suggestedSweepMatch`, `belongsTo(FundMovement, 'fund_movement_id')` as `fundMovement`.
 - `scopePending` — `status = pending`. `isAutoCreateEligible()` always `false` (merchant rules gate auto-create).
 
 ### PlaidMerchantRule (`app/Models/PlaidMerchantRule.php`)
@@ -86,9 +87,9 @@
 - Relations: `belongsTo(User)`, `belongsTo(Fund)`
 
 ### FundMovement (`app/Models/FundMovement.php`)
-- Fields: `fund_id`, `user_id`, `type` (`allocation`|`borrow`|`repayment`|`initial_value`|`closeout_allocation`|`advance_settlement`|`savings_sweep`), `amount`, `transaction_id` (nullable), `description` (nullable)
+- Fields: `fund_id`, `user_id`, `type` (`allocation`|`borrow`|`repayment`|`initial_value`|`closeout_allocation`|`advance_settlement`|`savings_sweep`), `amount`, `transaction_id` (nullable), `plaid_pending_import_id` (nullable), `plaid_transaction_id` (nullable), `description` (nullable)
 - Audit ledger for every fund balance change
-- Relations: `belongsTo(Fund)`, `belongsTo(User)`, `belongsTo(Transaction)`
+- Relations: `belongsTo(Fund)`, `belongsTo(User)`, `belongsTo(Transaction)`, `belongsTo(PlaidPendingImport)` as `plaidPendingImport`
 
 | `type` | Balance effect | `Transaction` | Notes |
 |---|---|---|---|
@@ -203,6 +204,8 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `dismissAsTransfer(Request, PlaidPendingImport)` — `POST /plaid/pending-imports/{pendingImport}/dismiss-as-transfer`; owner-only (`auth()->id()`); pending only; sets `status=dismissed`; optional `?learn=true` calls `learnDismissRule` from `merchant_name` / `raw_name`; `204`. Works for **any** pending row (transfer-flagged or not) so users can dismiss card payments from **To Review** as well as the **Transfers** tab.
 - `ledgerLinkCandidates(Request, PlaidPendingImport)` — `GET …/ledger-candidates`; owner-only; non-transfer pending only; JSON candidate ledger rows for manual linking — **same `user_id` as the pending import** (see `PlaidMatchingService::findLedgerLinkCandidatesForPendingImport`).
 - `linkToLedger(LinkPlaidPendingImportRequest, PlaidPendingImport)` — `POST …/link`; owner-only; non-transfer pending; validates family `Transaction`, `canLinkPendingImportToLedger`, no duplicate `plaid_transaction_id` on another row; `learnFromConfirmation` + sets `plaid_transaction_id` / `import_source` on ledger; pending `confirmed`; **no** `ClosedMonthGuard` (allows linking Plaid ids onto historical closed-month rows).
+- `sweepCandidates(Request, PlaidPendingImport)` — `GET …/sweep-candidates`; owner-only; JSON array of up to 20 unlinked `savings_sweep` `FundMovement` rows for the import user’s family (`funds.family_id`), `created_at` within ±60 days of the import date, ordered by amount proximity (`ABS(amount - import.amount)`); each item `{ id, amount, description, date, fund_name }`; empty array when user has no `family_id`.
+- `linkToSweep(Request, PlaidPendingImport)` — `POST …/link-to-sweep`; owner-only; `status` must be `pending` or `auto_linked`; body `fund_movement_id` (required, exists); validates `savings_sweep` type, movement not already linked, fund in same family as import owner; sets `FundMovement.plaid_transaction_id` + `plaid_pending_import_id`, pending `status=confirmed` + `fund_movement_id`; returns `{ success, fund_movement_id }`.
 - `calibrationData(Request, PlaidItem)` — `GET /plaid/items/{plaidItem}/calibrate`; owner-only; `PlaidCalibrationService::buildCalibrationMatches` with ledger rows serialized to `{id, date, amount, description, type, fund_id, category}`.
 - `applyCalibration(ApplyPlaidCalibrationRequest, PlaidItem)` — `POST /plaid/items/{plaidItem}/calibrate`; `applyCalibrationResults`; JSON counts `{ confirmed_linked, imported_pending }`.
 - `syncAllMonths(Request)` — `POST /plaid/sync-month`; runs current-month sync for each auth user `PlaidItem`; aggregates `{ items_synced, pending_created, auto_created, failed_items }`; `502` when the user has linked items but every item failed.
@@ -258,6 +261,10 @@ When any ledger match exists, `findRepaymentGroupMatch` is skipped and merchant-
 
 Auto-linked items appear in the Auto tab (same queue as `auto_created`; `GET /plaid/pending-imports` uses `whereIn` on both statuses). New endpoints: `POST …/approve-auto-linked` (reinforce rule, `reviewed_at`), `POST …/reject-auto-linked` (clear Plaid fields on ledger, reset pending to Review).
 
+#### Sweep match (savings_sweep reconciliation)
+
+When **no** ledger match is found (`findLedgerMatchWithScore` returns null), `processAddedRow` calls `PlaidMatchingService::findSweepMatchWithScore` on the new `PlaidPendingImport` and stores `suggested_sweep_match_id` / `sweep_match_score` when an unlinked family-fund `savings_sweep` movement matches (±$0.01 amount, ±7 days on `created_at`). Sweep matches are **never** auto-linked — the user confirms in **Import Review** via `GET …/sweep-candidates` and `POST …/link-to-sweep`, which sets pending `status=confirmed` and links `FundMovement.plaid_pending_import_id` / `plaid_transaction_id`. `ingestPlaidRowsAsPending` uses the same `processAddedRow` path.
+
 - `fetchByDateRange(PlaidItem, startDate, endDate)` — paginated `POST /transactions/get` (`options.count` 500 + `offset`) until `total_transactions` is satisfied; returns merged `transactions` rows (calibration).
 - `ingestPlaidRowsAsPending(PlaidItem, rows)` — for each Plaid row array, reuses the same skip + `processAddedRow` path as sync **added**; returns `{ pending_created, auto_created }` (counts by resulting `PlaidPendingImport.status`).
 
@@ -269,6 +276,7 @@ Auto-linked items appear in the Auto tab (same queue as `auto_created`; `GET /pl
 - `findRepaymentGroupMatch(plaidRow, userId)` — for Plaid **expense** rows (positive amount), finds unlinked `is_repayment_mirror` expenses for that user within ±7 days whose per-`repayment_transaction_id` group sums to the Plaid amount (±$0.01); returns repayment id, mirror collection, and total.
 - `findLedgerMatch(plaidRow, familyId)` — same as `findLedgerMatchWithScore` but returns only the `Transaction` or null.
 - `findLedgerMatchWithScore(plaidRow, familyId)` — same matching rules and **≥ 0.3** threshold; returns `['transaction' => Transaction, 'score' => float]` or null (used by calibration). Candidate ledger rows: same `family_id`, `plaid_transaction_id` null, expected type from Plaid amount sign, `transaction_date` within ±1 day of the Plaid date, and `amount` within **±0.01** of the normalized ledger amount (`whereBetween`, equivalent to the prior `ABS(amount - x) < 0.01` intent; avoids SQLite/Laravel binding quirks with two adjacent `?` placeholders in `whereRaw`).
+- `findSweepMatchWithScore(PlaidPendingImport)` — finds the first unlinked `savings_sweep` `FundMovement` for the import owner’s family (`funds.family_id` = user `family_id`) with amount within ±$0.01 of `abs(import.amount)` and `created_at` within ±7 days of the import date; returns `['fund_movement' => FundMovement, 'score' => float]` or null. Score: base **0.80**, +**0.15** when amounts match to the cent, +**0.05** (same day) or +**0.02** (1–2 days) for date proximity, capped at **1.0**. Used during sync to populate sweep suggestions (advisory only; no auto-link).
 - `normalizeMerchantKey` — delegates to `PlaidMerchantRule::normalizeKey`.
 - `getSuggestion(plaidRow, userId)` — loads `PlaidMerchantRule` by normalized merchant; returns `category_id`, `type`, fund fields, `is_non_necessity`, `confidence_score` (`PlaidMerchantRule::confidenceScore`), `is_auto_eligible` (`false` when `action=dismiss`, otherwise `isAutoCreateEligible`), plus new learned fields `description`, `is_debt_payment`, `debt_id`, `split_data`; without a rule, returns nulls / false with `type` from Plaid sign (`>= 0` → expense, negative → income).
 - `recordConfirmation` / `recordSeen` — increment merchant-rule counters (`confirmation_count` + `total_seen_count`, or `total_seen_count` only).
