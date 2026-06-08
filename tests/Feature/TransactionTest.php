@@ -578,4 +578,149 @@ class TransactionTest extends TestCase
                 'split_default' => null,
             ]);
     }
+
+    public function test_regular_expense_can_be_converted_to_debt_payment_via_update(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $user->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 500.00,
+            'balance' => 500.00,
+            'is_pending_closeout' => false,
+        ]);
+
+        $transaction = Transaction::factory()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 100.00,
+            'description' => 'Regular expense',
+            'transaction_date' => now()->toDateString(),
+            'is_debt_payment' => false,
+            'debt_id' => null,
+        ]);
+
+        $this->actingAs($user)->putJson("/transactions/{$transaction->id}", [
+            'type' => 'expense',
+            'amount' => 100.00,
+            'description' => 'Debt payment',
+            'transaction_date' => now()->toDateString(),
+            'debt_id' => $debt->id,
+            'is_debt_payment' => true,
+            'is_split' => false,
+        ])->assertOk();
+
+        $transaction->refresh();
+        $this->assertTrue($transaction->is_debt_payment);
+        $this->assertSame($debt->id, $transaction->debt_id);
+
+        $debt->refresh();
+        $this->assertEqualsWithDelta(400.00, (float) $debt->balance, 0.01);
+    }
+
+    public function test_debt_payment_can_be_unlinked_from_debt(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $user->id,
+            'creditor_id' => null,
+            'amount' => 500.00,
+            'balance' => 400.00,
+            'is_pending_closeout' => false,
+        ]);
+
+        $transaction = Transaction::factory()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 100.00,
+            'description' => 'Debt payment',
+            'transaction_date' => now()->toDateString(),
+            'is_debt_payment' => true,
+            'debt_id' => $debt->id,
+        ]);
+
+        $this->actingAs($user)->putJson("/transactions/{$transaction->id}", [
+            'type' => 'expense',
+            'amount' => 100.00,
+            'description' => 'Regular expense',
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+        ])->assertOk();
+
+        $transaction->refresh();
+        $this->assertFalse($transaction->is_debt_payment);
+        $this->assertNull($transaction->debt_id);
+        $this->assertNull($transaction->paid_by_user_id);
+
+        $debt->refresh();
+        $this->assertEqualsWithDelta(500.00, (float) $debt->balance, 0.01);
+    }
+
+    public function test_debt_payment_unlink_also_deletes_mirror_income_transaction(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $user->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 500.00,
+            'balance' => 400.00,
+            'is_pending_closeout' => false,
+        ]);
+
+        $mirror = Transaction::factory()->create([
+            'family_id' => $family->id,
+            'user_id' => $creditor->id,
+            'type' => 'income',
+            'amount' => 100.00,
+            'description' => 'Debt repayment received',
+            'transaction_date' => now()->toDateString(),
+            'is_debt_payment' => true,
+            'debt_id' => $debt->id,
+        ]);
+
+        $transaction = Transaction::factory()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 100.00,
+            'description' => 'Debt payment',
+            'transaction_date' => now()->toDateString(),
+            'is_debt_payment' => true,
+            'debt_id' => $debt->id,
+            'mirror_transaction_id' => $mirror->id,
+        ]);
+
+        $mirror->forceFill(['mirror_transaction_id' => $transaction->id])->save();
+
+        $this->actingAs($user)->putJson("/transactions/{$transaction->id}", [
+            'type' => 'expense',
+            'amount' => 100.00,
+            'description' => 'Regular expense now',
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+        ])->assertOk();
+
+        $transaction->refresh();
+        $this->assertFalse($transaction->is_debt_payment);
+        $this->assertNull($transaction->debt_id);
+        $this->assertNull($transaction->mirror_transaction_id);
+
+        $this->assertDatabaseMissing('transactions', ['id' => $mirror->id]);
+
+        $debt->refresh();
+        $this->assertEqualsWithDelta(500.00, (float) $debt->balance, 0.01);
+    }
 }

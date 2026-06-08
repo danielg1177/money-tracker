@@ -291,6 +291,14 @@ class TransactionService
     public function updateTransaction(Transaction $transaction, array $data): Transaction
     {
         if ($transaction->is_debt_payment) {
+            if (empty($data['debt_id'])) {
+                return $this->unlinkDebtPaymentTransaction($transaction, $data);
+            }
+
+            return $this->updateDebtRepaymentTransaction($transaction, $data);
+        }
+
+        if (($data['type'] ?? null) === 'expense' && ! empty($data['debt_id'])) {
             return $this->updateDebtRepaymentTransaction($transaction, $data);
         }
 
@@ -387,7 +395,8 @@ class TransactionService
         return DB::transaction(function () use ($transaction, $data, $hasSplit, $splitData) {
             $existingMirror = $this->resolveMirrorPartner($transaction);
             $oldDebt = Debt::query()->lockForUpdate()->find($transaction->debt_id);
-            if (! $oldDebt) {
+
+            if (! $oldDebt && $transaction->is_debt_payment) {
                 throw new InvalidArgumentException('Original debt was not found.');
             }
 
@@ -399,7 +408,9 @@ class TransactionService
             $newAmount = round((float) ($data['amount'] ?? 0), 2);
             $oldAmount = round((float) $transaction->amount, 2);
 
-            $oldDebt->increment('balance', $oldAmount);
+            if ($oldDebt) {
+                $oldDebt->increment('balance', $oldAmount);
+            }
 
             if ($newAmount > round((float) $newDebt->balance, 2)) {
                 throw new InvalidArgumentException('Payment amount cannot exceed the remaining debt balance.');
@@ -409,6 +420,7 @@ class TransactionService
 
             $transaction->update([
                 'category_id' => $data['category_id'] ?? null,
+                'type' => 'expense',
                 'amount' => $newAmount,
                 'description' => ($data['description'] ?? null) ?: 'Debt payment',
                 'transaction_date' => $data['transaction_date'],
@@ -416,6 +428,8 @@ class TransactionService
                 'split_data' => $hasSplit ? $splitData : null,
                 'advance_fund_id' => null,
                 'debt_id' => $newDebt->id,
+                'is_debt_payment' => true,
+                'is_loan_receipt' => false,
                 'paid_by_user_id' => $transaction->user_id,
             ]);
 
@@ -710,5 +724,97 @@ class TransactionService
             Debt::query()->where('transaction_id', $row->id)->delete();
             $row->delete();
         }
+    }
+
+    /**
+     * Converts an expense debt-payment transaction back into a regular expense.
+     *
+     * Restores the debt balance, deletes the mirror income transaction (if any),
+     * and clears all debt-payment flags before applying the incoming field updates.
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws InvalidArgumentException When the transaction type is incompatible
+     */
+    private function unlinkDebtPaymentTransaction(Transaction $transaction, array $data): Transaction
+    {
+        if ($transaction->type !== 'expense') {
+            throw new InvalidArgumentException('Only expense debt payments can be unlinked from a debt.');
+        }
+
+        if (($data['type'] ?? null) !== 'expense') {
+            throw new InvalidArgumentException('A debt payment can only be unlinked while keeping the type as expense.');
+        }
+
+        $hasSplit = (bool) ($data['is_split'] ?? false);
+        $splitData = $hasSplit ? ($data['split_data'] ?? []) : [];
+        if ($hasSplit && ! SplitCalculator::validate($splitData)) {
+            throw new InvalidArgumentException('Split percentages must sum to 100%.');
+        }
+
+        return DB::transaction(function () use ($transaction, $data, $hasSplit, $splitData) {
+            $oldDebt = Debt::query()->lockForUpdate()->find($transaction->debt_id);
+            if ($oldDebt) {
+                $oldDebt->increment('balance', (float) $transaction->amount);
+            }
+
+            $mirror = $this->resolveMirrorPartner($transaction);
+            if ($mirror) {
+                $mirror->forceFill(['mirror_transaction_id' => null])->save();
+                $mirror->splits()->delete();
+                Debt::query()->where('transaction_id', $mirror->id)->delete();
+                $mirror->delete();
+            }
+            $transaction->forceFill(['mirror_transaction_id' => null])->save();
+
+            $newAmount = round((float) ($data['amount'] ?? 0), 2);
+
+            $transaction->update([
+                'category_id' => $data['category_id'] ?? null,
+                'type' => 'expense',
+                'amount' => $newAmount,
+                'description' => $data['description'] ?? null,
+                'transaction_date' => $data['transaction_date'],
+                'is_split' => $hasSplit,
+                'split_data' => $hasSplit ? $splitData : null,
+                'advance_fund_id' => $data['advance_fund_id'] ?? null,
+                'is_non_necessity' => ! empty($data['is_non_necessity']) && empty($hasSplit) && ! empty($data['advance_fund_id']),
+                'debt_id' => null,
+                'is_debt_payment' => false,
+                'is_loan_receipt' => false,
+                'paid_by_user_id' => null,
+            ]);
+
+            $transaction->splits()->delete();
+            Debt::query()->where('transaction_id', $transaction->id)->delete();
+
+            if ($hasSplit && ! empty($splitData)) {
+                $allocatedSplits = SplitCalculator::allocate($newAmount, $splitData);
+
+                foreach ($allocatedSplits as $split) {
+                    TransactionSplit::query()->create([
+                        'transaction_id' => $transaction->id,
+                        'user_id' => $split['user_id'],
+                        'share_percentage' => $split['share_percentage'],
+                        'amount' => $split['amount'],
+                    ]);
+
+                    if ((int) $split['user_id'] !== (int) $transaction->user_id) {
+                        Debt::query()->create([
+                            'family_id' => $transaction->family_id,
+                            'debtor_id' => $split['user_id'],
+                            'creditor_id' => $transaction->user_id,
+                            'transaction_id' => $transaction->id,
+                            'amount' => $split['amount'],
+                            'balance' => $split['amount'],
+                            'description' => "Split from transaction #{$transaction->id}",
+                            'is_pending_closeout' => true,
+                        ]);
+                    }
+                }
+            }
+
+            return $transaction->load(['splits', 'debt.creditor', 'debt.debtor', 'debt.fund']);
+        });
     }
 }

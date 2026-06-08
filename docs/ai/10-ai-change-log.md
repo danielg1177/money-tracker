@@ -11,6 +11,13 @@ Format:
 
 ---
 
+## 2026-06-08 — De-link debt payment: convert expense debt payment back to regular expense
+
+- **Files touched:** `app/Services/TransactionService.php`, `tests/Feature/TransactionTest.php`
+- **Behavioral impact:** `PUT /transactions/{id}` now supports removing the debt link from an existing expense debt payment. When `is_debt_payment=true` on the transaction but the submitted payload omits `debt_id` (or sends it as `null`), the new `unlinkDebtPaymentTransaction` path: (1) restores the old debt's balance, (2) deletes the mirror income transaction (if the debt had a creditor), and (3) clears `is_debt_payment`, `debt_id`, `is_loan_receipt`, and `paid_by_user_id`. Normal split/category/amount fields are then applied. The frontend "Pay toward a tracked debt" toggle was already unblocked for expense debt payments; no frontend change required. Two new tests cover simple de-linking and de-linking with mirror cleanup.
+
+---
+
 ## 2026-06-04 — Plaid import review: undo confirmed imports (Recent tab)
 
 - **Files touched:** `app/Http/Controllers/PlaidImportController.php`, `routes/web.php`, `resources/js/pages/PlaidImportReview.vue`, `tests/Feature/PlaidImportTest.php`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
