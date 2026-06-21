@@ -2,4 +2,4 @@
 phpExtensions = ["ctype", "curl", "dom", "fileinfo", "filter", "hash", "mbstring", "openssl", "pcre", "pdo", "pdo_mysql", "session", "tokenizer", "xml", "redis"]
 
 [deploy]
-preDeployCommand = "cp .env.example .env && php artisan migrate --force"
+preDeployCommand = "php artisan config:clear && cp .env.example .env && php artisan migrate --force"
