@@ -495,9 +495,15 @@
             </div>
 
             <div>
-              <label for="pay-amount" class="block text-sm font-medium text-gray-300 mb-2">
+              <label for="pay-amount" class="block text-sm font-medium text-gray-300 mb-1">
                 Amount to Pay
               </label>
+              <p
+                v-if="selectedDebt.creditor_id && !selectedDebt.is_family_debt"
+                class="text-xs text-gray-500 mb-2"
+              >
+                Paying more than the balance will reverse the debt to the other person.
+              </p>
               <div class="relative">
                 <span class="absolute left-4 top-2 text-gray-400">$</span>
                 <input
@@ -507,7 +513,6 @@
                   type="number"
                   step="0.01"
                   min="0"
-                  :max="selectedDebt.balance"
                   placeholder="0.00"
                   class="w-full pl-8 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
                 />

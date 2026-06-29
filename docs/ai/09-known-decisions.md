@@ -24,6 +24,12 @@ Each page fetches its own data on mount. `localStorage` is the only cross-compon
 ### Debt `balance` field is never auto-zeroed
 Paid debts (balance = 0) remain in the database permanently. There is no "paid" boolean or deletion on full payment. The UI is expected to filter or display them accordingly.
 
+### In-family debt overpayment is allowed at transaction validation
+`TransactionPayloadValidationRules` rejects payment amounts above the remaining `debt.balance` only for **external** debts (`creditor_id` is null). For **in-family** debts (`creditor_id` is a non-null user id), overpayment is permitted because paying more than the balance reverses the debt direction (the former creditor now owes the former debtor). External creditors and fund debts still enforce the balance cap at validation time.
+
+### In-family debt overpayment via Debts page Pay modal swings balance
+`DebtService::payDebt` (used by `POST /debts/pay`) enforces the balance cap only for external debts (`creditor_id` null). When an in-family payment exceeds the remaining balance, the original debt is zeroed and a **new** debt is created with swapped `debtor_id` / `creditor_id` for the overpayment amount (`description` prefixed with `Reversed from overpayment:`). The same swing logic applies in `TransactionService::createDebtRepaymentExpense` and `createDebtRepaymentReceivedIncome` (transaction form / Plaid confirm paths).
+
 ### Inter-family debt original amount is hidden on debt page
 For debts between two family members (`creditor_id` present), `resources/js/pages/Debts.vue` intentionally hides the **Original** amount on debt cards and in the payment-history summary line. The page emphasizes current remaining balance for these debts because split repayments can move amounts back and forth; full origin values still exist in debt history data (`initial_value` timeline entry).
 

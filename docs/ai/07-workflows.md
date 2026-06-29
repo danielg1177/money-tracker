@@ -61,7 +61,7 @@ Detailed step-by-step flows for the most complex operations in the app.
    - For family debts (`is_family_debt=true`): payer must be a family member
    - For personal debts: payer must be the debtor
    - Amount > 0
-   - Amount ≤ debt balance
+   - Amount ≤ debt balance **only for external debts** (`creditor_id` null); in-family overpayment is allowed
 8. `DB::transaction` begins:
    a. Creates an `expense` transaction for the debtor (tagged `is_debt_payment=true`)
       - Sets `debt_id` to the debt being paid
@@ -72,7 +72,7 @@ Detailed step-by-step flows for the most complex operations in the app.
       - Sets `debt_id` to the same debt
       - Sets `paid_by_user_id` to the payer
       - Sets `is_closeout_initiated=false` (manual payment)
-   c. Decrements `debt.balance` by payment amount
+   c. Updates balance: decrements by payment amount, **or** for in-family overpayment zeros the debt and creates a new swapped debtor/creditor debt for the excess
 9. Returns HTTP 200 `{ "message": "Debt payment recorded" }`
 
 **Note:** Debt records with `balance = 0` remain in the database — there is no auto-deletion or "paid" status flag.

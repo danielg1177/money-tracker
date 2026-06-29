@@ -11,6 +11,41 @@ Format:
 
 ---
 
+## 2026-06-29 — Tests: in-family debt overpayment swing
+
+- **Files touched:** `tests/Feature/DebtRepaymentTransactionTest.php`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** Four new feature tests cover `/debts/pay` and `POST /transactions` overpayment swing (reversed debt creation), exact-balance payment without swing, and external-debt overpayment rejection.
+
+---
+
+## 2026-06-29 — Debts Pay modal: allow in-family overpayment input
+
+- **Files touched:** `resources/js/pages/Debts.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** Pay Debt modal no longer sets `max` on the amount field. Inter-family debts show a helper hint that overpayment reverses the debt direction; `openPayModal` still pre-fills with remaining balance.
+
+---
+
+## 2026-06-29 — In-family debt overpayment swing in TransactionService
+
+- **Files touched:** `app/Services/TransactionService.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** `createDebtRepaymentExpense` (expense + `debt_id`) and `createDebtRepaymentReceivedIncome` (income + `is_debt_repayment_received`) now match `DebtService::payDebt` overpayment behavior: external debts still cap at remaining balance; in-family overpayment zeros the paid debt and creates a swapped debtor/creditor debt for the excess.
+
+---
+
+## 2026-06-29 — In-family debt overpayment swing in DebtService::payDebt
+
+- **Files touched:** `app/Services/DebtService.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** `POST /debts/pay` (Debts page Pay modal) no longer rejects overpayment for in-family debts (`creditor_id` non-null). When payment exceeds remaining balance, the original debt is zeroed and a new debt is created with swapped `debtor_id` / `creditor_id` for the overpayment amount. External debts still enforce the balance cap.
+
+---
+
+## 2026-06-29 — Allow in-family debt overpayment at transaction validation
+
+- **Files touched:** `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `docs/ai/06-feature-map.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** `StoreTransactionRequest` / `UpdateTransactionRequest` no longer reject payment amounts above remaining balance for **in-family** debts (`creditor_id` non-null) on expense `debt_id` payments or income `is_debt_repayment_received` flows. External debts (`creditor_id` null) still enforce the balance cap. Overpayment on in-family debts is intended to reverse debt direction.
+
+---
+
 ## 2026-06-08 — De-link debt payment: convert expense debt payment back to regular expense
 
 - **Files touched:** `app/Services/TransactionService.php`, `tests/Feature/TransactionTest.php`

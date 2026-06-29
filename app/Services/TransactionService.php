@@ -116,7 +116,7 @@ class TransactionService
 
             $amount = round((float) $data['amount'], 2);
 
-            if ($amount > round((float) $debt->balance, 2)) {
+            if ($debt->creditor_id === null && $amount > round((float) $debt->balance, 2)) {
                 throw new InvalidArgumentException('Payment amount cannot exceed the remaining debt balance.');
             }
 
@@ -192,7 +192,24 @@ class TransactionService
                 $creditorIncome->forceFill(['mirror_transaction_id' => $payerExpense->id])->save();
             }
 
-            $debt->decrement('balance', $amount);
+            $previousBalance = round((float) $debt->balance, 2);
+            $overpayment = round($amount - $previousBalance, 2);
+            if ($overpayment > 0 && $debt->creditor_id !== null) {
+                $debt->balance = '0.00';
+                $debt->save();
+                Debt::query()->create([
+                    'family_id' => $debt->family_id,
+                    'debtor_id' => $debt->creditor_id,
+                    'creditor_id' => $debt->debtor_id,
+                    'amount' => $overpayment,
+                    'balance' => $overpayment,
+                    'description' => 'Reversed from overpayment: '.((string) ($data['description'] ?? 'Debt payment')),
+                    'is_pending_closeout' => false,
+                    'is_family_debt' => false,
+                ]);
+            } else {
+                $debt->decrement('balance', $amount);
+            }
 
             return $payerExpense->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund']);
         });
@@ -228,7 +245,7 @@ class TransactionService
 
             $amount = round((float) $data['amount'], 2);
 
-            if ($amount > round((float) $debt->balance, 2)) {
+            if ($debt->creditor_id === null && $amount > round((float) $debt->balance, 2)) {
                 throw new InvalidArgumentException('Payment amount cannot exceed the remaining debt balance.');
             }
 
@@ -273,7 +290,24 @@ class TransactionService
             $creditorIncome->forceFill(['mirror_transaction_id' => $debtorExpense->id])->save();
             $debtorExpense->forceFill(['mirror_transaction_id' => $creditorIncome->id])->save();
 
-            $debt->decrement('balance', $amount);
+            $previousBalance = round((float) $debt->balance, 2);
+            $overpayment = round($amount - $previousBalance, 2);
+            if ($overpayment > 0 && $debt->creditor_id !== null) {
+                $debt->balance = '0.00';
+                $debt->save();
+                Debt::query()->create([
+                    'family_id' => $debt->family_id,
+                    'debtor_id' => $debt->creditor_id,
+                    'creditor_id' => $debt->debtor_id,
+                    'amount' => $overpayment,
+                    'balance' => $overpayment,
+                    'description' => 'Reversed from overpayment: '.($description ?: 'Debt repayment received'),
+                    'is_pending_closeout' => false,
+                    'is_family_debt' => false,
+                ]);
+            } else {
+                $debt->decrement('balance', $amount);
+            }
 
             return $creditorIncome->load(['user', 'category', 'debt.creditor', 'debt.debtor', 'debt.fund', 'mirrorTransaction']);
         });

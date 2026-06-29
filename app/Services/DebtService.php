@@ -54,7 +54,7 @@ class DebtService
             throw new InvalidArgumentException('Payment amount must be greater than 0.');
         }
 
-        if ($paymentAmount > $debt->balance) {
+        if ($debt->creditor_id === null && $paymentAmount > round((float) $debt->balance, 2)) {
             throw new InvalidArgumentException('Payment amount cannot exceed the remaining debt balance.');
         }
 
@@ -126,8 +126,24 @@ class DebtService
                 ]);
             }
 
-            $debt->balance -= $paymentAmount;
-            $debt->save();
+            $previousBalance = round((float) $debt->balance, 2);
+            $overpayment = round($paymentAmount - $previousBalance, 2);
+            if ($overpayment > 0 && $debt->creditor_id !== null) {
+                $debt->balance = '0.00';
+                $debt->save();
+                Debt::create([
+                    'family_id' => $debt->family_id,
+                    'debtor_id' => $debt->creditor_id,
+                    'creditor_id' => $debt->debtor_id,
+                    'amount' => $overpayment,
+                    'balance' => $overpayment,
+                    'description' => 'Reversed from overpayment: '.($description ?: 'Debt payment'),
+                    'is_pending_closeout' => false,
+                    'is_family_debt' => false,
+                ]);
+            } else {
+                $debt->decrement('balance', $paymentAmount);
+            }
 
             if ($creditorIncome) {
                 $payerTransaction->forceFill(['mirror_transaction_id' => $creditorIncome->id])->save();

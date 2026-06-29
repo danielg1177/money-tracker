@@ -357,4 +357,153 @@ class DebtRepaymentTransactionTest extends TestCase
         $this->assertSame('2026-05-16', $income->transaction_date->format('Y-m-d'));
         $this->assertSame(25.0, (float) $income->amount);
     }
+
+    public function test_overpayment_via_pay_debt_endpoint_swings_debt_to_reversed_direction(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 100.00,
+            'balance' => 100.00,
+            'is_pending_closeout' => false,
+        ]);
+
+        $this->actingAs($debtor)->postJson('/debts/pay', [
+            'debt_id' => $debt->id,
+            'amount' => 150.00,
+            'description' => 'Overpayment test',
+            'transaction_date' => '2026-06-01',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('debts', [
+            'id' => $debt->id,
+            'balance' => '0.00',
+        ]);
+
+        $this->assertDatabaseHas('debts', [
+            'family_id' => $family->id,
+            'debtor_id' => $creditor->id,
+            'creditor_id' => $debtor->id,
+            'amount' => '50.00',
+            'balance' => '50.00',
+            'is_pending_closeout' => 0,
+            'is_family_debt' => 0,
+        ]);
+
+        $expense = Transaction::query()
+            ->where('user_id', $debtor->id)
+            ->where('type', 'expense')
+            ->where('is_debt_payment', true)
+            ->sole();
+        $this->assertSame('150.00', $expense->amount);
+
+        $income = Transaction::query()
+            ->where('user_id', $creditor->id)
+            ->where('type', 'income')
+            ->where('is_debt_payment', true)
+            ->sole();
+        $this->assertSame('150.00', $income->amount);
+    }
+
+    public function test_exact_balance_payment_zeroes_debt_without_creating_reversed_debt(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 80.00,
+            'balance' => 80.00,
+            'is_pending_closeout' => false,
+        ]);
+
+        $this->actingAs($debtor)->postJson('/debts/pay', [
+            'debt_id' => $debt->id,
+            'amount' => 80.00,
+            'description' => 'Full payment',
+            'transaction_date' => '2026-06-01',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('debts', [
+            'id' => $debt->id,
+            'balance' => '0.00',
+        ]);
+
+        $this->assertDatabaseCount('debts', 1);
+    }
+
+    public function test_overpayment_on_external_debt_is_rejected(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => null,
+            'creditor_name' => 'Bank',
+            'amount' => 100.00,
+            'balance' => 100.00,
+            'is_pending_closeout' => false,
+        ]);
+
+        $this->actingAs($debtor)->postJson('/debts/pay', [
+            'debt_id' => $debt->id,
+            'amount' => 150.00,
+            'description' => 'Overpay external',
+            'transaction_date' => '2026-06-01',
+        ])->assertStatus(422);
+
+        $this->assertDatabaseHas('debts', [
+            'id' => $debt->id,
+            'balance' => '100.00',
+        ]);
+    }
+
+    public function test_overpayment_via_expense_transaction_with_debt_id_swings_debt(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 60.00,
+            'balance' => 60.00,
+            'is_pending_closeout' => false,
+        ]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->actingAs($debtor)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 100.00,
+            'category_id' => $category->id,
+            'transaction_date' => '2026-06-01',
+            'debt_id' => $debt->id,
+            'description' => 'Overpay via transaction form',
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('debts', [
+            'id' => $debt->id,
+            'balance' => '0.00',
+        ]);
+
+        $this->assertDatabaseHas('debts', [
+            'family_id' => $family->id,
+            'debtor_id' => $creditor->id,
+            'creditor_id' => $debtor->id,
+            'amount' => '40.00',
+            'balance' => '40.00',
+        ]);
+    }
 }

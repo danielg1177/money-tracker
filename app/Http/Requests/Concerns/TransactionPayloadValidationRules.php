@@ -95,7 +95,7 @@ trait TransactionPayloadValidationRules
                             $validator->errors()->add($field('debt_id'), 'This debt is pending split closeout and cannot be paid this way.');
                         }
 
-                        if ($amount > round((float) $debt->balance, 2)) {
+                        if ($debt->creditor_id === null && $amount > round((float) $debt->balance, 2)) {
                             $validator->errors()->add($field('amount'), 'Payment amount cannot exceed the remaining debt balance.');
                         }
 
@@ -222,7 +222,7 @@ trait TransactionPayloadValidationRules
                             }
 
                             $amount = round((float) $value('amount', 0), 2);
-                            if ($amount > 0 && $amount > round((float) $debt->balance, 2)) {
+                            if ($debt->creditor_id === null && $amount > 0 && $amount > round((float) $debt->balance, 2)) {
                                 $validator->errors()->add($field('amount'), 'Payment amount cannot exceed the remaining debt balance.');
                             }
                         }
