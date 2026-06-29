@@ -82,7 +82,7 @@ These rows remain regular income (`is_debt_payment=false`) and continue to count
 
 **Totals / closeout:** User A’s repaid expenses and repayment income are excluded from remaining-basis math (`MonthCloseoutService`, `MonthSummaryController` `rule_preview.basis`). User B’s mirror expenses count normally toward B’s expenses.
 
-**Delete cascade:** Deleting repayment income runs `deleteRepaymentLinks` first (clears `is_repaid` on linked expenses, deletes mirror rows and pivot rows), then removes the income row.
+**Delete cascade:** Deleting repayment income runs `deleteRepaymentLinks` first (clears `is_repaid` on linked expenses, resets any `plaid_pending_imports` linked to mirror transactions to `pending` with `transaction_id` null, deletes mirror rows and pivot rows), then removes the income row.
 
 ---
 

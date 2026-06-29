@@ -1425,4 +1425,403 @@ class PlaidImportTest extends TestCase
         $this->assertSame($fund->id, $advanceTx->advance_fund_id);
         $this->assertSame($fund->id, $advanceTx->fund_id);
     }
+
+    public function test_split_link_candidates_returns_matching_transactions(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import] = $this->createPendingImportForUser($user, 'txn-split-cand-1');
+        $category = Category::factory()->create([
+            'family_id' => $user->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $matching = Transaction::query()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 42.50,
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+            'plaid_transaction_id' => null,
+            'plaid_pending_import_id' => null,
+            'is_closeout_initiated' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 100.00,
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+            'plaid_transaction_id' => null,
+            'plaid_pending_import_id' => null,
+            'is_closeout_initiated' => false,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->getJson("/plaid/pending-imports/{$import->id}/split-link-candidates?amount=42.5");
+
+        $response->assertOk();
+        $ids = collect($response->json('candidates'))->pluck('id')->all();
+        $this->assertSame([$matching->id], $ids);
+    }
+
+    public function test_split_link_candidates_excludes_already_linked_transactions(): void
+    {
+        $user = $this->familyUser();
+        ['import' => $import] = $this->createPendingImportForUser($user, 'txn-split-cand-2');
+        $category = Category::factory()->create([
+            'family_id' => $user->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $otherImport = PlaidPendingImport::query()->create([
+            'user_id' => $user->id,
+            'plaid_item_id' => $import->plaid_item_id,
+            'plaid_transaction_id' => 'txn-other-linked',
+            'plaid_account_id' => 'acc1',
+            'amount' => 42.5,
+            'date' => now()->toDateString(),
+            'merchant_name' => 'Other',
+            'raw_name' => 'OTHER',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'status' => 'confirmed',
+            'raw_payload' => [],
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 42.50,
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+            'plaid_transaction_id' => null,
+            'plaid_pending_import_id' => $otherImport->id,
+            'is_closeout_initiated' => false,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->getJson("/plaid/pending-imports/{$import->id}/split-link-candidates?amount=42.5");
+
+        $response->assertOk()
+            ->assertJsonPath('candidates', []);
+    }
+
+    public function test_confirm_split_with_link_to_existing_transaction(): void
+    {
+        $user = $this->familyUser();
+        $item = $this->createPlaidItem($user);
+        $category = Category::factory()->create([
+            'family_id' => $user->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $user->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-split-link-1',
+            'plaid_account_id' => 'acc1',
+            'amount' => 50.00,
+            'date' => now()->toDateString(),
+            'merchant_name' => 'Split link test',
+            'raw_name' => 'SPLIT LINK',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'status' => 'pending',
+            'raw_payload' => [],
+        ]);
+
+        $existingTx = Transaction::query()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 30.00,
+            'transaction_date' => now()->toDateString(),
+            'description' => 'Pre-entered expense',
+            'is_split' => false,
+            'plaid_transaction_id' => null,
+            'plaid_pending_import_id' => null,
+            'is_closeout_initiated' => false,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson("/plaid/pending-imports/{$import->id}/confirm-split", [
+                'lines' => [
+                    [
+                        'link_to_transaction_id' => $existingTx->id,
+                        'amount' => 30.00,
+                        'type' => 'expense',
+                    ],
+                    [
+                        'amount' => 20.00,
+                        'type' => 'expense',
+                        'category_id' => $category->id,
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('count', 2);
+
+        $existingTx->refresh();
+        $import->refresh();
+
+        $this->assertSame($import->id, $existingTx->plaid_pending_import_id);
+        $this->assertSame('confirmed', $import->status);
+
+        $newTx = Transaction::query()
+            ->where('plaid_pending_import_id', $import->id)
+            ->whereKeyNot($existingTx->id)
+            ->sole();
+
+        $this->assertSame(20.00, (float) $newTx->amount);
+    }
+
+    public function test_undo_confirm_on_split_import_deletes_all_created_transactions(): void
+    {
+        $user = $this->familyUser();
+        $item = $this->createPlaidItem($user);
+        $category = Category::factory()->create([
+            'family_id' => $user->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $user->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-split-undo-1',
+            'plaid_account_id' => 'acc1',
+            'amount' => 100.00,
+            'date' => now()->toDateString(),
+            'merchant_name' => 'Split undo',
+            'raw_name' => 'SPLIT UNDO',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'status' => 'confirmed',
+            'raw_payload' => [],
+        ]);
+
+        $importCreatedAt = $import->created_at;
+
+        $firstTx = Transaction::query()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 60.00,
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+            'plaid_pending_import_id' => $import->id,
+            'import_source' => 'plaid',
+            'plaid_transaction_id' => $import->plaid_transaction_id,
+        ]);
+        $firstTx->forceFill(['created_at' => $importCreatedAt->copy()->addSecond()])->save();
+
+        $secondTx = Transaction::query()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 40.00,
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+            'plaid_pending_import_id' => $import->id,
+            'import_source' => 'plaid',
+        ]);
+        $secondTx->forceFill(['created_at' => $importCreatedAt->copy()->addSeconds(2)])->save();
+
+        $import->forceFill(['transaction_id' => $firstTx->id])->save();
+
+        $this->actingAs($user)
+            ->postJson("/plaid/pending-imports/{$import->id}/undo-confirm", [])
+            ->assertOk();
+
+        $this->assertDatabaseMissing('transactions', ['id' => $firstTx->id]);
+        $this->assertDatabaseMissing('transactions', ['id' => $secondTx->id]);
+        $this->assertDatabaseHas('plaid_pending_imports', [
+            'id' => $import->id,
+            'status' => 'pending',
+            'transaction_id' => null,
+        ]);
+    }
+
+    public function test_undo_confirm_on_split_import_unlinks_pre_existing_transactions(): void
+    {
+        $user = $this->familyUser();
+        $item = $this->createPlaidItem($user);
+        $category = Category::factory()->create([
+            'family_id' => $user->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $user->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-split-undo-2',
+            'plaid_account_id' => 'acc1',
+            'amount' => 100.00,
+            'date' => now()->toDateString(),
+            'merchant_name' => 'Split undo link',
+            'raw_name' => 'SPLIT UNDO LINK',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'status' => 'confirmed',
+            'raw_payload' => [],
+        ]);
+
+        $importCreatedAt = $import->created_at;
+
+        $primaryTx = Transaction::query()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 60.00,
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+            'plaid_pending_import_id' => $import->id,
+            'import_source' => 'plaid',
+            'plaid_transaction_id' => $import->plaid_transaction_id,
+        ]);
+        $primaryTx->forceFill(['created_at' => $importCreatedAt->copy()->addSecond()])->save();
+
+        $preExistingTx = Transaction::query()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 40.00,
+            'transaction_date' => now()->toDateString(),
+            'description' => 'Pre-entered expense',
+            'is_split' => false,
+            'plaid_pending_import_id' => $import->id,
+            'import_source' => 'plaid',
+        ]);
+        $preExistingTx->forceFill(['created_at' => $importCreatedAt->copy()->subDay()])->save();
+
+        $import->forceFill(['transaction_id' => $primaryTx->id])->save();
+
+        $this->actingAs($user)
+            ->postJson("/plaid/pending-imports/{$import->id}/undo-confirm", [])
+            ->assertOk();
+
+        $this->assertDatabaseMissing('transactions', ['id' => $primaryTx->id]);
+        $this->assertDatabaseHas('transactions', [
+            'id' => $preExistingTx->id,
+            'plaid_pending_import_id' => null,
+            'import_source' => null,
+            'plaid_transaction_id' => null,
+        ]);
+        $this->assertDatabaseHas('plaid_pending_imports', [
+            'id' => $import->id,
+            'status' => 'pending',
+            'transaction_id' => null,
+        ]);
+    }
+
+    public function test_linked_transactions_returns_all_import_transactions(): void
+    {
+        $user = $this->familyUser();
+        $item = $this->createPlaidItem($user);
+        $category = Category::factory()->create([
+            'family_id' => $user->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $user->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-linked-list-1',
+            'plaid_account_id' => 'acc1',
+            'amount' => 50.00,
+            'date' => now()->toDateString(),
+            'merchant_name' => 'Linked list',
+            'raw_name' => 'LINKED LIST',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'status' => 'confirmed',
+            'raw_payload' => [],
+        ]);
+
+        $txA = Transaction::query()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 30.00,
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+            'plaid_pending_import_id' => $import->id,
+            'import_source' => 'plaid',
+        ]);
+
+        $txB = Transaction::query()->create([
+            'family_id' => $user->family_id,
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'amount' => 20.00,
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+            'plaid_pending_import_id' => $import->id,
+            'import_source' => 'plaid',
+        ]);
+
+        $response = $this->actingAs($user)
+            ->getJson("/plaid/pending-imports/{$import->id}/linked-transactions");
+
+        $response->assertOk()
+            ->assertJsonPath('import.id', $import->id)
+            ->assertJsonCount(2, 'transactions');
+
+        $ids = collect($response->json('transactions'))->pluck('id')->sort()->values()->all();
+        $this->assertSame([$txA->id, $txB->id], $ids);
+    }
+
+    public function test_linked_transactions_requires_ownership(): void
+    {
+        $userA = $this->familyUser();
+        $userB = User::factory()->create(['family_id' => $userA->family_id]);
+        $item = $this->createPlaidItem($userA);
+        $category = Category::factory()->create([
+            'family_id' => $userA->family_id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $userA->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-linked-owner-1',
+            'plaid_account_id' => 'acc1',
+            'amount' => 25.00,
+            'date' => now()->toDateString(),
+            'merchant_name' => 'Owner check',
+            'raw_name' => 'OWNER CHECK',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'status' => 'confirmed',
+            'raw_payload' => [],
+        ]);
+
+        $this->app->make('router')->bind('pendingImport', function (string $value): PlaidPendingImport {
+            return PlaidPendingImport::query()->whereKey($value)->firstOrFail();
+        });
+
+        $this->actingAs($userB)
+            ->getJson("/plaid/pending-imports/{$import->id}/linked-transactions")
+            ->assertForbidden();
+    }
 }

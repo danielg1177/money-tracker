@@ -850,6 +850,7 @@
                       placeholder="0.00"
                       class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-indigo-500 focus:outline-none disabled:opacity-50"
                       :disabled="actionId === row.id"
+                      @input="line.match_existing_mode && fetchSplitLinkCandidates(row, idx)"
                     />
                   </div>
 
@@ -873,7 +874,7 @@
                     </div>
                   </div>
 
-                  <div>
+                  <div v-if="!line.match_existing_mode">
                     <label class="mb-1 block text-xs font-medium text-gray-400">Category</label>
                     <select
                       v-model="line.category_id"
@@ -912,6 +913,8 @@
                     :payable-debts="payableDebts"
                     :income-attachable-debts="incomeAttachableDebts"
                     :receivable-debts="receivableDebts"
+                    :split-link-candidates="splitLinkCandidatesMap[`${row.id}-${idx}`] ?? []"
+                    @match-existing-changed="fetchSplitLinkCandidates(row, idx)"
                   />
                 </div>
 
@@ -1763,6 +1766,7 @@ const toast = ref({ message: '', variant: 'success' });
 const linkCandidatesMap = reactive({});
 const linkCandidatesLoaded = reactive({});
 const linkSelectedId = reactive({});
+const splitLinkCandidatesMap = reactive({});
 const loadingLinkCandidatesId = ref(null);
 const sweepCandidatesMap = reactive({});
 const sweepCandidatesLoaded = reactive({});
@@ -2336,6 +2340,8 @@ function makeSplitLine(amount = '') {
     repayment_links: [],
     is_debt_repayment_received: false,
     debt_repayment_received_id: null,
+    match_existing_mode: false,
+    link_to_transaction_id: null,
   };
 }
 
@@ -2409,6 +2415,8 @@ function setSplitLineType(line, type) {
     line.category_id = pool[0] ? String(pool[0].id) : '';
   }
   if (type === 'income') {
+    line.match_existing_mode = false;
+    line.link_to_transaction_id = null;
     line.pay_toward_debt = false;
     line.debt_id = null;
     line.is_split = false;
@@ -2536,7 +2544,37 @@ function splitLineAmount(line) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+async function fetchSplitLinkCandidates(row, lineIdx) {
+  const line = splitModes[row.id]?.lines?.[lineIdx];
+  if (!line || !line.match_existing_mode) {
+    return;
+  }
+  const amt = parseFloat(line.amount);
+  if (!amt || amt <= 0) {
+    return;
+  }
+  const key = `${row.id}-${lineIdx}`;
+  try {
+    const data = await get(
+      `/plaid/pending-imports/${row.id}/split-link-candidates?amount=${amt}`,
+    );
+    splitLinkCandidatesMap[key] = data.candidates ?? [];
+  } catch {
+    splitLinkCandidatesMap[key] = [];
+  }
+}
+
 function validateSplitLine(line) {
+  if (line.match_existing_mode) {
+    if (!line.link_to_transaction_id || line.link_to_transaction_id <= 0) {
+      return 'Select an existing transaction to link.';
+    }
+    if (!(parseFloat(line.amount) > 0)) {
+      return 'Enter a positive amount for this line.';
+    }
+
+    return '';
+  }
   if (line.type === 'expense' && line.pay_toward_debt) {
     if (!line.debt_id) {
       return 'Select which debt you are paying toward.';
@@ -2656,6 +2694,14 @@ function buildSplitLineRepaymentPayload(line) {
 }
 
 function buildSplitLinePayload(line) {
+  if (line.match_existing_mode && line.link_to_transaction_id) {
+    return {
+      link_to_transaction_id: Number(line.link_to_transaction_id),
+      amount: parseFloat(line.amount),
+      type: line.type || 'expense',
+    };
+  }
+
   const payTowardDebt = line.type === 'expense' && line.pay_toward_debt;
 
   return {
@@ -2719,7 +2765,14 @@ function splitLinesValid(row) {
     return false;
   }
   for (const line of sm.lines) {
-    if (!line.category_id || !(parseFloat(line.amount) > 0)) {
+    if (line.match_existing_mode) {
+      if (!line.link_to_transaction_id || line.link_to_transaction_id <= 0) {
+        return false;
+      }
+      if (!(parseFloat(line.amount) > 0)) {
+        return false;
+      }
+    } else if (!line.category_id || !(parseFloat(line.amount) > 0)) {
       return false;
     }
     if (validateSplitLine(line)) {
@@ -2745,7 +2798,7 @@ async function confirmSplitRow(row) {
     }
   }
   if (!splitLinesValid(row)) {
-    rowErrors[row.id] = 'Each line needs a category and a positive amount. All line amounts must sum to the total.';
+    rowErrors[row.id] = 'Each line needs a category and a positive amount, or an existing transaction when matching. All line amounts must sum to the total.';
 
     return;
   }

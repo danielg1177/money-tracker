@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use App\Models\TransactionRepaymentLink;
 use App\Models\User;
@@ -135,6 +136,13 @@ class TransactionRepaymentService
                     $mirror = $link->mirrorTransaction ?? Transaction::query()->find($link->mirror_transaction_id);
 
                     if ($mirror !== null) {
+                        PlaidPendingImport::query()
+                            ->where('transaction_id', $mirror->id)
+                            ->update([
+                                'status' => 'pending',
+                                'transaction_id' => null,
+                            ]);
+
                         $mirror->delete();
                     }
                 }

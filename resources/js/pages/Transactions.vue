@@ -285,39 +285,46 @@
                   <span class="text-[11px] sm:text-base text-gray-300 font-medium truncate min-w-0 flex-1 leading-tight">
                     {{ getTransactionCategoryLabel(transaction) }}
                   </span>
-                  <span
+                  <component
+                    :is="pill.onClick ? 'button' : 'span'"
                     v-for="pill in transactionKindPills(transaction)"
                     :key="pill.key"
+                    :type="pill.onClick ? 'button' : undefined"
                     :title="pill.title || undefined"
                     class="inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
                     :class="pill.classes"
+                    @click.stop="pill.onClick && openPillModal('debt', transaction)"
                   >
                     {{ pill.label }}
-                  </span>
+                  </component>
                   <span
                     v-if="transaction.is_repaid && transaction.repaid_by_link?.is_external_repayment"
                     class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
                   >
                     Reimbursed externally
                   </span>
-                  <span
-                    v-else-if="transaction.is_repaid"
-                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
+                  <button
+                    v-else-if="transaction.is_repaid && !transaction.repaid_by_link?.is_external_repayment"
+                    type="button"
+                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300 cursor-pointer hover:bg-cyan-800/50"
+                    @click.stop="openPillModal('repaid-by', transaction)"
                   >
                     Repaid by {{ transaction.repaid_by_link?.repaid_user?.name ?? 'family member' }}
-                  </span>
+                  </button>
                   <span
                     v-if="transaction.is_repayment && transaction.repayment_links?.[0]?.is_external_repayment"
                     class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
                   >
                     External reimbursement
                   </span>
-                  <span
+                  <button
                     v-else-if="transaction.is_repayment"
-                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
+                    type="button"
+                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300 cursor-pointer hover:bg-cyan-800/50"
+                    @click.stop="openPillModal('repayment-covered', transaction)"
                   >
                     Repayment received
-                  </span>
+                  </button>
                   <span
                     v-if="transaction.is_repayment_mirror"
                     class="inline-flex shrink-0 items-center rounded-md border border-amber-700/30 bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300"
@@ -329,9 +336,13 @@
                   {{ transaction.description }}
                 </p>
                 <div v-if="transaction.import_source === 'plaid' && transaction.plaid_pending_import?.plaid_item?.institution_name" class="mt-1 flex flex-wrap items-center gap-1.5">
-                  <span class="inline-flex items-center rounded-full border border-blue-800/40 bg-blue-950/30 px-2 py-0.5 text-xs text-blue-300">
-                    {{ transaction.plaid_pending_import.plaid_item.institution_name }}
-                  </span>
+                  <button
+                    type="button"
+                    class="inline-flex items-center rounded-full border border-blue-800/40 bg-blue-950/30 px-2 py-0.5 text-xs text-blue-300 hover:bg-blue-900/50 hover:border-blue-700/60 transition-colors cursor-pointer"
+                    @click.stop="openBankPillModal(transaction)"
+                  >
+                    🏦 {{ transaction.plaid_pending_import.plaid_item.institution_name }}
+                  </button>
                 </div>
                 <div v-if="transaction.user?.name" class="hidden sm:block text-xs text-gray-500 mt-1.5">
                   {{ transaction.user.name }}
@@ -534,6 +545,213 @@
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="pillModal"
+        class="fixed inset-0 z-[60] flex items-end justify-center sm:items-center p-0 sm:p-4"
+      >
+        <div class="absolute inset-0 bg-black/60" @click="closePillModal" />
+        <div
+          class="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-gray-700 bg-gray-900 shadow-xl sm:rounded-2xl"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div class="flex shrink-0 items-center justify-between border-b border-gray-800 px-4 py-3">
+            <h2 class="text-lg font-semibold text-white">
+              <template v-if="pillModal.type === 'debt'">Debt Details</template>
+              <template v-else-if="pillModal.type === 'repayment-covered'">Expenses Covered</template>
+              <template v-else-if="pillModal.type === 'repaid-by'">Repayment Details</template>
+            </h2>
+            <button type="button" class="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-white" @click="closePillModal">
+              <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="min-h-0 overflow-y-auto p-4 space-y-3">
+            <template v-if="pillModal.type === 'debt' && pillModal.transaction.debt">
+              <div class="rounded-lg border border-gray-700 bg-gray-800/80 p-3 space-y-2">
+                <div v-if="pillModal.transaction.debt.description" class="text-sm text-white font-medium">
+                  {{ pillModal.transaction.debt.description }}
+                </div>
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-400">Owed to</span>
+                  <span class="text-gray-200 font-medium">
+                    {{ pillModal.transaction.debt.creditor?.name
+                      || pillModal.transaction.debt.creditor_name
+                      || pillModal.transaction.debt.fund?.name
+                      || '—' }}
+                  </span>
+                </div>
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-400">Original amount</span>
+                  <span class="text-gray-200">{{ formatCurrency(Number(pillModal.transaction.debt.amount) || 0) }}</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-400">Remaining balance</span>
+                  <span class="text-gray-200">{{ formatCurrency(Number(pillModal.transaction.debt.balance) || 0) }}</span>
+                </div>
+                <span v-if="pillModal.transaction.debt.is_family_debt" class="inline-block rounded-full bg-blue-900/50 px-2 py-0.5 text-xs text-blue-300">
+                  Shared with family
+                </span>
+              </div>
+            </template>
+            <p v-else-if="pillModal.type === 'debt'" class="text-sm text-gray-400">No debt details available.</p>
+
+            <template v-if="pillModal.type === 'repayment-covered'">
+              <p class="text-sm text-gray-400">
+                This income repays expenses on behalf of
+                <span class="font-medium text-gray-200">
+                  {{ pillModal.transaction.repayment_links?.[0]?.repaid_user?.name ?? 'a family member' }}
+                </span>
+              </p>
+              <div
+                v-for="link in (pillModal.transaction.repayment_links ?? [])"
+                :key="link.repaid_transaction_id"
+                class="rounded-lg border border-gray-700 bg-gray-800/80 px-3 py-2.5 flex items-center justify-between gap-3"
+              >
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-gray-200">
+                    <span v-if="link.repaid_transaction?.category?.icon">{{ link.repaid_transaction.category.icon }} </span>
+                    {{ link.repaid_transaction?.category?.name || 'Uncategorized' }}
+                  </p>
+                  <p class="text-xs text-gray-400">{{ link.repaid_transaction?.transaction_date || '—' }}</p>
+                  <p v-if="link.repaid_transaction?.description" class="text-xs text-gray-500 truncate">
+                    {{ link.repaid_transaction.description }}
+                  </p>
+                </div>
+                <span class="shrink-0 font-semibold text-red-400 tabular-nums">
+                  −{{ formatCurrency(Number(link.amount) || 0) }}
+                </span>
+              </div>
+              <p v-if="!pillModal.transaction.repayment_links?.length" class="text-sm text-gray-400">
+                No linked expenses found.
+              </p>
+            </template>
+
+            <template v-if="pillModal.type === 'repaid-by'">
+              <div v-if="pillModal.transaction.repaid_by_link" class="rounded-lg border border-gray-700 bg-gray-800/80 p-3 space-y-2">
+                <p class="text-sm text-gray-400">
+                  Repaid by
+                  <span class="font-medium text-gray-200">
+                    {{ pillModal.transaction.repaid_by_link.repayment_transaction?.user?.name ?? 'family member' }}
+                  </span>
+                </p>
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-400">Date repaid</span>
+                  <span class="text-gray-200">{{ pillModal.transaction.repaid_by_link.repayment_transaction?.transaction_date || '—' }}</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-400">Amount</span>
+                  <span class="text-green-400 font-medium">+{{ formatCurrency(Number(pillModal.transaction.repaid_by_link.amount) || 0) }}</span>
+                </div>
+                <p v-if="pillModal.transaction.repaid_by_link.repayment_transaction?.description" class="text-xs text-gray-500">
+                  {{ pillModal.transaction.repaid_by_link.repayment_transaction.description }}
+                </p>
+              </div>
+              <p v-else class="text-sm text-gray-400">No repayment details available.</p>
+            </template>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="bankPillModal"
+        class="fixed inset-0 z-[60] flex items-end justify-center sm:items-center p-0 sm:p-4"
+      >
+        <div class="absolute inset-0 bg-black/60" @click="closeBankPillModal" />
+        <div
+          class="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-gray-700 bg-gray-900 shadow-xl sm:rounded-2xl"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div class="flex shrink-0 items-center justify-between border-b border-gray-800 px-4 py-3">
+            <h2 class="text-lg font-semibold text-white">Bank Import</h2>
+            <button type="button" class="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-white" @click="closeBankPillModal">
+              <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="min-h-0 overflow-y-auto p-4 space-y-4">
+            <div class="rounded-lg border border-gray-700 bg-gray-800/80 p-3 space-y-1.5">
+              <p class="text-sm font-semibold text-white">
+                🏦 {{ bankPillModal.transaction.plaid_pending_import?.plaid_item?.institution_name }}
+              </p>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-400">Import date</span>
+                <span class="text-gray-200">{{ bankPillModal.transaction.plaid_pending_import?.date || '—' }}</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-400">Import amount</span>
+                <span class="text-gray-200">{{ formatCurrency(Math.abs(Number(bankPillModal.transaction.plaid_pending_import?.amount) || 0)) }}</span>
+              </div>
+              <div v-if="bankPillModal.transaction.plaid_pending_import?.merchant_name" class="flex justify-between text-sm">
+                <span class="text-gray-400">Merchant</span>
+                <span class="text-gray-200 truncate ml-2 max-w-[55%]">{{ bankPillModal.transaction.plaid_pending_import.merchant_name }}</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-400">Status</span>
+                <span
+                  class="font-medium"
+                  :class="bankPillModal.transaction.plaid_pending_import?.status === 'confirmed' ? 'text-green-400' : 'text-yellow-400'"
+                >
+                  {{ bankPillModal.transaction.plaid_pending_import?.status || '—' }}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">
+                Linked transactions ({{ getSiblingTransactions(bankPillModal.transaction).length }})
+              </h3>
+              <div class="space-y-2">
+                <div
+                  v-for="sibling in getSiblingTransactions(bankPillModal.transaction)"
+                  :key="sibling.id"
+                  class="rounded-lg border border-gray-700 bg-gray-800/80 px-3 py-2 flex items-center justify-between gap-2"
+                >
+                  <div class="min-w-0">
+                    <p class="text-sm text-gray-200 font-medium truncate">
+                      <span v-if="sibling.category?.icon">{{ sibling.category.icon }} </span>
+                      {{ sibling.category?.name || (sibling.is_debt_payment ? 'Debt payment' : 'Uncategorized') }}
+                    </p>
+                    <p class="text-xs text-gray-400">{{ sibling.transaction_date }}</p>
+                  </div>
+                  <span
+                    class="shrink-0 font-semibold tabular-nums text-sm"
+                    :class="sibling.type === 'income' ? 'text-green-400' : 'text-red-400'"
+                  >
+                    {{ sibling.type === 'income' ? '+' : '−' }}{{ formatCurrency(Number(sibling.amount) || 0) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="bankPillModal.transaction.plaid_pending_import?.status === 'confirmed'">
+              <p v-if="bankPillUndoError" class="text-sm text-red-400 mb-2">{{ bankPillUndoError }}</p>
+              <button
+                type="button"
+                class="w-full rounded-xl border border-red-700/50 bg-red-900/20 px-4 py-3 text-sm font-semibold text-red-400 transition-colors hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="bankPillUndoing"
+                @click="handleUndoBankImport"
+              >
+                {{ bankPillUndoing ? 'Undoing…' : 'Undo Import — Return to Review Queue' }}
+              </button>
+              <p class="mt-1 text-center text-xs text-gray-500">
+                This will delete the linked transactions and put the bank import back in your review queue.
+              </p>
+            </div>
+            <p v-else class="text-center text-xs text-gray-500">
+              This import is not confirmed — manage it in Bank Connections → Import Review.
+            </p>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -563,6 +781,10 @@ const closeoutStatus = ref(null);
 const closedMonths = ref([]);
 const currentUser = ref(null);
 const splitDetailModalTransaction = ref(null);
+const pillModal = ref(null);
+const bankPillModal = ref(null);
+const bankPillUndoing = ref(false);
+const bankPillUndoError = ref('');
 /** Split IOUs from `GET /month-summary` (`member_balances`) for the selected calendar month only. */
 const monthSplitBalances = ref([]);
 const editReturnScrollY = ref(null);
@@ -990,14 +1212,14 @@ function transactionPayerDisplayLabel(transaction) {
  * Small attribute pills on each row (debt repayment, advance, non-necessity, borrow, closeout).
  * Split expenses use only the purple “Split: Total…” control beside the amount, not a title-row pill.
  * @param {object} tx
- * @returns {{ key: string, label: string, classes: string, title?: string }[]}
+ * @returns {{ key: string, label: string, classes: string, title?: string, onClick?: boolean }[]}
  */
 function transactionKindPills(tx) {
   if (!tx) {
     return [];
   }
 
-  /** @type {{ key: string, label: string, classes: string, title?: string }[]} */
+  /** @type {{ key: string, label: string, classes: string, title?: string, onClick?: boolean }[]} */
   const pills = [];
 
   if (tx.type === 'income' && tx.is_borrow) {
@@ -1032,7 +1254,8 @@ function transactionKindPills(tx) {
     pills.push({
       key: 'debt-payment',
       label: 'Debt payment',
-      classes: 'bg-sky-900/55 text-sky-200',
+      classes: 'bg-sky-900/55 text-sky-200 cursor-pointer hover:bg-sky-800/70',
+      onClick: true,
     });
   }
 
@@ -1040,7 +1263,8 @@ function transactionKindPills(tx) {
     pills.push({
       key: 'repayment',
       label: 'Repayment',
-      classes: 'bg-sky-900/55 text-sky-200',
+      classes: 'bg-sky-900/55 text-sky-200 cursor-pointer hover:bg-sky-800/70',
+      onClick: true,
     });
   }
 
@@ -1072,6 +1296,58 @@ function openSplitDetailModal(transaction) {
 
 function closeSplitDetailModal() {
   splitDetailModalTransaction.value = null;
+}
+
+function openPillModal(type, transaction) {
+  pillModal.value = { type, transaction };
+}
+
+function closePillModal() {
+  pillModal.value = null;
+}
+
+function getSiblingTransactions(transaction) {
+  const importId = transaction.plaid_pending_import?.id ?? transaction.plaid_pending_import_id;
+  if (!importId) {
+    return [transaction];
+  }
+
+  return transactions.value.filter(
+    (t) => t.plaid_pending_import?.id === importId || t.plaid_pending_import_id === importId,
+  );
+}
+
+function openBankPillModal(transaction) {
+  bankPillModal.value = { transaction };
+  bankPillUndoing.value = false;
+  bankPillUndoError.value = '';
+}
+
+function closeBankPillModal() {
+  bankPillModal.value = null;
+  bankPillUndoing.value = false;
+  bankPillUndoError.value = '';
+}
+
+async function handleUndoBankImport() {
+  if (!bankPillModal.value) {
+    return;
+  }
+  const importId = bankPillModal.value.transaction.plaid_pending_import?.id;
+  if (!importId) {
+    return;
+  }
+  bankPillUndoing.value = true;
+  bankPillUndoError.value = '';
+  try {
+    await post(`/plaid/pending-imports/${importId}/undo-confirm`, {});
+    closeBankPillModal();
+    await reloadCurrentFilterData();
+  } catch (err) {
+    bankPillUndoError.value = err.response?.data?.message || 'Could not undo this import. The month may be closed.';
+  } finally {
+    bankPillUndoing.value = false;
+  }
 }
 
 function splitsSortedForModal(transaction) {

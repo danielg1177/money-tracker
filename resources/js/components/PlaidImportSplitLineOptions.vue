@@ -130,7 +130,51 @@
     </div>
 
     <div v-if="line.type === 'expense'" class="space-y-2">
+      <!-- Match to existing transaction toggle -->
+      <div class="space-y-2">
+        <div
+          class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
+          role="button"
+          tabindex="0"
+          @click="!disabled && toggleMatchExisting()"
+          @keydown.enter.prevent="!disabled && toggleMatchExisting()"
+          @keydown.space.prevent="!disabled && toggleMatchExisting()"
+        >
+          <div>
+            <p class="text-sm font-medium text-gray-300">Match to existing transaction</p>
+            <p class="mt-0.5 text-xs text-gray-500">Link this bank entry to a transaction already in your books</p>
+          </div>
+          <div
+            class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"
+            :class="isMatchExistingMode ? 'bg-teal-600' : 'bg-gray-700'"
+          >
+            <div
+              class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+              :class="isMatchExistingMode ? 'translate-x-5' : 'translate-x-1'"
+            />
+          </div>
+        </div>
+        <div v-if="isMatchExistingMode" class="space-y-1">
+          <label class="block text-xs font-medium text-gray-400">Existing transaction</label>
+          <select
+            v-model.number="line.link_to_transaction_id"
+            class="min-h-[44px] w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-teal-500 focus:outline-none disabled:opacity-50"
+            :disabled="disabled"
+          >
+            <option :value="null" disabled>Select a transaction</option>
+            <option v-for="c in splitLinkCandidates" :key="c.id" :value="c.id">
+              {{ c.transaction_date }} — {{ c.category?.name || 'Uncategorized' }} — ${{ Number(c.amount).toFixed(2) }}
+              {{ c.description ? `— ${c.description}` : '' }}
+            </option>
+          </select>
+          <p v-if="splitLinkCandidates.length === 0" class="text-xs text-gray-500">
+            No matching transactions found for this amount.
+          </p>
+        </div>
+      </div>
+
       <div
+        v-if="!line.match_existing_mode"
         class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
         role="button"
         tabindex="0"
@@ -168,7 +212,7 @@
     </div>
 
     <div
-      v-if="line.type === 'expense'"
+      v-if="line.type === 'expense' && !line.match_existing_mode"
       class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
       role="button"
       tabindex="0"
@@ -191,7 +235,7 @@
       </div>
     </div>
 
-    <div v-if="line.type === 'expense' && line.is_split">
+    <div v-if="line.type === 'expense' && line.is_split && !line.match_existing_mode">
       <SplitEditor
         :family-users="familyUsers"
         :total-amount="splitEditorAmount"
@@ -200,7 +244,7 @@
       />
     </div>
 
-    <div v-if="line.type === 'expense' && !line.pay_toward_debt" class="space-y-2">
+    <div v-if="line.type === 'expense' && !line.pay_toward_debt && !line.match_existing_mode" class="space-y-2">
       <div
         class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
         role="button"
@@ -305,8 +349,15 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  splitLinkCandidates: {
+    type: Array,
+    default: () => [],
+  },
 });
 
+const emit = defineEmits(['match-existing-changed']);
+
+const isMatchExistingMode = computed(() => props.line.match_existing_mode === true);
 
 const splitEditorAmount = computed(() => {
   const parsed = parseFloat(props.line.amount);
@@ -394,6 +445,8 @@ function setIncomeDebtMode(mode) {
 function togglePayTowardDebt() {
   props.line.pay_toward_debt = !props.line.pay_toward_debt;
   if (props.line.pay_toward_debt) {
+    props.line.match_existing_mode = false;
+    props.line.link_to_transaction_id = null;
     props.line.advance_fund_id = null;
     props.line.is_non_necessity = false;
     const pd = props.payableDebts;
@@ -434,6 +487,23 @@ function onAdvanceFundChange() {
     props.line.is_non_necessity = false;
   } else if (!fundHasNonNecessityRule.value) {
     props.line.is_non_necessity = false;
+  }
+}
+
+function toggleMatchExisting() {
+  if (isMatchExistingMode.value) {
+    props.line.match_existing_mode = false;
+    props.line.link_to_transaction_id = null;
+  } else {
+    props.line.match_existing_mode = true;
+    props.line.pay_toward_debt = false;
+    props.line.debt_id = null;
+    props.line.is_split = false;
+    props.line.split_data = [];
+    props.line.advance_fund_id = null;
+    props.line.is_non_necessity = false;
+    props.line.link_to_transaction_id = null;
+    emit('match-existing-changed');
   }
 }
 </script>

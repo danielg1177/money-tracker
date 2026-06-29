@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Http\Requests\Concerns\TransactionPayloadValidationRules;
 use App\Models\PlaidPendingImport;
+use App\Models\Transaction;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -58,6 +59,21 @@ class ConfirmSplitImportRequest extends FormRequest
                     continue;
                 }
 
+                if (! empty($line['link_to_transaction_id'])) {
+                    if (! Transaction::query()->where('id', $line['link_to_transaction_id'])->exists()) {
+                        $v->errors()->add(
+                            "lines.{$index}.link_to_transaction_id",
+                            "Transaction #{$line['link_to_transaction_id']} does not exist."
+                        );
+                    }
+
+                    continue;
+                }
+
+                if (empty($line['category_id'])) {
+                    $v->errors()->add("lines.{$index}.category_id", 'Each line must have a category.');
+                }
+
                 $this->validateTransactionPayloadData($v, $line, "lines.{$index}");
             }
         });
@@ -74,8 +90,9 @@ class ConfirmSplitImportRequest extends FormRequest
             'lines' => ['required', 'array', 'min:2'],
             'lines.*.amount' => ['required', 'numeric', 'min:0.01'],
             'lines.*.type' => ['required', 'string', 'in:expense,income'],
+            'lines.*.link_to_transaction_id' => ['nullable', 'integer'],
             'lines.*.category_id' => [
-                'required',
+                'nullable',
                 'integer',
                 Rule::exists('categories', 'id')->where(
                     fn ($query) => $query->where('family_id', $user?->family_id ?? 0)
@@ -135,6 +152,14 @@ class ConfirmSplitImportRequest extends FormRequest
      */
     private function normalizeSplitLine(array $line): array
     {
+        if (! empty($line['link_to_transaction_id'])) {
+            return [
+                'link_to_transaction_id' => (int) $line['link_to_transaction_id'],
+                'amount' => $line['amount'],
+                'type' => $line['type'] ?? 'expense',
+            ];
+        }
+
         if (($line['type'] ?? '') === 'income') {
             $line['advance_fund_id'] = null;
             $line['is_split'] = false;

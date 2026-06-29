@@ -572,6 +572,21 @@ class PlaidImportController extends Controller
         $transactionDate = $pendingImport->date->format('Y-m-d');
 
         foreach ($lines as $line) {
+            $linkToId = isset($line['link_to_transaction_id']) ? (int) $line['link_to_transaction_id'] : null;
+
+            if ($linkToId !== null) {
+                $existingTx = Transaction::query()->find($linkToId);
+                if ($existingTx !== null) {
+                    try {
+                        $this->closedMonthGuard->assertTransactionMutationOpen($existingTx);
+                    } catch (InvalidArgumentException $e) {
+                        return response()->json(['message' => $e->getMessage()], 422);
+                    }
+                }
+
+                continue;
+            }
+
             $payload = $this->buildTransactionPayloadFromImportFields(
                 $line,
                 (float) $line['amount'],
@@ -586,52 +601,86 @@ class PlaidImportController extends Controller
             }
         }
 
-        $createdTransactions = DB::transaction(function () use ($lines, $pendingImport, $user, $transactionDate): array {
-            $created = [];
-            $isFirst = true;
+        try {
+            $createdTransactions = DB::transaction(function () use ($lines, $pendingImport, $user, $transactionDate): array {
+                $created = [];
+                $isFirst = true;
 
-            foreach ($lines as $line) {
-                $payload = $this->buildTransactionPayloadFromImportFields(
-                    $line,
-                    (float) $line['amount'],
-                    $transactionDate,
-                    $pendingImport,
-                );
+                foreach ($lines as $line) {
+                    $linkToId = isset($line['link_to_transaction_id']) ? (int) $line['link_to_transaction_id'] : null;
 
-                $transaction = $this->transactionService->createTransaction($payload, $user);
+                    if ($linkToId !== null) {
+                        $existingTx = Transaction::query()->whereKey($linkToId)->lockForUpdate()->first();
+                        if ($existingTx === null || (int) $existingTx->family_id !== (int) $user->family_id) {
+                            throw new InvalidArgumentException("Transaction #{$linkToId} not found in your family.");
+                        }
+                        if ((int) $existingTx->user_id !== (int) $user->id) {
+                            throw new InvalidArgumentException('You can only link to your own transactions.');
+                        }
+                        if ($existingTx->plaid_pending_import_id !== null) {
+                            throw new InvalidArgumentException("Transaction #{$linkToId} is already linked to a Plaid import.");
+                        }
 
-                $resolvedTagFundId = $this->resolvedTagFundIdFromImportFields($line);
+                        $overrides = [
+                            'plaid_pending_import_id' => $pendingImport->id,
+                            'import_source' => 'plaid',
+                        ];
 
-                $overrides = [
-                    'plaid_pending_import_id' => $pendingImport->id,
-                    'import_source' => 'plaid',
-                ];
+                        if ($isFirst) {
+                            $overrides['plaid_transaction_id'] = $pendingImport->plaid_transaction_id;
+                            $isFirst = false;
+                        }
 
-                if ($resolvedTagFundId !== null) {
-                    $overrides['fund_id'] = $resolvedTagFundId;
+                        $existingTx->forceFill($overrides)->save();
+                        $created[] = $existingTx;
+
+                        continue;
+                    }
+
+                    $payload = $this->buildTransactionPayloadFromImportFields(
+                        $line,
+                        (float) $line['amount'],
+                        $transactionDate,
+                        $pendingImport,
+                    );
+
+                    $transaction = $this->transactionService->createTransaction($payload, $user);
+
+                    $resolvedTagFundId = $this->resolvedTagFundIdFromImportFields($line);
+
+                    $overrides = [
+                        'plaid_pending_import_id' => $pendingImport->id,
+                        'import_source' => 'plaid',
+                    ];
+
+                    if ($resolvedTagFundId !== null) {
+                        $overrides['fund_id'] = $resolvedTagFundId;
+                    }
+
+                    if ($isFirst) {
+                        $overrides['plaid_transaction_id'] = $pendingImport->plaid_transaction_id;
+                        $isFirst = false;
+                    }
+
+                    $transaction->forceFill($overrides)->save();
+
+                    if (! empty($line['is_repayment_mode']) || ! empty($line['is_external_repayment_mode'])) {
+                        $this->repaymentService->handleRepaymentForTransaction($transaction, $line);
+                    }
+
+                    $created[] = $transaction;
                 }
 
-                if ($isFirst) {
-                    $overrides['plaid_transaction_id'] = $pendingImport->plaid_transaction_id;
-                    $isFirst = false;
-                }
+                $pendingImport->forceFill([
+                    'status' => 'confirmed',
+                    'transaction_id' => $created[0]->id,
+                ])->save();
 
-                $transaction->forceFill($overrides)->save();
-
-                if (! empty($line['is_repayment_mode']) || ! empty($line['is_external_repayment_mode'])) {
-                    $this->repaymentService->handleRepaymentForTransaction($transaction, $line);
-                }
-
-                $created[] = $transaction;
-            }
-
-            $pendingImport->forceFill([
-                'status' => 'confirmed',
-                'transaction_id' => $created[0]->id,
-            ])->save();
-
-            return $created;
-        });
+                return $created;
+            });
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json([
             'count' => count($createdTransactions),
@@ -814,7 +863,10 @@ class PlaidImportController extends Controller
             return response()->json(['message' => 'No linked transaction found.'], 422);
         }
 
-        $user = $request->user();
+        $secondaryTransactions = Transaction::query()
+            ->where('plaid_pending_import_id', $pendingImport->id)
+            ->where('id', '!=', $transaction->id)
+            ->get();
 
         try {
             $this->closedMonthGuard->assertTransactionMutationOpen($transaction);
@@ -822,9 +874,31 @@ class PlaidImportController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        DB::transaction(function () use ($pendingImport, $transaction): void {
+        foreach ($secondaryTransactions as $secondary) {
+            try {
+                $this->closedMonthGuard->assertTransactionMutationOpen($secondary);
+            } catch (InvalidArgumentException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+        }
+
+        DB::transaction(function () use ($pendingImport, $transaction, $secondaryTransactions): void {
             $this->repaymentService->deleteRepaymentLinks($transaction);
             $this->transactionService->deleteTransaction($transaction);
+
+            foreach ($secondaryTransactions as $secondary) {
+                if ($secondary->created_at >= $pendingImport->created_at) {
+                    $this->repaymentService->deleteRepaymentLinks($secondary);
+                    $this->transactionService->deleteTransaction($secondary);
+                } else {
+                    $secondary->forceFill([
+                        'plaid_transaction_id' => null,
+                        'import_source' => null,
+                        'plaid_pending_import_id' => null,
+                    ])->save();
+                }
+            }
+
             $pendingImport->forceFill([
                 'status' => 'pending',
                 'transaction_id' => null,
@@ -834,6 +908,45 @@ class PlaidImportController extends Controller
         return response()->json([
             'success' => true,
             'pending_import' => $pendingImport->fresh(),
+        ]);
+    }
+
+    public function linkedTransactions(Request $request, PlaidPendingImport $pendingImport): JsonResponse
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        $transactions = Transaction::query()
+            ->where('plaid_pending_import_id', $pendingImport->id)
+            ->with(['category', 'debt.creditor', 'debt.debtor'])
+            ->get();
+
+        $mapped = $transactions->map(fn (Transaction $tx): array => [
+            'id' => $tx->id,
+            'transaction_date' => $tx->transaction_date?->format('Y-m-d'),
+            'amount' => $tx->amount,
+            'type' => $tx->type,
+            'description' => $tx->description,
+            'is_debt_payment' => (bool) $tx->is_debt_payment,
+            'is_repayment_mirror' => (bool) $tx->is_repayment_mirror,
+            'category' => $tx->category ? [
+                'id' => $tx->category->id,
+                'name' => $tx->category->name,
+                'icon' => $tx->category->icon,
+            ] : null,
+        ])->values()->all();
+
+        return response()->json([
+            'import' => [
+                'id' => $pendingImport->id,
+                'status' => $pendingImport->status,
+                'amount' => $pendingImport->amount,
+                'date' => $pendingImport->date?->format('Y-m-d'),
+                'merchant_name' => $pendingImport->merchant_name,
+                'raw_name' => $pendingImport->raw_name,
+            ],
+            'transactions' => $mapped,
         ]);
     }
 
@@ -885,6 +998,62 @@ class PlaidImportController extends Controller
                 'match_score' => round($row['score'], 4),
             ];
         }
+
+        return response()->json(['candidates' => $candidates]);
+    }
+
+    public function splitLinkCandidates(Request $request, PlaidPendingImport $pendingImport): JsonResponse
+    {
+        if ($pendingImport->user_id !== $request->user()->id) {
+            abort(403);
+        }
+
+        if ($pendingImport->status !== 'pending') {
+            return response()->json(['message' => 'This import is not pending.'], 422);
+        }
+
+        $amountRaw = (float) $request->query('amount', 0);
+        if ($amountRaw <= 0) {
+            return response()->json(['message' => 'amount query parameter must be a positive number.'], 422);
+        }
+
+        $user = $request->user();
+        if ($user->family_id === null) {
+            return response()->json(['candidates' => []]);
+        }
+
+        $importDate = Carbon::parse($pendingImport->date)->startOfDay();
+
+        $transactions = Transaction::query()
+            ->where('family_id', $user->family_id)
+            ->where('user_id', $pendingImport->user_id)
+            ->whereNull('plaid_transaction_id')
+            ->whereNull('plaid_pending_import_id')
+            ->where('is_closeout_initiated', false)
+            ->whereBetween('amount', [$amountRaw - 0.01, $amountRaw + 0.01])
+            ->whereBetween('transaction_date', [
+                $importDate->copy()->subDays(45)->toDateString(),
+                $importDate->copy()->addDays(45)->toDateString(),
+            ])
+            ->with('category')
+            ->orderByDesc('transaction_date')
+            ->limit(30)
+            ->get();
+
+        $candidates = $transactions->map(fn (Transaction $tx): array => [
+            'id' => $tx->id,
+            'transaction_date' => $tx->transaction_date?->format('Y-m-d'),
+            'amount' => $tx->amount,
+            'description' => $tx->description,
+            'type' => $tx->type,
+            'category' => $tx->category ? [
+                'id' => $tx->category->id,
+                'name' => $tx->category->name,
+                'icon' => $tx->category->icon,
+            ] : null,
+            'is_debt_payment' => (bool) $tx->is_debt_payment,
+            'is_repayment_mirror' => (bool) $tx->is_repayment_mirror,
+        ])->values()->all();
 
         return response()->json(['candidates' => $candidates]);
     }

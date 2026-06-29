@@ -11,6 +11,48 @@ Format:
 
 ---
 
+## 2026-06-29 — Transactions page: bank import pill modal + undo
+
+- **Files touched:** `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** Plaid institution badge on transaction rows opens a bottom sheet with import summary, sibling linked transactions (client-side from loaded list), and **Undo Import** (`POST …/undo-confirm`) when import status is `confirmed`.
+
+---
+
+## 2026-06-29 — Transactions page: clickable pill detail modals
+
+- **Files touched:** `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** Debt payment / Repayment pills and Repayment received / Repaid by status chips open bottom-sheet modals with debt, covered-expense, or repayment details (data from existing `GET /transactions` eager loads; no new API calls).
+
+---
+
+## 2026-06-29 — Plaid undo-confirm for split imports + linked-transactions endpoint
+
+- **Files touched:** `app/Http/Controllers/PlaidImportController.php`, `routes/web.php`, `tests/Feature/PlaidImportTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** `POST …/undo-confirm` now handles split-confirmed imports: deletes Plaid-created secondary transactions, unlinks pre-existing linked rows. New `GET …/linked-transactions` returns all ledger rows for a pending import (bank pill modal).
+
+---
+
+## 2026-06-29 — Plaid split UI: match lines to existing transactions
+
+- **Files touched:** `resources/js/components/PlaidImportSplitLineOptions.vue`, `resources/js/pages/PlaidImportReview.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** Split import review lines can toggle **Match to existing transaction**, pick from `GET …/split-link-candidates?amount=`, and confirm-split sends `link_to_transaction_id` instead of creating a new row for that line.
+
+---
+
+## 2026-06-29 — Plaid split confirm: link lines to existing ledger transactions
+
+- **Files touched:** `routes/web.php`, `app/Http/Controllers/PlaidImportController.php`, `app/Http/Requests/ConfirmSplitImportRequest.php`, `tests/Feature/PlaidImportTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/08-api-routes.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** New `GET …/split-link-candidates?amount=` returns unlinked ledger rows matching amount/date for split-line UI. `POST …/confirm-split` lines may set `link_to_transaction_id` to attach an existing transaction instead of creating a new one (e.g. pre-entered expenses or repayment mirrors).
+
+---
+
+## 2026-06-29 — Reset sibling Plaid imports when repayment mirrors are deleted
+
+- **Files touched:** `app/Services/TransactionRepaymentService.php`, `tests/Feature/RepaymentLinkPlaidCleanupTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** `deleteRepaymentLinks` now resets any `plaid_pending_imports` row linked to a mirror transaction (`status` → `pending`, `transaction_id` → null) before deleting the mirror. Fixes dangling non-pending imports on User B's review queue when User A undoes a confirmed repayment income or deletes the repayment transaction.
+
+---
+
 ## 2026-06-29 — Tests: in-family debt overpayment swing
 
 - **Files touched:** `tests/Feature/DebtRepaymentTransactionTest.php`, `docs/ai/10-ai-change-log.md`

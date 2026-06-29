@@ -142,6 +142,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/sync-last-month', [PlaidImportController::class, 'syncAllLastMonth']);
         Route::get('/pending-imports', [PlaidImportController::class, 'index']);
         Route::get('/pending-imports/{pendingImport}/ledger-candidates', [PlaidImportController::class, 'ledgerLinkCandidates']);
+        Route::get('/pending-imports/{pendingImport}/linked-transactions', [PlaidImportController::class, 'linkedTransactions']);
+        Route::get('/pending-imports/{pendingImport}/split-link-candidates', [PlaidImportController::class, 'splitLinkCandidates']);
         Route::post('/pending-imports/{pendingImport}/link', [PlaidImportController::class, 'linkToLedger']);
         Route::get('/pending-imports/{pendingImport}/sweep-candidates', [PlaidImportController::class, 'sweepCandidates']);
         Route::post('/pending-imports/{pendingImport}/link-to-sweep', [PlaidImportController::class, 'linkToSweep']);
