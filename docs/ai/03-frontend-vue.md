@@ -132,7 +132,7 @@ Shows "You Owe" and "Owed to You" sections.
 
 The Vue page uses `debts.owing` for "You Owe" and `debts.owed` for "Owed to You" — **this is reversed from the backend key names**. This is a known bug.
 
-**Interest settings:** Add/Edit Debt modals include an **Apply monthly interest at closeout** toggle, APR input, and optional **Loan Received Date**. When enabled, payloads include `interest_enabled=true` and `interest_rate` (annual %). Debt cards show `Interest: X.XX% APR` and loan received date when present.
+**Interest settings:** Add/Edit Debt modals include an **Apply monthly interest at closeout** toggle, APR input, and optional **Loan Received Date**. When enabled, payloads include `interest_enabled=true` and `interest_rate` (annual %). Debt cards show `Interest: X.XX% APR` and loan received date when present. Edit Debt normalizes API date values (`YYYY-MM-DDTHH:mm:ss…`) to `YYYY-MM-DD` for the date input via `dateStringForInput` in `openEditDebtModal`.
 
 **Inter-family debt cards:** For debts between two family members (`creditor_id` present), the debt page hides the **Original** amount on the card and in the history modal summary line; only the **Remaining** balance summary is shown there. These cards also hide the progress bar and `% paid/% collected` labels, so inter-family debt display focuses on current owed/owing amount instead of cumulative collection progress.
 

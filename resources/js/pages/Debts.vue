@@ -996,6 +996,16 @@ function todayDateString() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function dateStringForInput(value) {
+  if (!value) {
+    return '';
+  }
+
+  const stringValue = String(value);
+
+  return stringValue.includes('T') ? stringValue.split('T')[0] : stringValue;
+}
+
 function getSplitParticipantLabel(userId, userName) {
   return userId === authUser.value.id ? 'You' : userName;
 }
@@ -1214,7 +1224,7 @@ function openEditDebtModal(debt) {
     creditor_name: debt.creditor_name || '',
     interest_enabled: !!debt.interest_enabled,
     interest_rate: debt.interest_rate !== null ? Number(debt.interest_rate) : 0,
-    loan_received_date: debt.loan_received_date || '',
+    loan_received_date: dateStringForInput(debt.loan_received_date),
   };
   editDebtError.value = null;
   showEditDebtModal.value = true;

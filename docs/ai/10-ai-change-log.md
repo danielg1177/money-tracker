@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-06-30 — Edit Debt modal: pre-fill loan received date
+
+- Files touched: `resources/js/pages/Debts.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Opening **Edit Debt** now pre-fills the **Loan Received Date** field when the debt already has one. API `loan_received_date` values are ISO datetimes; `dateStringForInput` strips them to `YYYY-MM-DD` for `<input type="date">`.
+
 ## 2026-06-30 — Transactions page: external reimbursement income pill modal
 
 - **Files touched:** `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
