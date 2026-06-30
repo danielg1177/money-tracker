@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-06-30 — Allow combining external reimbursement with income-from-debt
+
+- Files touched: `app/Http/Requests/StoreTransactionRequest.php`, `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `resources/js/components/TransactionForm.vue`, `resources/js/components/PlaidImportRepaymentOptions.vue`, `resources/js/pages/PlaidImportReview.vue`, `tests/Feature/ExternalRepaymentWithDebtLinkTest.php`
+- Behavioral impact: Income transactions can now simultaneously use `income_debt_mode` (link to an existing or new debt) AND `is_external_repayment_mode` (link to repaid expenses). Previously these were mutually exclusive. The resulting transaction has `debt_id` set (debt created/incremented immediately) AND `is_repayment = true` (excluded from closeout gross income, linked expenses marked `is_repaid`). Family repayment mode (`is_repayment_mode`) and debt-repayment-received mode remain mutually exclusive with both. 7 new feature tests added.
+
 ## 2026-06-30 — Edit Debt modal: pre-fill loan received date
 
 - Files touched: `resources/js/pages/Debts.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

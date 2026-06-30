@@ -2186,7 +2186,11 @@ function onCategoryChange(row) {
 function setIncomeDebtMode(row, mode) {
   const f = formFor(row);
   if (mode !== 'none') {
-    resetRepaymentFields(f);
+    f.is_repayment_mode = false;
+    f.repayment_for_user_id = null;
+    if (!f.is_external_repayment_mode) {
+      f.repayment_links = [];
+    }
     resetDebtRepaymentReceivedFields(f);
   }
   f.income_debt_mode = mode;
@@ -2458,7 +2462,11 @@ function setSplitLineType(line, type) {
 
 function setSplitLineIncomeDebtMode(line, mode) {
   if (mode !== 'none') {
-    resetRepaymentFields(line);
+    line.is_repayment_mode = false;
+    line.repayment_for_user_id = null;
+    if (!line.is_external_repayment_mode) {
+      line.repayment_links = [];
+    }
     resetDebtRepaymentReceivedFields(line);
   }
   line.income_debt_mode = mode;

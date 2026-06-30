@@ -62,7 +62,6 @@ class StoreTransactionRequest extends FormRequest
             $this->merge([
                 'is_debt_repayment_received' => false,
                 'debt_repayment_received_id' => null,
-                'is_external_repayment_mode' => false,
             ]);
         }
 
@@ -111,7 +110,6 @@ class StoreTransactionRequest extends FormRequest
                 'repayment_for_user_id' => null,
                 'is_debt_repayment_received' => false,
                 'debt_repayment_received_id' => null,
-                'income_debt_mode' => 'none',
             ]);
         }
     }

@@ -241,12 +241,6 @@ trait TransactionPayloadValidationRules
                         'External reimbursement cannot be combined with loan repayment received.',
                     );
                 }
-                if ($isExternalRepaymentMode && $mode !== 'none') {
-                    $validator->errors()->add(
-                        $field('is_external_repayment_mode'),
-                        'External reimbursement cannot be combined with income debt linking.',
-                    );
-                }
                 if ($isExternalRepaymentMode) {
                     $repaymentLinks = $value('repayment_links', []);
                     if (empty($repaymentLinks)) {

@@ -297,17 +297,6 @@ watch(
     if (enabled) {
       props.model.is_repayment_mode = false;
       props.model.repayment_for_user_id = null;
-      if ('income_debt_mode' in props.model) {
-        props.model.income_debt_mode = 'none';
-        props.model.income_existing_debt_id = null;
-        props.model.income_new_is_family_debt = false;
-        props.model.income_new_is_interfamily = false;
-        props.model.income_new_creditor_id = null;
-        props.model.income_new_creditor_name = '';
-        props.model.income_new_description = '';
-        props.model.income_new_interest_enabled = false;
-        props.model.income_new_interest_rate = 0;
-      }
       if ('is_debt_repayment_received' in props.model) {
         props.model.is_debt_repayment_received = false;
         props.model.debt_repayment_received_id = null;

@@ -56,7 +56,7 @@ This document maps each user-visible feature to the backend and frontend files t
 - `existing`: links income to a debt the user owes, increments `balance`, and records the draw in `debts.income_additions` (principal `amount` unchanged)
 - `receipt`: links income to an existing debt as bank proof of receipt (`is_loan_receipt`); balance and principal unchanged
 - `new`: creates a debt inline (external creditor name or family-member creditor) and links the income row
-These rows remain regular income (`is_debt_payment=false`) and continue to count toward closeout gross-income calculations.
+These rows remain regular income (`is_debt_payment=false`) and continue to count toward closeout gross-income calculations **unless** `is_external_repayment_mode` is also active (see below). `income_debt_mode` can now be **combined** with `is_external_repayment_mode` on the same income transaction (e.g. loan proceeds used to cover past expenses). When combined: the debt is created/linked immediately, and `is_repayment=true` is set so the income is excluded from closeout gross income and the linked expenses are marked `is_repaid`.
 
 ---
 
