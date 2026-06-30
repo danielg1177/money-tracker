@@ -1,5 +1,5 @@
 <template>
-  <div class="pb-32 px-4 pt-4 max-w-lg mx-auto w-full min-w-0">
+  <div class="pb-32 px-4 pt-safe-4 max-w-lg mx-auto w-full min-w-0">
     <header class="mb-6">
       <h1 class="text-2xl font-bold text-white">Bank Connections</h1>
     </header>

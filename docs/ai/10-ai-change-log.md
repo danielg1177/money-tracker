@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-06-30 — iOS top safe-area inset for notch / Dynamic Island
+
+- Files touched: `resources/css/app.css`, `resources/js/pages/*.vue` (sticky headers + Plaid/Bank pages), `resources/js/pages/Login.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Restored top safe-area handling removed in the May 2026 mobile alignment change. Sticky page headers use **`pt-safe`** (`env(safe-area-inset-top)`) so titles and controls stay below the notch/Dynamic Island in PWA standalone and full-bleed Safari; pages without sticky headers (Bank connections, Plaid import/calibrate) use **`pt-safe-4`**. Login uses **`pt-safe`**. Devices without a notch are unaffected (`env` is 0). Bottom safe-area behavior unchanged.
+
 ## 2026-06-30 — Fix: deleting a transaction now resets its linked Plaid pending import
 
 - Files touched: `app/Services/TransactionService.php`, `tests/Feature/RepaymentLinkPlaidCleanupTest.php`

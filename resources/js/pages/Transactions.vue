@@ -1,7 +1,7 @@
 <template>
   <div class="pb-32">
     <!-- Header -->
-    <div class="sticky top-0 bg-gray-900 border-b border-gray-800 px-4 py-3 z-10 flex items-start justify-between gap-3">
+    <div class="sticky top-0 pt-safe bg-gray-900 border-b border-gray-800 px-4 py-3 z-10 flex items-start justify-between gap-3">
       <div class="min-w-0">
         <h1 class="text-2xl font-bold text-white">Transactions</h1>
         <p class="text-gray-400 text-sm mt-1">Manage your spending and income</p>

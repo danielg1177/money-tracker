@@ -531,7 +531,7 @@ function movementTypeLabel(type) {
 <template>
   <div class="pb-32">
     <!-- Header -->
-    <div class="sticky top-0 bg-gray-900 border-b border-gray-800 px-4 py-3 z-10 flex items-center justify-between">
+    <div class="sticky top-0 pt-safe bg-gray-900 border-b border-gray-800 px-4 py-3 z-10 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <button
           @click="router.back()"

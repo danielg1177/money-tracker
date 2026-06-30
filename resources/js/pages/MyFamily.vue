@@ -1,6 +1,6 @@
 <template>
   <div class="pb-32">
-    <div class="sticky top-0 bg-gray-900 border-b border-gray-800 px-4 py-3 z-10 flex items-center justify-between">
+    <div class="sticky top-0 pt-safe bg-gray-900 border-b border-gray-800 px-4 py-3 z-10 flex items-center justify-between">
       <div>
         <h1 class="text-xl font-bold text-white">My Family</h1>
         <p class="text-gray-400 text-sm mt-1">Manage your family</p>

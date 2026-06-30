@@ -61,6 +61,22 @@
 }
 
 /*
+ * iOS notch / Dynamic Island: with viewport-fit=cover (app.blade.php) and PWA
+ * standalone, content can paint under the status bar. padding-top on sticky
+ * headers (and page top padding) keeps text below the unsafe region on all
+ * notched iPhones; devices without a notch get env(...) = 0.
+ */
+@layer utilities {
+    .pt-safe {
+        padding-top: env(safe-area-inset-top, 0px);
+    }
+
+    .pt-safe-4 {
+        padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+    }
+}
+
+/*
  * iOS Safari zooms the viewport when focusing inputs/selects/textareas smaller than ~16px.
  * Keep ≥16px on narrow viewports only so desktop typography can stay tighter.
  */
