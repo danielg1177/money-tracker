@@ -40,6 +40,7 @@ class TransactionController extends Controller
                 'repaymentLinks.mirrorTransaction.user',
                 'repaymentLinks.repaidUser',
                 'repaidByLink.repaymentTransaction.user',
+                'repaidByLink.repaymentTransaction.category',
                 'repaidByLink.repaidUser',
                 'mirrorRepaymentLink.repaymentTransaction.user',
             ])
@@ -126,7 +127,7 @@ class TransactionController extends Controller
             $this->repaymentService->handleRepaymentForTransaction($transaction, $validated);
 
             return response()->json(
-                $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund', 'repaymentLinks.repaidTransaction.category', 'repaymentLinks.mirrorTransaction', 'repaidByLink.repaymentTransaction', 'repaidByLink.repaidUser', 'mirrorRepaymentLink.repaymentTransaction.user']),
+                $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund', 'repaymentLinks.repaidTransaction.category', 'repaymentLinks.mirrorTransaction', 'repaidByLink.repaymentTransaction.category', 'repaidByLink.repaymentTransaction.user', 'repaidByLink.repaidUser', 'mirrorRepaymentLink.repaymentTransaction.user']),
                 201
             );
         } catch (\InvalidArgumentException $e) {
@@ -156,7 +157,7 @@ class TransactionController extends Controller
             $this->repaymentService->handleRepaymentForTransaction($transaction, $validated);
 
             return response()->json(
-                $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund', 'repaymentLinks.repaidTransaction.category', 'repaymentLinks.mirrorTransaction', 'repaidByLink.repaymentTransaction', 'repaidByLink.repaidUser', 'mirrorRepaymentLink.repaymentTransaction.user'])
+                $transaction->load(['user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund', 'repaymentLinks.repaidTransaction.category', 'repaymentLinks.mirrorTransaction', 'repaidByLink.repaymentTransaction.category', 'repaidByLink.repaymentTransaction.user', 'repaidByLink.repaidUser', 'mirrorRepaymentLink.repaymentTransaction.user'])
             );
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

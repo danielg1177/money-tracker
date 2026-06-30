@@ -304,12 +304,14 @@
                   >
                     {{ pill.label }}
                   </component>
-                  <span
+                  <button
                     v-if="transaction.is_repaid && transaction.repaid_by_link?.is_external_repayment"
-                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
+                    type="button"
+                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300 cursor-pointer hover:bg-cyan-800/50"
+                    @click.stop="openPillModal('reimbursed-externally', transaction)"
                   >
                     Reimbursed externally
-                  </span>
+                  </button>
                   <button
                     v-else-if="transaction.is_repaid && !transaction.repaid_by_link?.is_external_repayment"
                     type="button"
@@ -318,12 +320,14 @@
                   >
                     Repaid by {{ transaction.repaid_by_link?.repaid_user?.name ?? 'family member' }}
                   </button>
-                  <span
+                  <button
                     v-if="transaction.is_repayment && transaction.repayment_links?.[0]?.is_external_repayment"
-                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300"
+                    type="button"
+                    class="inline-flex shrink-0 items-center rounded-md border border-cyan-700/30 bg-cyan-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300 cursor-pointer hover:bg-cyan-800/50"
+                    @click.stop="openPillModal('external-reimbursement', transaction)"
                   >
                     External reimbursement
-                  </span>
+                  </button>
                   <button
                     v-else-if="transaction.is_repayment"
                     type="button"
@@ -569,6 +573,8 @@
               <template v-if="pillModal.type === 'debt'">Debt Details</template>
               <template v-else-if="pillModal.type === 'repayment-covered'">Expenses Covered</template>
               <template v-else-if="pillModal.type === 'repaid-by'">Repayment Details</template>
+              <template v-else-if="pillModal.type === 'reimbursed-externally'">External Reimbursement</template>
+              <template v-else-if="pillModal.type === 'external-reimbursement'">Expenses Reimbursed</template>
             </h2>
             <button type="button" class="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-white" @click="closePillModal">
               <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -658,6 +664,70 @@
                 </p>
               </div>
               <p v-else class="text-sm text-gray-400">No repayment details available.</p>
+            </template>
+
+            <template v-if="pillModal.type === 'reimbursed-externally'">
+              <p class="text-sm text-gray-400">
+                This expense was reimbursed by the following income transaction:
+              </p>
+              <div
+                v-if="pillModal.transaction.repaid_by_link?.repayment_transaction"
+                class="rounded-lg border border-gray-700 bg-gray-800/80 px-3 py-2.5 space-y-2"
+              >
+                <p class="text-sm font-medium text-gray-200">
+                  <span v-if="pillModal.transaction.repaid_by_link.repayment_transaction.category?.icon">
+                    {{ pillModal.transaction.repaid_by_link.repayment_transaction.category.icon }}
+                  </span>
+                  {{ pillModal.transaction.repaid_by_link.repayment_transaction.category?.name || 'Uncategorized' }}
+                </p>
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-400">Date</span>
+                  <span class="text-gray-200">
+                    {{ pillModal.transaction.repaid_by_link.repayment_transaction.transaction_date || '—' }}
+                  </span>
+                </div>
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-400">Amount applied</span>
+                  <span class="text-green-400 font-medium tabular-nums">
+                    +{{ formatCurrency(Number(pillModal.transaction.repaid_by_link.amount) || 0) }}
+                  </span>
+                </div>
+                <p
+                  v-if="pillModal.transaction.repaid_by_link.repayment_transaction.description"
+                  class="text-xs text-gray-500"
+                >
+                  {{ pillModal.transaction.repaid_by_link.repayment_transaction.description }}
+                </p>
+              </div>
+              <p v-else class="text-sm text-gray-400">No linked income transaction found.</p>
+            </template>
+
+            <template v-if="pillModal.type === 'external-reimbursement'">
+              <p class="text-sm text-gray-400">
+                This income reimburses the following expense{{ (pillModal.transaction.repayment_links?.length ?? 0) === 1 ? '' : 's' }}:
+              </p>
+              <div
+                v-for="link in (pillModal.transaction.repayment_links ?? [])"
+                :key="link.repaid_transaction_id"
+                class="rounded-lg border border-gray-700 bg-gray-800/80 px-3 py-2.5 flex items-center justify-between gap-3"
+              >
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-gray-200">
+                    <span v-if="link.repaid_transaction?.category?.icon">{{ link.repaid_transaction.category.icon }} </span>
+                    {{ link.repaid_transaction?.category?.name || 'Uncategorized' }}
+                  </p>
+                  <p class="text-xs text-gray-400">{{ link.repaid_transaction?.transaction_date || '—' }}</p>
+                  <p v-if="link.repaid_transaction?.description" class="text-xs text-gray-500 truncate">
+                    {{ link.repaid_transaction.description }}
+                  </p>
+                </div>
+                <span class="shrink-0 font-semibold text-red-400 tabular-nums">
+                  −{{ formatCurrency(Number(link.amount) || 0) }}
+                </span>
+              </div>
+              <p v-if="!pillModal.transaction.repayment_links?.length" class="text-sm text-gray-400">
+                No linked expenses found.
+              </p>
             </template>
           </div>
         </div>

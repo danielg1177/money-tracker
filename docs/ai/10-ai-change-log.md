@@ -11,6 +11,20 @@ Format:
 
 ---
 
+## 2026-06-30 — Transactions page: external reimbursement income pill modal
+
+- **Files touched:** `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** The **External reimbursement** pill on income rows is now a button that opens a bottom sheet listing the linked expense transaction(s) (category, date, description, amount applied). Uses existing `repayment_links.repaidTransaction` eager loads from `GET /transactions`.
+
+---
+
+## 2026-06-30 — Transactions page: external reimbursement pill modal
+
+- **Files touched:** `resources/js/pages/Transactions.vue`, `app/Http/Controllers/TransactionController.php`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** The **Reimbursed externally** pill on repaid expenses is now a button that opens a bottom sheet showing the linked income transaction (category, date, amount applied, description). `GET /transactions` eager-loads `repaidByLink.repaymentTransaction.category` for the modal.
+
+---
+
 ## 2026-06-30 — Transactions page: violet tint for other members’ rows
 
 - **Files touched:** `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
