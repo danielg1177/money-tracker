@@ -11,6 +11,13 @@ Format:
 
 ---
 
+## 2026-06-30 — Transactions page: violet tint for other members’ rows
+
+- **Files touched:** `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- **Behavioral impact:** Transaction list cards keep the default gray styling for the signed-in user’s own rows; rows where `transaction.user_id` is another family member (e.g. shared splits) show a light violet background/border. Repayment, mirror, closeout, and delete-confirm states are unchanged.
+
+---
+
 ## 2026-06-29 — Transactions page: bank import pill modal + undo
 
 - **Files touched:** `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

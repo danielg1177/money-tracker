@@ -257,12 +257,19 @@
             v-for="transaction in dayGroup.transactions"
             :key="transaction.id"
             :class="[
-              'bg-gray-800 border border-gray-700 rounded-lg sm:rounded-xl p-2 sm:p-3 transition-colors',
-              transaction.is_closeout_initiated ? 'border-purple-600/40 bg-purple-900/10' : '',
+              'rounded-lg sm:rounded-xl border p-2 sm:p-3 transition-colors',
+              confirmDelete[transaction.id]
+                ? 'border-red-600 bg-red-900/20'
+                : transaction.is_closeout_initiated
+                  ? 'border-purple-600/40 bg-purple-900/10'
+                  : transaction.is_repayment
+                    ? 'border-cyan-700/30 bg-cyan-950/10'
+                    : transaction.is_repayment_mirror
+                      ? 'border-amber-700/30 bg-amber-950/10'
+                      : isTransactionOwnedByOther(transaction)
+                        ? 'border-violet-700/35 bg-violet-950/25'
+                        : 'border-gray-700 bg-gray-800',
               transaction.is_repaid ? 'opacity-40' : '',
-              transaction.is_repayment ? 'border-cyan-700/30 bg-cyan-950/10' : '',
-              transaction.is_repayment_mirror ? 'border-amber-700/30 bg-amber-950/10' : '',
-              confirmDelete[transaction.id] ? 'border-red-600 bg-red-900/20' : '',
               isSelectedMonthLocked ? 'opacity-75' : '',
               !confirmDelete[transaction.id] && !isSelectedMonthLocked && isTransactionEditLocked(transaction) ? 'cursor-default' : '',
               !confirmDelete[transaction.id] && !isSelectedMonthLocked && !isTransactionEditLocked(transaction) ? 'cursor-pointer hover:border-gray-600' : '',
@@ -1206,6 +1213,15 @@ function transactionPayerDisplayLabel(transaction) {
     return 'You';
   }
   return transaction.user?.name || 'Unknown';
+}
+
+function isTransactionOwnedByOther(transaction) {
+  const uid = currentUser.value?.id;
+  if (uid == null || transaction?.user_id == null) {
+    return false;
+  }
+
+  return Number(transaction.user_id) !== Number(uid);
 }
 
 /**
