@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Debt;
+use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use App\Models\TransactionSplit;
 use App\Models\User;
@@ -554,6 +555,7 @@ class TransactionService
     {
         DB::transaction(function () use ($transaction): void {
             $this->rollbackIncomeDebtAssociation($transaction);
+            $this->resetLinkedPendingImport($transaction);
             $partner = $this->resolveMirrorPartner($transaction);
 
             if ($partner) {
@@ -576,6 +578,17 @@ class TransactionService
             Debt::query()->where('transaction_id', $transaction->id)->delete();
             $transaction->delete();
         });
+    }
+
+    /**
+     * Reset the Plaid pending import linked to this transaction back to pending
+     * so it reappears in the review queue after the transaction is deleted.
+     */
+    private function resetLinkedPendingImport(Transaction $transaction): void
+    {
+        PlaidPendingImport::query()
+            ->where('transaction_id', $transaction->id)
+            ->update(['status' => 'pending', 'transaction_id' => null]);
     }
 
     /**
@@ -754,6 +767,7 @@ class TransactionService
         }
 
         foreach ($rows as $row) {
+            $this->resetLinkedPendingImport($row);
             $row->splits()->delete();
             Debt::query()->where('transaction_id', $row->id)->delete();
             $row->delete();

@@ -184,4 +184,143 @@ class RepaymentLinkPlaidCleanupTest extends TestCase
             'transaction_id' => null,
         ]);
     }
+
+    public function test_deleting_transaction_resets_its_own_linked_pending_import(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $incomeCategory = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => false,
+            'is_income' => true,
+        ]);
+
+        $income = Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'category_id' => $incomeCategory->id,
+            'type' => 'income',
+            'amount' => 500,
+            'transaction_date' => '2026-06-01',
+            'is_split' => false,
+        ]);
+
+        $plaidItem = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-own-import-test',
+            'access_token' => 'access-sandbox-test',
+            'institution_id' => 'ins_test',
+            'institution_name' => 'Test Bank',
+            'transactions_cursor' => null,
+        ]);
+
+        $pendingImport = PlaidPendingImport::query()->create([
+            'user_id' => $user->id,
+            'plaid_item_id' => $plaidItem->id,
+            'plaid_transaction_id' => 'txn-own-import',
+            'plaid_account_id' => 'acc-own',
+            'amount' => 500,
+            'date' => '2026-06-01',
+            'merchant_name' => 'Direct Deposit',
+            'raw_name' => 'DIRECT DEPOSIT',
+            'suggested_category_id' => $incomeCategory->id,
+            'suggested_type' => 'income',
+            'status' => 'confirmed',
+            'transaction_id' => $income->id,
+            'raw_payload' => [],
+        ]);
+
+        $this->actingAs($user)
+            ->deleteJson("/transactions/{$income->id}")
+            ->assertNoContent();
+
+        $this->assertDatabaseHas('plaid_pending_imports', [
+            'id' => $pendingImport->id,
+            'status' => 'pending',
+            'transaction_id' => null,
+        ]);
+    }
+
+    public function test_deleting_external_repayment_income_resets_own_pending_import(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $expenseCategory = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+        $incomeCategory = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => false,
+            'is_income' => true,
+        ]);
+
+        $expense = Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'category_id' => $expenseCategory->id,
+            'type' => 'expense',
+            'amount' => 300,
+            'transaction_date' => '2026-06-01',
+            'is_split' => false,
+            'is_repaid' => false,
+        ]);
+
+        $income = Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'category_id' => $incomeCategory->id,
+            'type' => 'income',
+            'amount' => 300,
+            'transaction_date' => '2026-06-15',
+            'is_split' => false,
+            'is_repayment' => true,
+        ]);
+
+        app(TransactionRepaymentService::class)->createExternalRepaymentLinks(
+            $income,
+            [['transaction_id' => $expense->id, 'amount' => 300]],
+        );
+
+        $plaidItem = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-ext-repay',
+            'access_token' => 'access-sandbox-test',
+            'institution_id' => 'ins_test',
+            'institution_name' => 'Test Bank',
+            'transactions_cursor' => null,
+        ]);
+
+        $pendingImport = PlaidPendingImport::query()->create([
+            'user_id' => $user->id,
+            'plaid_item_id' => $plaidItem->id,
+            'plaid_transaction_id' => 'txn-ext-repay',
+            'plaid_account_id' => 'acc-ext',
+            'amount' => 300,
+            'date' => '2026-06-15',
+            'merchant_name' => 'Insurance Reimbursement',
+            'raw_name' => 'INSURANCE REIMB',
+            'suggested_category_id' => $incomeCategory->id,
+            'suggested_type' => 'income',
+            'status' => 'confirmed',
+            'transaction_id' => $income->id,
+            'raw_payload' => [],
+        ]);
+
+        $this->actingAs($user)
+            ->deleteJson("/transactions/{$income->id}")
+            ->assertNoContent();
+
+        // Pending import reappears in review queue
+        $this->assertDatabaseHas('plaid_pending_imports', [
+            'id' => $pendingImport->id,
+            'status' => 'pending',
+            'transaction_id' => null,
+        ]);
+
+        // Expense no longer marked repaid
+        $expense->refresh();
+        $this->assertFalse((bool) $expense->is_repaid);
+    }
 }

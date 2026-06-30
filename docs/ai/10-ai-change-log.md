@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-06-30 — Fix: deleting a transaction now resets its linked Plaid pending import
+
+- Files touched: `app/Services/TransactionService.php`, `tests/Feature/RepaymentLinkPlaidCleanupTest.php`
+- Behavioral impact: When a transaction that was confirmed from a Plaid pending import is deleted (from the Transactions page or via undo), the associated `plaid_pending_imports` row now has its `status` reset to `pending` and `transaction_id` cleared. This causes the bank transaction to reappear in the **To Review** tab so the user can re-categorize it. Previously, deleting the transaction left the pending import in a confirmed/stuck state and it would silently disappear from the review queue. The fix applies to any transaction deletion path (direct delete, mirrored-pair delete, external repayment income delete).
+
 ## 2026-06-30 — Allow combining external reimbursement with income-from-debt
 
 - Files touched: `app/Http/Requests/StoreTransactionRequest.php`, `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `resources/js/components/TransactionForm.vue`, `resources/js/components/PlaidImportRepaymentOptions.vue`, `resources/js/pages/PlaidImportReview.vue`, `tests/Feature/ExternalRepaymentWithDebtLinkTest.php`
