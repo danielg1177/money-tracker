@@ -167,10 +167,8 @@ class DebtController extends Controller
         try {
             $debt = Debt::query()->findOrFail($request->debt_id);
             $this->closedMonthGuard->assertDebtPaymentOpen(
-                $debt,
                 $user,
                 $request->input('transaction_date'),
-                $request->split_with_user_id ? (int) $request->split_with_user_id : null,
             );
 
             $this->debtService->payDebt(

@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-07-14 — Soft close no longer blocks others’ splits / debt payments
+
+- Files touched: `app/Services/ClosedMonthGuard.php`, `app/Http/Controllers/DebtController.php`, `tests/Feature/ClosedMonthMutationLockTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Soft close now only locks the **initiating** user’s own writes (transaction owner, debt payer, fund actor). An open family member can create split expenses that include a soft-closed member, and can pay debts to a soft-closed creditor. Soft-closed users still cannot create/edit/delete their own transactions for that month. Family **hard close** is unchanged and still blocks everyone.
+
 ## 2026-06-30 — iOS top safe-area inset for notch / Dynamic Island
 
 - Files touched: `resources/css/app.css`, `resources/js/pages/*.vue` (sticky headers + Plaid/Bank pages), `resources/js/pages/Login.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

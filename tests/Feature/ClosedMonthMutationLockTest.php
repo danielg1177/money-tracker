@@ -102,7 +102,7 @@ class ClosedMonthMutationLockTest extends TestCase
         $this->assertDatabaseHas('transactions', ['id' => $transaction->id]);
     }
 
-    public function test_split_transaction_creation_is_blocked_when_participant_soft_closed_month(): void
+    public function test_open_user_can_create_split_with_soft_closed_participant(): void
     {
         $family = Family::factory()->create();
         $payer = User::factory()->create(['family_id' => $family->id]);
@@ -125,13 +125,43 @@ class ClosedMonthMutationLockTest extends TestCase
                 ['user_id' => $payer->id, 'share_percentage' => 50],
                 ['user_id' => $participant->id, 'share_percentage' => 50],
             ],
-        ])->assertStatus(422);
+        ])->assertCreated();
+
+        $this->assertDatabaseCount('transactions', 1);
+        $this->assertDatabaseCount('transaction_splits', 2);
+    }
+
+    public function test_soft_closed_owner_still_cannot_create_split_transaction(): void
+    {
+        $family = Family::factory()->create();
+        $payer = User::factory()->create(['family_id' => $family->id]);
+        $participant = User::factory()->create(['family_id' => $family->id]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->softClose($family, $payer, 2026, 7);
+
+        $this->actingAs($payer)->postJson('/transactions', [
+            'category_id' => $category->id,
+            'amount' => 100,
+            'type' => 'expense',
+            'transaction_date' => '2026-07-10',
+            'is_split' => true,
+            'split_data' => [
+                ['user_id' => $payer->id, 'share_percentage' => 50],
+                ['user_id' => $participant->id, 'share_percentage' => 50],
+            ],
+        ])->assertStatus(422)
+            ->assertJsonPath('message', 'This month is soft-closed for an affected user and cannot be changed.');
 
         $this->assertDatabaseCount('transactions', 0);
         $this->assertDatabaseCount('transaction_splits', 0);
     }
 
-    public function test_debt_payment_is_blocked_when_creditor_soft_closed_payment_month(): void
+    public function test_open_debtor_can_pay_when_creditor_soft_closed_payment_month(): void
     {
         $family = Family::factory()->create();
         $debtor = User::factory()->create(['family_id' => $family->id]);
@@ -151,11 +181,11 @@ class ClosedMonthMutationLockTest extends TestCase
             'debt_id' => $debt->id,
             'amount' => 20,
             'transaction_date' => '2026-07-11',
-        ])->assertStatus(422);
+        ])->assertOk();
 
         $debt->refresh();
-        $this->assertEqualsWithDelta(100.0, (float) $debt->balance, 0.01);
-        $this->assertDatabaseCount('transactions', 0);
+        $this->assertEqualsWithDelta(80.0, (float) $debt->balance, 0.01);
+        $this->assertDatabaseCount('transactions', 2);
     }
 
     public function test_fund_borrow_is_blocked_when_current_month_is_soft_closed(): void

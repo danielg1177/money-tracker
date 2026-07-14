@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\Debt;
 use App\Models\MonthHardClose;
 use App\Models\MonthSoftClose;
 use App\Models\Transaction;
@@ -14,33 +13,17 @@ use InvalidArgumentException;
 class ClosedMonthGuard
 {
     /**
+     * Soft close means the user is done entering their own transactions.
+     * It does not block other open family members from including them on splits
+     * or from recording debt payments that create a mirrored row for them.
+     *
      * @param  array<string, mixed>  $data
      */
     public function assertTransactionPayloadOpen(User $owner, array $data): void
     {
         [$year, $month] = $this->yearMonthFromDate($data['transaction_date']);
 
-        $affectedUserIds = [(int) $owner->id];
-
-        if (! empty($data['is_split']) && is_array($data['split_data'] ?? null)) {
-            foreach ($data['split_data'] as $split) {
-                if (isset($split['user_id'])) {
-                    $affectedUserIds[] = (int) $split['user_id'];
-                }
-            }
-        }
-
-        if (($data['type'] ?? null) === 'expense' && ! empty($data['debt_id'])) {
-            $debt = Debt::query()
-                ->where('family_id', $owner->family_id)
-                ->find($data['debt_id']);
-
-            if ($debt?->creditor_id) {
-                $affectedUserIds[] = (int) $debt->creditor_id;
-            }
-        }
-
-        $this->assertUsersOpenForMonth((int) $owner->family_id, $affectedUserIds, $year, $month);
+        $this->assertUsersOpenForMonth((int) $owner->family_id, [(int) $owner->id], $year, $month);
     }
 
     /**
@@ -51,7 +34,7 @@ class ClosedMonthGuard
         [$year, $month] = $this->yearMonthFromDate($transaction->transaction_date);
         $this->assertUsersOpenForMonth(
             (int) $transaction->family_id,
-            $this->affectedUserIdsForTransaction($transaction),
+            [(int) $transaction->user_id],
             $year,
             $month
         );
@@ -63,22 +46,14 @@ class ClosedMonthGuard
     }
 
     public function assertDebtPaymentOpen(
-        Debt $debt,
         User $payer,
         string|DateTimeInterface|null $paymentDate = null,
-        ?int $splitWithUserId = null,
     ): void {
         [$year, $month] = $this->yearMonthFromDate($paymentDate ?? today());
 
-        $affectedUserIds = [(int) $payer->id];
-        if ($splitWithUserId !== null) {
-            $affectedUserIds[] = $splitWithUserId;
-        }
-        if ($debt->creditor_id !== null) {
-            $affectedUserIds[] = (int) $debt->creditor_id;
-        }
-
-        $this->assertUsersOpenForMonth((int) $payer->family_id, $affectedUserIds, $year, $month);
+        // Soft-close only the payer (the person recording the payment). A soft-closed
+        // creditor or split co-participant does not block the open payer.
+        $this->assertUsersOpenForMonth((int) $payer->family_id, [(int) $payer->id], $year, $month);
     }
 
     public function assertUserDateOpen(User $user, string|DateTimeInterface|null $date = null): void
@@ -133,33 +108,5 @@ class ClosedMonthGuard
         $carbon = $date instanceof DateTimeInterface ? Carbon::instance($date) : Carbon::parse($date);
 
         return [(int) $carbon->year, (int) $carbon->month];
-    }
-
-    /**
-     * @return array<int>
-     */
-    private function affectedUserIdsForTransaction(Transaction $transaction): array
-    {
-        $transaction->loadMissing(['splits', 'mirrorTransaction']);
-
-        $userIds = [(int) $transaction->user_id];
-
-        foreach ($transaction->splits as $split) {
-            $userIds[] = (int) $split->user_id;
-        }
-
-        if ($transaction->mirrorTransaction?->user_id) {
-            $userIds[] = (int) $transaction->mirrorTransaction->user_id;
-        }
-
-        $reciprocalMirror = Transaction::query()
-            ->where('mirror_transaction_id', $transaction->id)
-            ->first();
-
-        if ($reciprocalMirror?->user_id) {
-            $userIds[] = (int) $reciprocalMirror->user_id;
-        }
-
-        return array_values(array_unique($userIds));
     }
 }

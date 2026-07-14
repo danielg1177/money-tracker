@@ -24,6 +24,9 @@ Each page fetches its own data on mount. `localStorage` is the only cross-compon
 ### Debt `balance` field is never auto-zeroed
 Paid debts (balance = 0) remain in the database permanently. There is no "paid" boolean or deletion on full payment. The UI is expected to filter or display them accordingly.
 
+### Soft close locks only the initiating user’s own entries
+Soft close signals that a user is done entering **their own** transactions for the month. `ClosedMonthGuard` soft-close checks apply to the transaction **owner** (creates/updates/deletes), the debt **payer**, or the fund actor — not to split co-participants or mirrored debt-payment creditors. An open family member can still create splits that include a soft-closed member, and can still pay debts to a soft-closed creditor. **Hard close** still locks the entire family month for everyone.
+
 ### In-family debt overpayment is allowed at transaction validation
 `TransactionPayloadValidationRules` rejects payment amounts above the remaining `debt.balance` only for **external** debts (`creditor_id` is null). For **in-family** debts (`creditor_id` is a non-null user id), overpayment is permitted because paying more than the balance reverses the debt direction (the former creditor now owes the former debtor). External creditors and fund debts still enforce the balance cap at validation time.
 

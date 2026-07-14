@@ -153,7 +153,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `store(Request)` also accepts optional loan/interest fields (`interest_enabled`, `interest_rate`, `loan_received_date`)
 - `update(Request, Debt)` — updates `description`, `creditor_name`, and optional loan/interest settings (`interest_enabled`, `interest_rate`, `loan_received_date`); only debtor or `can_manage_family` user may update; rejects pending closeout debts
 - `destroy(Debt)` — hard delete (`$debt->delete()`); only debtor or `can_manage_family` user can delete; cannot delete pending closeout debts
-- `payDebt(PayDebtRequest)` — validates closed-month status for the payer, optional split participant, and creditor via `ClosedMonthGuard`, then delegates to `DebtService::payDebt`; accepts optional `transaction_date` to backdate/explicitly date debt-payment transactions
+- `payDebt(PayDebtRequest)` — validates closed-month status for the **payer** via `ClosedMonthGuard` (creditor / split co-participant soft closes do not block), then delegates to `DebtService::payDebt`; accepts optional `transaction_date` to backdate/explicitly date debt-payment transactions
 - `paymentHistory(Debt)` — role-based filtering: creditors see **income** rows with their `user_id`; all others (debtor, family manager) see **expense** rows; includes optional `split_breakdown` per payment (`[{user_id, user_name, amount, share_percentage}]`) when the debt payment was split; appends synthetic `income_addition` entries from `debt.income_additions` (income linked to existing debt); appends `loan_receipt` entries from income transactions with `is_loan_receipt=true`; appends a synthetic `initial_value` entry showing the debt's base principal (`debt.amount - sum(contributions)`) and creation date so closeout additions do not mutate the historical starting value; debtor/creditor/`can_manage_family` required to access
 - `paymentHistory(Debt)` also appends `interest_accrual` entries from `debt.interest_accruals` so debt history includes interest events
 - `splitDebtSummary(Request)` — `GET /split-debt-summary?year=&month=`; returns pending split debts for the current user's family grouped by counterpart user with `you_owe`, `they_owe`, and nested `transactions`
@@ -240,8 +240,8 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 ## Services
 
 ### ClosedMonthGuard (`app/Services/ClosedMonthGuard.php`)
-- Shared guard for transaction-producing write paths. A month is locked when the family has a `MonthHardClose` for that year/month or any affected user has a `MonthSoftClose`.
-- Transaction creates/updates/deletes include affected users: transaction owner, split participants, and mirrored debt-payment creditor rows. Debt-payment writes include payer, optional split participant, and creditor. Fund borrow/repay checks the current month for the acting user.
+- Shared guard for transaction-producing write paths. A month is locked when the family has a `MonthHardClose` for that year/month, or when the **initiating** user has a `MonthSoftClose` (transaction owner on create/update/delete; payer on debt payment; acting user on fund borrow/repay).
+- Soft close means that user is done entering their **own** transactions. It does **not** block other open family members from including them on splits or from recording debt payments that create a mirrored row for them. Hard close still locks the whole family month.
 - Throws `InvalidArgumentException`; controllers return `422` JSON with the guard message.
 
 ### PlaidClient (`app/Services/PlaidClient.php`)

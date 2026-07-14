@@ -25,7 +25,7 @@ Detailed step-by-step flows for the most complex operations in the app.
    }
    ```
 5. `StoreTransactionRequest` validates the payload (`type=income` would strip `split_data`, `is_split`, and `advance_fund_id` before validation)
-6. `TransactionController::store` calls `ClosedMonthGuard`; the save is rejected if the family month is hard-closed or if the owner / any split participant has soft-closed that month
+6. `TransactionController::store` calls `ClosedMonthGuard`; the save is rejected if the family month is hard-closed or if the **owner** has soft-closed that month (split co-participants’ soft closes do not block)
 7. `TransactionController::store` calls `TransactionService::createTransaction`
 8. `SplitCalculator::validate` checks percentages sum to 100 (epsilon 0.01)
 9. `DB::transaction` begins:
@@ -55,7 +55,7 @@ Detailed step-by-step flows for the most complex operations in the app.
    ```
    Optional split fields allow the payer to split the payment expense with another family member (creates a pending `Debt` for the split portion). `transaction_date` is optional; if omitted, backend uses today's date.
 4. `PayDebtRequest` validates
-5. `DebtController::payDebt` loads the debt and calls `ClosedMonthGuard`; the save is rejected if the family month is hard-closed or if the payer, optional split participant, or creditor has soft-closed that month
+5. `DebtController::payDebt` loads the debt and calls `ClosedMonthGuard`; the save is rejected if the family month is hard-closed or if the **payer** has soft-closed that month (creditor / split co-participant soft closes do not block)
 6. `DebtController::payDebt` calls `DebtService::payDebt`
 7. `DebtService::payDebt` validates:
    - For family debts (`is_family_debt=true`): payer must be a family member
