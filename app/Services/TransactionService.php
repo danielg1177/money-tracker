@@ -323,6 +323,10 @@ class TransactionService
      */
     public function updateTransaction(Transaction $transaction, array $data): Transaction
     {
+        if ($transaction->is_debt_payment_benefit) {
+            throw new InvalidArgumentException('Edit this expense via the debt repayment benefit endpoints.');
+        }
+
         if ($transaction->is_debt_payment) {
             if (empty($data['debt_id'])) {
                 return $this->unlinkDebtPaymentTransaction($transaction, $data);
@@ -512,6 +516,7 @@ class TransactionService
                         'split_data' => null,
                         'advance_fund_id' => null,
                     ]);
+                    $this->syncDebtPaymentBenefitFromIncome($existingMirror);
                 } else {
                     $existingMirror = Transaction::query()->create([
                         'family_id' => $transaction->family_id,
@@ -536,6 +541,7 @@ class TransactionService
                 $existingMirror->forceFill(['mirror_transaction_id' => $transaction->id])->save();
             } else {
                 if ($existingMirror) {
+                    $this->deleteDebtPaymentBenefitForIncome($existingMirror);
                     $existingMirror->forceFill(['mirror_transaction_id' => null])->save();
                     $existingMirror->delete();
                 }
@@ -544,6 +550,245 @@ class TransactionService
 
             return $transaction->load(['splits', 'debt.creditor', 'debt.debtor', 'debt.fund']);
         });
+    }
+
+    /**
+     * Record a creditor-side benefit expense linked to a debt-payment income row.
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws InvalidArgumentException
+     */
+    public function createDebtPaymentBenefit(Transaction $income, array $data, User $user): Transaction
+    {
+        $this->assertDebtPaymentIncomeForBenefit($income, $user);
+
+        if ($income->debtPaymentBenefitExpense()->exists()) {
+            throw new InvalidArgumentException('A benefit expense has already been recorded for this repayment.');
+        }
+
+        return DB::transaction(function () use ($income, $data) {
+            $hasSplit = (bool) ($data['is_split'] ?? false);
+            $splitData = $hasSplit ? ($data['split_data'] ?? []) : [];
+            if ($hasSplit && ! SplitCalculator::validate($splitData)) {
+                throw new InvalidArgumentException('Split percentages must sum to 100%.');
+            }
+
+            $amount = round((float) $income->amount, 2);
+            $advanceFundId = $hasSplit ? null : ($data['advance_fund_id'] ?? null);
+            $isNonNecessity = ! empty($data['is_non_necessity']) && ! $hasSplit && ! empty($advanceFundId);
+
+            $benefit = Transaction::query()->create([
+                'family_id' => $income->family_id,
+                'user_id' => $income->user_id,
+                'category_id' => $data['category_id'],
+                'type' => 'expense',
+                'amount' => $amount,
+                'description' => $data['description'] ?? $income->description,
+                'transaction_date' => $income->transaction_date,
+                'is_split' => $hasSplit,
+                'split_data' => $hasSplit ? $splitData : null,
+                'advance_fund_id' => $advanceFundId,
+                'is_non_necessity' => $isNonNecessity,
+                'is_debt_payment' => false,
+                'is_debt_payment_benefit' => true,
+                'debt_payment_income_id' => $income->id,
+                'debt_id' => null,
+                'is_closeout_initiated' => false,
+            ]);
+
+            $this->applyBenefitSplits($benefit, $amount, $hasSplit, $splitData);
+
+            return $benefit->load(['user', 'category', 'splits.user', 'advanceFund', 'debtPaymentIncome']);
+        });
+    }
+
+    /**
+     * Update the creditor-side benefit expense linked to a debt-payment income row.
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws InvalidArgumentException
+     */
+    public function updateDebtPaymentBenefit(Transaction $income, array $data, User $user): Transaction
+    {
+        $this->assertDebtPaymentIncomeForBenefit($income, $user);
+
+        $benefit = $income->debtPaymentBenefitExpense;
+        if ($benefit === null) {
+            throw new InvalidArgumentException('No benefit expense exists for this repayment.');
+        }
+
+        return DB::transaction(function () use ($income, $benefit, $data) {
+            $hasSplit = (bool) ($data['is_split'] ?? false);
+            $splitData = $hasSplit ? ($data['split_data'] ?? []) : [];
+            if ($hasSplit && ! SplitCalculator::validate($splitData)) {
+                throw new InvalidArgumentException('Split percentages must sum to 100%.');
+            }
+
+            $amount = round((float) $income->amount, 2);
+            $advanceFundId = $hasSplit ? null : ($data['advance_fund_id'] ?? null);
+            $isNonNecessity = ! empty($data['is_non_necessity']) && ! $hasSplit && ! empty($advanceFundId);
+
+            $benefit->update([
+                'category_id' => $data['category_id'],
+                'amount' => $amount,
+                'description' => $data['description'] ?? $benefit->description,
+                'transaction_date' => $income->transaction_date,
+                'is_split' => $hasSplit,
+                'split_data' => $hasSplit ? $splitData : null,
+                'advance_fund_id' => $advanceFundId,
+                'is_non_necessity' => $isNonNecessity,
+                'is_debt_payment_benefit' => true,
+                'debt_payment_income_id' => $income->id,
+            ]);
+
+            $benefit->splits()->delete();
+            Debt::query()->where('transaction_id', $benefit->id)->delete();
+            $this->applyBenefitSplits($benefit, $amount, $hasSplit, $splitData);
+
+            return $benefit->fresh()->load(['user', 'category', 'splits.user', 'advanceFund', 'debtPaymentIncome']);
+        });
+    }
+
+    /**
+     * Remove the creditor-side benefit expense without touching the debt-payment pair.
+     *
+     * @throws InvalidArgumentException
+     */
+    public function deleteDebtPaymentBenefit(Transaction $income, User $user): void
+    {
+        $this->assertDebtPaymentIncomeForBenefit($income, $user);
+
+        $benefit = $income->debtPaymentBenefitExpense;
+        if ($benefit === null) {
+            throw new InvalidArgumentException('No benefit expense exists for this repayment.');
+        }
+
+        DB::transaction(function () use ($benefit): void {
+            $this->purgeBenefitExpense($benefit);
+        });
+    }
+
+    /**
+     * @throws InvalidArgumentException
+     */
+    private function assertDebtPaymentIncomeForBenefit(Transaction $income, User $user): void
+    {
+        if ((int) $income->user_id !== (int) $user->id) {
+            throw new InvalidArgumentException('Only the creditor can record a benefit expense for this repayment.');
+        }
+
+        if ($income->type !== 'income' || ! $income->is_debt_payment) {
+            throw new InvalidArgumentException('Benefit expenses can only be linked to debt repayment income.');
+        }
+
+        $income->loadMissing('debt');
+        if ($income->debt === null || $income->debt->creditor_id === null) {
+            throw new InvalidArgumentException('Benefit expenses are only allowed for in-family debt repayments.');
+        }
+
+        if ((int) $income->debt->creditor_id !== (int) $user->id) {
+            throw new InvalidArgumentException('Only the creditor can record a benefit expense for this repayment.');
+        }
+    }
+
+    /**
+     * @param  array<int, array{user_id: int, share_percentage: float|int|string}>  $splitData
+     */
+    private function applyBenefitSplits(Transaction $benefit, float $amount, bool $hasSplit, array $splitData): void
+    {
+        if (! $hasSplit || empty($splitData)) {
+            return;
+        }
+
+        $allocatedSplits = SplitCalculator::allocate($amount, $splitData);
+        foreach ($allocatedSplits as $split) {
+            TransactionSplit::query()->create([
+                'transaction_id' => $benefit->id,
+                'user_id' => $split['user_id'],
+                'share_percentage' => $split['share_percentage'],
+                'amount' => $split['amount'],
+            ]);
+
+            if ((int) $split['user_id'] !== (int) $benefit->user_id) {
+                Debt::query()->create([
+                    'family_id' => $benefit->family_id,
+                    'debtor_id' => $split['user_id'],
+                    'creditor_id' => $benefit->user_id,
+                    'transaction_id' => $benefit->id,
+                    'amount' => $split['amount'],
+                    'balance' => $split['amount'],
+                    'description' => "Split from transaction #{$benefit->id}",
+                    'is_pending_closeout' => true,
+                ]);
+            }
+        }
+    }
+
+    private function syncDebtPaymentBenefitFromIncome(Transaction $income): void
+    {
+        $benefit = Transaction::query()
+            ->where('debt_payment_income_id', $income->id)
+            ->lockForUpdate()
+            ->first();
+
+        if ($benefit === null) {
+            return;
+        }
+
+        if ((int) $benefit->user_id !== (int) $income->user_id) {
+            $this->purgeBenefitExpense($benefit);
+
+            return;
+        }
+
+        $amount = round((float) $income->amount, 2);
+        $hasSplit = (bool) $benefit->is_split;
+        $splitData = $hasSplit ? ($benefit->split_data ?? []) : [];
+
+        $benefit->update([
+            'amount' => $amount,
+            'transaction_date' => $income->transaction_date,
+        ]);
+
+        if ($hasSplit && ! empty($splitData) && SplitCalculator::validate($splitData)) {
+            $benefit->splits()->delete();
+            Debt::query()->where('transaction_id', $benefit->id)->delete();
+            $this->applyBenefitSplits($benefit, $amount, true, $splitData);
+        }
+    }
+
+    private function deleteDebtPaymentBenefitForIncome(Transaction $income): void
+    {
+        $benefit = Transaction::query()
+            ->where('debt_payment_income_id', $income->id)
+            ->lockForUpdate()
+            ->first();
+
+        if ($benefit !== null) {
+            $this->purgeBenefitExpense($benefit);
+        }
+    }
+
+    private function purgeBenefitExpense(Transaction $benefit): void
+    {
+        $benefit->splits()->delete();
+        Debt::query()->where('transaction_id', $benefit->id)->delete();
+        $benefit->delete();
+    }
+
+    private function deleteDebtPaymentBenefitAroundPair(Transaction $a, ?Transaction $b): void
+    {
+        foreach ([$a, $b] as $row) {
+            if ($row === null) {
+                continue;
+            }
+
+            if ($row->type === 'income' && $row->is_debt_payment) {
+                $this->deleteDebtPaymentBenefitForIncome($row);
+            }
+        }
     }
 
     /**
@@ -557,10 +802,21 @@ class TransactionService
             $partner = $this->resolveMirrorPartner($transaction);
 
             if ($partner) {
+                $this->deleteDebtPaymentBenefitAroundPair($transaction, $partner);
                 $this->revertDebtBalanceForMirroredPayment($transaction, $partner);
                 $this->clearMirrorsAndDelete(
                     collect([$transaction, $partner])->filter()->unique(fn (Transaction $row) => $row->id)
                 );
+
+                return;
+            }
+
+            if ($transaction->is_debt_payment && $transaction->type === 'income') {
+                $this->deleteDebtPaymentBenefitForIncome($transaction);
+            }
+
+            if ($transaction->is_debt_payment_benefit) {
+                $this->purgeBenefitExpense($transaction);
 
                 return;
             }
@@ -806,6 +1062,7 @@ class TransactionService
 
             $mirror = $this->resolveMirrorPartner($transaction);
             if ($mirror) {
+                $this->deleteDebtPaymentBenefitForIncome($mirror);
                 $mirror->forceFill(['mirror_transaction_id' => null])->save();
                 $mirror->splits()->delete();
                 Debt::query()->where('transaction_id', $mirror->id)->delete();

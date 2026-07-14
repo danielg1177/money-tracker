@@ -27,10 +27,12 @@ class Transaction extends Model
         'is_non_necessity',
         'is_borrow',
         'is_debt_payment',
+        'is_debt_payment_benefit',
         'debt_id',
         'paid_by_user_id',
         'is_closeout_initiated',
         'mirror_transaction_id',
+        'debt_payment_income_id',
         'plaid_transaction_id',
         'import_source',
         'plaid_pending_import_id',
@@ -47,6 +49,7 @@ class Transaction extends Model
         'split_data' => 'array',
         'is_borrow' => 'bool',
         'is_debt_payment' => 'bool',
+        'is_debt_payment_benefit' => 'bool',
         'is_closeout_initiated' => 'bool',
         'is_non_necessity' => 'bool',
         'is_repayment' => 'bool',
@@ -94,6 +97,16 @@ class Transaction extends Model
     public function mirrorTransaction(): BelongsTo
     {
         return $this->belongsTo(self::class, 'mirror_transaction_id');
+    }
+
+    public function debtPaymentBenefitExpense(): HasOne
+    {
+        return $this->hasOne(self::class, 'debt_payment_income_id');
+    }
+
+    public function debtPaymentIncome(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'debt_payment_income_id');
     }
 
     public function splits(): HasMany

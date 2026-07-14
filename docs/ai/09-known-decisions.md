@@ -86,6 +86,9 @@ This is consistent with zero-based / YNAB-style budgeting: savings rules run on 
 
 **UI implication:** The income category panel and the "Gross Income" figure in Projected Closeout both exclude debt repayments received. The Month Summary "Debt Repayments" section is the authoritative display for those transactions.
 
+### Creditor may record a benefit expense for a debt repayment
+When User B pays toward a debt owed to User A, A receives mirrored debt-payment **income**. A can optionally record a linked **benefit expense** (`is_debt_payment_benefit=true`, `debt_payment_income_id` → that income) for the same amount/date — e.g. B covered A's rent and applied it against the debt. The income stays; the expense is a normal expense for totals/closeout/bank math (so bank nets ~0 when no cash hit A's account). Full expense options are supported (category, split, advance fund, non-necessity). Managed via `POST/PUT/DELETE /transactions/{income}/debt-payment-benefit`.
+
 ### Session-based auth with CSRF (not API tokens)
 Fortify provides session authentication. This means the app cannot be used as a pure API backend without significant changes. The CSRF token is embedded in the Blade shell and sent with every Axios request.
 

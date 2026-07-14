@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-07-14 — Creditor benefit expense from debt repayment
+
+- Files touched: `database/migrations/2026_07_14_194817_add_debt_payment_benefit_columns_to_transactions_table.php`, `app/Models/Transaction.php`, `app/Services/TransactionService.php`, `app/Http/Controllers/TransactionController.php`, `app/Http/Requests/StoreDebtPaymentBenefitRequest.php`, `routes/web.php`, `resources/js/components/DebtPaymentBenefitForm.vue`, `resources/js/pages/Transactions.vue`, `tests/Feature/DebtPaymentBenefitTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: When an in-family debt repayment creates creditor **income**, the creditor can optionally record a linked **benefit expense** (same amount/date) with full expense options (category, split, advance fund, non-necessity). Debt-repayment income remains and stays excluded from gross income; the benefit expense counts normally toward expenses, closeout basis, and bank balance (so income − expense nets ~0 when someone else paid a bill for the creditor). Amount/date sync when the debt payment is edited; cascade-deleted when the debt-payment pair is removed. Dedicated routes: `POST/PUT/DELETE /transactions/{transaction}/debt-payment-benefit`.
+
 ## 2026-07-14 — Data migration: net existing bidirectional inter-family debts
 
 - Files touched: `database/migrations/2026_07_14_193432_net_bidirectional_inter_family_debts.php`, `tests/Feature/NetBidirectionalInterFamilyDebtsMigrationTest.php`, `docs/ai/10-ai-change-log.md`

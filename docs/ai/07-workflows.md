@@ -91,6 +91,25 @@ The payment history modal in `Debts.vue` displays:
 
 ---
 
+## Workflow 2b: Creditor records a benefit expense for a debt repayment
+
+Use case: B owes A money; B covers A's rent and marks the bank charge as paying toward that debt. A keeps the mirrored debt-repayment income and also records rent as an expense.
+
+1. Debt-payment pair already exists (Workflow 2 or transaction-form debt payment): B expense + A income (`is_debt_payment`, linked via `mirror_transaction_id`)
+2. A opens Transactions, taps **Record as expense** on the repayment income (or opens the Repayment pill → Record as expense)
+3. `DebtPaymentBenefitForm` collects category (required), optional description, split, advance fund, non-necessity
+4. Vue submits `POST /transactions/{incomeId}/debt-payment-benefit`
+5. `ClosedMonthGuard` checks A's month is open
+6. `TransactionService::createDebtPaymentBenefit`:
+   - Validates income is A's in-family debt-payment income and no benefit exists yet
+   - Creates expense with `is_debt_payment_benefit=true`, `debt_payment_income_id=income.id`, same amount/date as income
+   - Optional splits create `transaction_splits` + pending split debts (same as a normal expense)
+7. Returns the benefit expense (HTTP 201)
+8. Editing uses `PUT` on the same path; removing uses `DELETE` (debt-payment pair unchanged)
+9. If the debt-payment pair amount changes or is deleted, the benefit amount syncs or the benefit is cascade-deleted
+
+---
+
 ## Workflow 3: Borrowing from a Fund
 
 1. User is on `Funds.vue`, chooses a fund and enters a borrow amount

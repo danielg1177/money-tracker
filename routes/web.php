@@ -56,6 +56,9 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/transactions', [TransactionController::class, 'store']);
     Route::put('/transactions/{transaction}', [TransactionController::class, 'update']);
     Route::delete('/transactions/{transaction}', [TransactionController::class, 'destroy']);
+    Route::post('/transactions/{transaction}/debt-payment-benefit', [TransactionController::class, 'storeDebtPaymentBenefit']);
+    Route::put('/transactions/{transaction}/debt-payment-benefit', [TransactionController::class, 'updateDebtPaymentBenefit']);
+    Route::delete('/transactions/{transaction}/debt-payment-benefit', [TransactionController::class, 'destroyDebtPaymentBenefit']);
 
     Route::get('/family/users', function (Request $request) {
         return $request->expectsJson()

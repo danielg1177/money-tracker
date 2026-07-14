@@ -342,6 +342,30 @@
                   >
                     Needs Review — repaid{{ transaction.mirror_repayment_link?.repayment_transaction?.user?.name ? ' on behalf of ' + transaction.mirror_repayment_link.repayment_transaction.user.name : '' }}
                   </span>
+                  <button
+                    v-if="transaction.is_debt_payment_benefit"
+                    type="button"
+                    class="inline-flex shrink-0 items-center rounded-md border border-emerald-700/30 bg-emerald-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-300 cursor-pointer hover:bg-emerald-800/50"
+                    @click.stop="openBenefitFormFromBenefit(transaction)"
+                  >
+                    From debt repayment
+                  </button>
+                  <button
+                    v-else-if="transaction.is_debt_payment && transaction.type === 'income' && transaction.debt_payment_benefit_expense"
+                    type="button"
+                    class="inline-flex shrink-0 items-center rounded-md border border-emerald-700/30 bg-emerald-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-300 cursor-pointer hover:bg-emerald-800/50"
+                    @click.stop="openBenefitForm(transaction)"
+                  >
+                    Also recorded as expense
+                  </button>
+                  <button
+                    v-else-if="canRecordDebtPaymentBenefit(transaction)"
+                    type="button"
+                    class="inline-flex shrink-0 items-center rounded-md border border-emerald-700/40 bg-emerald-950/40 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-200 cursor-pointer hover:bg-emerald-900/50"
+                    @click.stop="openBenefitForm(transaction)"
+                  >
+                    Record as expense
+                  </button>
                 </div>
                 <p v-if="transaction.description" class="hidden sm:block text-gray-400 text-xs truncate">
                   {{ transaction.description }}
@@ -411,8 +435,8 @@
                   <div v-if="!confirmDelete[transaction.id]" class="flex gap-1">
                     <button
                       @click.stop="confirmDelete[transaction.id] = true"
-                      :disabled="isSelectedMonthLocked || transaction.is_closeout_initiated"
-                      :class="['p-1 sm:p-2 rounded-md sm:rounded-lg transition-colors', (isSelectedMonthLocked || transaction.is_closeout_initiated) ? 'text-gray-500 cursor-not-allowed' : 'text-gray-400 hover:text-red-400 hover:bg-gray-700']"
+                      :disabled="isSelectedMonthLocked || transaction.is_closeout_initiated || transaction.is_debt_payment_benefit"
+                      :class="['p-1 sm:p-2 rounded-md sm:rounded-lg transition-colors', (isSelectedMonthLocked || transaction.is_closeout_initiated || transaction.is_debt_payment_benefit) ? 'text-gray-500 cursor-not-allowed' : 'text-gray-400 hover:text-red-400 hover:bg-gray-700']"
                       :title="deleteButtonTitle(transaction)"
                     >
                       <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -608,6 +632,40 @@
                 <span v-if="pillModal.transaction.debt.is_family_debt" class="inline-block rounded-full bg-blue-900/50 px-2 py-0.5 text-xs text-blue-300">
                   Shared with family
                 </span>
+              </div>
+              <div
+                v-if="pillModal.transaction.type === 'income' && pillModal.transaction.is_debt_payment"
+                class="rounded-lg border border-emerald-700/30 bg-emerald-950/20 p-3 space-y-2"
+              >
+                <template v-if="pillModal.transaction.debt_payment_benefit_expense">
+                  <p class="text-sm text-gray-300">
+                    Also recorded as
+                    <span class="font-medium text-emerald-200">
+                      {{ pillModal.transaction.debt_payment_benefit_expense.category?.name || 'expense' }}
+                    </span>
+                  </p>
+                  <button
+                    type="button"
+                    class="w-full rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-medium py-2.5"
+                    :disabled="isSelectedMonthLocked"
+                    @click="openBenefitForm(pillModal.transaction); closePillModal()"
+                  >
+                    Edit recorded expense
+                  </button>
+                </template>
+                <template v-else>
+                  <p class="text-sm text-gray-400">
+                    If this repayment covered a cost for you (like rent), you can also record it as an expense.
+                  </p>
+                  <button
+                    type="button"
+                    class="w-full rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-medium py-2.5 disabled:opacity-50"
+                    :disabled="isSelectedMonthLocked"
+                    @click="openBenefitForm(pillModal.transaction); closePillModal()"
+                  >
+                    Record as expense
+                  </button>
+                </template>
               </div>
             </template>
             <p v-else-if="pillModal.type === 'debt'" class="text-sm text-gray-400">No debt details available.</p>
@@ -829,6 +887,16 @@
         </div>
       </div>
     </Teleport>
+
+    <DebtPaymentBenefitForm
+      :income="benefitFormIncome"
+      :categories="categories"
+      :family-users="familyUsers"
+      :funds="funds"
+      @close="benefitFormIncome = null"
+      @saved="handleBenefitSaved"
+      @removed="handleBenefitRemoved"
+    />
   </div>
 </template>
 
@@ -837,6 +905,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi';
 import TransactionForm from '../components/TransactionForm.vue';
+import DebtPaymentBenefitForm from '../components/DebtPaymentBenefitForm.vue';
 import { debtPaymentCategoryLine } from '../support/debtPaymentLabel.js';
 
 const router = useRouter();
@@ -865,6 +934,7 @@ const bankPillUndoError = ref('');
 /** Split IOUs from `GET /month-summary` (`member_balances`) for the selected calendar month only. */
 const monthSplitBalances = ref([]);
 const editReturnScrollY = ref(null);
+const benefitFormIncome = ref(null);
 
 function navigateToMonthSummary() {
   if (selectedMonthFilter.value && selectedMonthFilter.value !== 'custom') {
@@ -1392,6 +1462,53 @@ function closePillModal() {
   pillModal.value = null;
 }
 
+function canRecordDebtPaymentBenefit(transaction) {
+  return Boolean(
+    transaction?.is_debt_payment
+    && transaction?.type === 'income'
+    && !transaction?.debt_payment_benefit_expense
+    && !isSelectedMonthLocked.value
+    && currentUser.value?.id != null
+    && Number(transaction.user_id) === Number(currentUser.value.id),
+  );
+}
+
+function openBenefitForm(incomeTransaction) {
+  if (!incomeTransaction || isSelectedMonthLocked.value) {
+    return;
+  }
+  benefitFormIncome.value = incomeTransaction;
+}
+
+function openBenefitFormFromBenefit(benefitTransaction) {
+  const income = benefitTransaction?.debt_payment_income
+    || getTransactionById(benefitTransaction?.debt_payment_income_id);
+  if (income) {
+    openBenefitForm(income);
+    return;
+  }
+  // Fallback: open with a synthetic income shape if the income row is not in the current filter.
+  if (benefitTransaction?.debt_payment_income_id) {
+    benefitFormIncome.value = {
+      id: benefitTransaction.debt_payment_income_id,
+      amount: benefitTransaction.amount,
+      transaction_date: benefitTransaction.transaction_date,
+      description: benefitTransaction.description,
+      debt_payment_benefit_expense: benefitTransaction,
+    };
+  }
+}
+
+async function handleBenefitSaved() {
+  benefitFormIncome.value = null;
+  await reloadCurrentFilterData();
+}
+
+async function handleBenefitRemoved() {
+  benefitFormIncome.value = null;
+  await reloadCurrentFilterData();
+}
+
 function getSiblingTransactions(transaction) {
   const importId = transaction.plaid_pending_import?.id ?? transaction.plaid_pending_import_id;
   if (!importId) {
@@ -1490,6 +1607,10 @@ function isTransactionEditLocked(transaction) {
     return true;
   }
 
+  if (transaction?.is_debt_payment_benefit) {
+    return true;
+  }
+
   return Boolean(transaction?.is_repaid || transaction?.is_repayment);
 }
 
@@ -1499,6 +1620,9 @@ function deleteButtonTitle(transaction) {
   }
   if (transaction?.is_closeout_initiated) {
     return 'Closeout-generated entries cannot be deleted here';
+  }
+  if (transaction?.is_debt_payment_benefit) {
+    return 'Remove this expense from the linked debt repayment instead';
   }
   if (transaction?.is_repayment) {
     if (transaction.repayment_links?.[0]?.is_external_repayment) {

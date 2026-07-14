@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreDebtPaymentBenefitRequest;
 use App\Http\Requests\StoreTransactionRequest;
 use App\Models\Transaction;
 use App\Services\ClosedMonthGuard;
@@ -9,6 +10,7 @@ use App\Services\TransactionRepaymentService;
 use App\Services\TransactionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 class TransactionController extends Controller
 {
@@ -43,6 +45,11 @@ class TransactionController extends Controller
                 'repaidByLink.repaymentTransaction.category',
                 'repaidByLink.repaidUser',
                 'mirrorRepaymentLink.repaymentTransaction.user',
+                'debtPaymentBenefitExpense.category',
+                'debtPaymentBenefitExpense.splits.user',
+                'debtPaymentBenefitExpense.advanceFund',
+                'debtPaymentIncome.debt.creditor',
+                'debtPaymentIncome.debt.debtor',
             ])
             ->where(function ($q) use ($user): void {
                 $q->where('user_id', $user->id)
@@ -89,6 +96,7 @@ class TransactionController extends Controller
             ->where('type', 'expense')
             ->where('is_repaid', false)
             ->where('is_repayment_mirror', false)
+            ->where('is_debt_payment_benefit', false)
             ->where('is_closeout_initiated', false)
             ->with(['category'])
             ->orderBy('transaction_date', 'desc');
@@ -181,6 +189,96 @@ class TransactionController extends Controller
             $this->closedMonthGuard->assertTransactionMutationOpen($transaction);
             $this->repaymentService->deleteRepaymentLinks($transaction);
             $this->transactionService->deleteTransaction($transaction);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->noContent();
+    }
+
+    /**
+     * Create a creditor-side benefit expense linked to a debt-payment income row.
+     */
+    public function storeDebtPaymentBenefit(StoreDebtPaymentBenefitRequest $request, Transaction $transaction): JsonResponse
+    {
+        $user = auth()->user();
+
+        if ((int) $transaction->user_id !== (int) $user->id) {
+            abort(403);
+        }
+
+        try {
+            $this->closedMonthGuard->assertTransactionMutationOpen($transaction);
+            $benefit = $this->transactionService->createDebtPaymentBenefit(
+                $transaction,
+                $request->validated(),
+                $user
+            );
+
+            return response()->json(
+                $benefit->load([
+                    'user',
+                    'category',
+                    'splits.user',
+                    'advanceFund',
+                    'debtPaymentIncome.debt.creditor',
+                    'debtPaymentIncome.debt.debtor',
+                ]),
+                201
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * Update the creditor-side benefit expense linked to a debt-payment income row.
+     */
+    public function updateDebtPaymentBenefit(StoreDebtPaymentBenefitRequest $request, Transaction $transaction): JsonResponse
+    {
+        $user = auth()->user();
+
+        if ((int) $transaction->user_id !== (int) $user->id) {
+            abort(403);
+        }
+
+        try {
+            $this->closedMonthGuard->assertTransactionMutationOpen($transaction);
+            $benefit = $this->transactionService->updateDebtPaymentBenefit(
+                $transaction,
+                $request->validated(),
+                $user
+            );
+
+            return response()->json(
+                $benefit->load([
+                    'user',
+                    'category',
+                    'splits.user',
+                    'advanceFund',
+                    'debtPaymentIncome.debt.creditor',
+                    'debtPaymentIncome.debt.debtor',
+                ])
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * Remove the creditor-side benefit expense without touching the debt-payment pair.
+     */
+    public function destroyDebtPaymentBenefit(Transaction $transaction): JsonResponse|Response
+    {
+        $user = auth()->user();
+
+        if ((int) $transaction->user_id !== (int) $user->id) {
+            abort(403);
+        }
+
+        try {
+            $this->closedMonthGuard->assertTransactionMutationOpen($transaction);
+            $this->transactionService->deleteDebtPaymentBenefit($transaction, $user);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
