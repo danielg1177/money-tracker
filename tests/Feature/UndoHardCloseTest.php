@@ -9,6 +9,7 @@ use App\Models\Family;
 use App\Models\Fund;
 use App\Models\FundMovement;
 use App\Models\FundRule;
+use App\Models\MonthSoftClose;
 use App\Models\Transaction;
 use App\Models\User;
 use Carbon\Carbon;
@@ -769,5 +770,75 @@ class UndoHardCloseTest extends TestCase
         $this->assertEqualsWithDelta(800.0, (float) $existingDebt->amount, 0.01);
         $this->assertEqualsWithDelta(800.0, (float) $existingDebt->balance, 0.01);
         $this->assertSame([], $existingDebt->contributions ?? []);
+    }
+
+    public function test_undo_hard_close_restores_opposite_direction_netting_from_closeout(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 4, 30, 12, 0, 0));
+
+        $family = Family::factory()->create();
+        $manager = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'head_of_household',
+            'is_admin' => false,
+        ]);
+        $member = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'member',
+            'is_admin' => false,
+        ]);
+
+        $existing = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $member->id,
+            'creditor_id' => $manager->id,
+            'amount' => 100.00,
+            'balance' => 100.00,
+            'is_pending_closeout' => false,
+            'transaction_id' => null,
+        ]);
+
+        MonthSoftClose::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $manager->id,
+            'year' => 2026,
+            'month' => 4,
+            'closed_at' => now(),
+        ]);
+        MonthSoftClose::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $member->id,
+            'year' => 2026,
+            'month' => 4,
+            'closed_at' => now(),
+        ]);
+
+        Debt::query()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $manager->id,
+            'creditor_id' => $member->id,
+            'transaction_id' => null,
+            'amount' => 60,
+            'balance' => 60,
+            'description' => 'Pending opposite',
+            'is_pending_closeout' => true,
+        ]);
+
+        $this->actingAs($manager)->postJson('/closeout/hard-close', [
+            'year' => 2026,
+            'month' => 4,
+        ])->assertOk();
+
+        $existing->refresh();
+        $this->assertEqualsWithDelta(40.00, (float) $existing->balance, 0.01);
+
+        $this->actingAs($manager)->postJson('/closeout/undo-hard-close', [
+            'year' => 2026,
+            'month' => 4,
+        ])->assertOk();
+
+        $existing->refresh();
+        $this->assertEqualsWithDelta(100.00, (float) $existing->amount, 0.01);
+        $this->assertEqualsWithDelta(100.00, (float) $existing->balance, 0.01);
     }
 }

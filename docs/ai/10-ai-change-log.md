@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-07-14 — Data migration: net existing bidirectional inter-family debts
+
+- Files touched: `database/migrations/2026_07_14_193432_net_bidirectional_inter_family_debts.php`, `tests/Feature/NetBidirectionalInterFamilyDebtsMigrationTest.php`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: One-time repair migration nets confirmed personal in-family running debts (`is_pending_closeout=false`, `is_family_debt=false`, `transaction_id` null) that have open balances in both directions (or duplicate same-direction rows) into a single open direction per member pair. Equal opposite balances cancel to zero; pending split debts and already-single open debts are left alone. Irreversible (`down` is a no-op).
+
+## 2026-07-14 — Fix bidirectional open debts after closeout / overpayment swing
+
+- Files touched: `app/Services/DebtService.php`, `app/Services/TransactionService.php`, `app/Services/MonthCloseoutService.php`, `tests/Feature/DebtRepaymentTransactionTest.php`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `tests/Feature/UndoHardCloseTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: In-family pair settlements now go through `DebtService::applyInterFamilyPairNet`. Hard-close consolidation and overpayment swings reduce any opposite-direction confirmed debt first, then merge/create same-direction — so the Debts page no longer ends up with both A→B and B→A open balances after a role reversal. Undo hard-close restores opposite-direction reductions via negative month `contributions`.
+
 ## 2026-07-14 — Soft close no longer blocks others’ splits / debt payments
 
 - Files touched: `app/Services/ClosedMonthGuard.php`, `app/Http/Controllers/DebtController.php`, `tests/Feature/ClosedMonthMutationLockTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`

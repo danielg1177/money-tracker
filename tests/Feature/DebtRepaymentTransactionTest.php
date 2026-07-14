@@ -506,4 +506,47 @@ class DebtRepaymentTransactionTest extends TestCase
             'balance' => '40.00',
         ]);
     }
+
+    public function test_overpayment_merges_into_existing_reverse_direction_debt_instead_of_creating_second(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id]);
+        $creditor = User::factory()->create(['family_id' => $family->id]);
+
+        $forwardDebt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 100.00,
+            'balance' => 100.00,
+            'is_pending_closeout' => false,
+            'transaction_id' => null,
+        ]);
+
+        $existingReverse = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $creditor->id,
+            'creditor_id' => $debtor->id,
+            'amount' => 25.00,
+            'balance' => 25.00,
+            'is_pending_closeout' => false,
+            'transaction_id' => null,
+        ]);
+
+        $this->actingAs($debtor)->postJson('/debts/pay', [
+            'debt_id' => $forwardDebt->id,
+            'amount' => 150.00,
+            'description' => 'Overpay into existing reverse',
+            'transaction_date' => '2026-06-01',
+        ])->assertOk();
+
+        $forwardDebt->refresh();
+        $existingReverse->refresh();
+
+        $this->assertSame('0.00', $forwardDebt->balance);
+        $this->assertEqualsWithDelta(75.00, (float) $existingReverse->balance, 0.01);
+        $this->assertEqualsWithDelta(75.00, (float) $existingReverse->amount, 0.01);
+
+        $this->assertSame(2, Debt::query()->where('family_id', $family->id)->count());
+    }
 }

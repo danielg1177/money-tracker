@@ -72,7 +72,7 @@ Detailed step-by-step flows for the most complex operations in the app.
       - Sets `debt_id` to the same debt
       - Sets `paid_by_user_id` to the payer
       - Sets `is_closeout_initiated=false` (manual payment)
-   c. Updates balance: decrements by payment amount, **or** for in-family overpayment zeros the debt and creates a new swapped debtor/creditor debt for the excess
+   c. Updates balance: decrements by payment amount, **or** for in-family overpayment zeros the debt and applies the excess via `DebtService::applyInterFamilyPairNet` (swapped direction; nets/merges with existing pair debts)
 9. Returns HTTP 200 `{ "message": "Debt payment recorded" }`
 
 **Note:** Debt records with `balance = 0` remain in the database — there is no auto-deletion or "paid" status flag.
@@ -175,7 +175,7 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
 
 **Title completion details:** `destination_type='title'` creates `CloseoutTitleSaving` records at hard-close; when user later marks one complete (`POST /title-savings/{id}/complete`), backend creates a closeout-tagged expense transaction using the rule's default closeout category if configured. Undo completion deletes that generated transaction.
 
-**After rule processing:** `hardClose` runs `consolidatePendingSplitDebts`, which nets pending split debts for the closed month—including pending rows with a null `transaction_id` so they are not skipped—and writes confirmed debts before deleting the pending rows.
+**After rule processing:** `hardClose` runs `consolidatePendingSplitDebts`, which nets pending split debts for the closed month—including pending rows with a null `transaction_id` so they are not skipped—then applies each pair net via `DebtService::applyInterFamilyPairNet` (also nets against opposite-direction confirmed debts) before deleting the pending rows.
 
 ---
 
@@ -250,7 +250,7 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
 5. Deletes closeout-generated month transactions (`is_closeout_initiated=true`) after debt balances are restored
 6. Deletes `CloseoutTitleSaving` rows for that family/month and deletes each linked `completion_transaction_id` row when present
 7. Reverses split-debt consolidation:
-   - confirmed debts with month/year entries in `contributions` remove those entries and subtract that amount from `amount` + `balance`
+   - confirmed debts with month/year entries in `contributions` remove those entries and subtract that amount from `amount` + `balance` (negative contribution amounts from opposite-direction netting restore the reduced debt)
    - debts whose contributions become empty are deleted only when that month's contributions are marked `created_by_closeout_debt=true` (closeout-created debt rows)
 8. Recreates pending split debts from non-closeout split transactions in that month (`is_split=true`, `is_closeout_initiated=false`) when `(transaction_id, debtor_id)` debt does not already exist
 9. Reverses monthly debt interest entries by removing matching month/year records from `interest_accruals`, subtracting accrued interest from `balance`, and recomputing `interest_last_applied_at` from the latest remaining accrual (or null)

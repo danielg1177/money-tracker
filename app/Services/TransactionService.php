@@ -13,6 +13,10 @@ use InvalidArgumentException;
 
 class TransactionService
 {
+    public function __construct(
+        private DebtService $debtService,
+    ) {}
+
     /**
      * Creates a transaction with optional split and debt records.
      *
@@ -198,16 +202,13 @@ class TransactionService
             if ($overpayment > 0 && $debt->creditor_id !== null) {
                 $debt->balance = '0.00';
                 $debt->save();
-                Debt::query()->create([
-                    'family_id' => $debt->family_id,
-                    'debtor_id' => $debt->creditor_id,
-                    'creditor_id' => $debt->debtor_id,
-                    'amount' => $overpayment,
-                    'balance' => $overpayment,
-                    'description' => 'Reversed from overpayment: '.((string) ($data['description'] ?? 'Debt payment')),
-                    'is_pending_closeout' => false,
-                    'is_family_debt' => false,
-                ]);
+                $this->debtService->applyInterFamilyPairNet(
+                    (int) $debt->family_id,
+                    (int) $debt->creditor_id,
+                    (int) $debt->debtor_id,
+                    $overpayment,
+                    'Reversed from overpayment: '.((string) ($data['description'] ?? 'Debt payment')),
+                );
             } else {
                 $debt->decrement('balance', $amount);
             }
@@ -296,16 +297,13 @@ class TransactionService
             if ($overpayment > 0 && $debt->creditor_id !== null) {
                 $debt->balance = '0.00';
                 $debt->save();
-                Debt::query()->create([
-                    'family_id' => $debt->family_id,
-                    'debtor_id' => $debt->creditor_id,
-                    'creditor_id' => $debt->debtor_id,
-                    'amount' => $overpayment,
-                    'balance' => $overpayment,
-                    'description' => 'Reversed from overpayment: '.($description ?: 'Debt repayment received'),
-                    'is_pending_closeout' => false,
-                    'is_family_debt' => false,
-                ]);
+                $this->debtService->applyInterFamilyPairNet(
+                    (int) $debt->family_id,
+                    (int) $debt->creditor_id,
+                    (int) $debt->debtor_id,
+                    $overpayment,
+                    'Reversed from overpayment: '.($description ?: 'Debt repayment received'),
+                );
             } else {
                 $debt->decrement('balance', $amount);
             }

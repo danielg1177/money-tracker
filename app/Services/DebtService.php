@@ -13,6 +13,123 @@ use InvalidArgumentException;
 class DebtService
 {
     /**
+     * Apply a net amount that $debtorId owes $creditorId against confirmed in-family
+     * running debts for that pair. Opposite-direction balances are reduced first; any
+     * remainder increases an existing same-direction debt or creates one.
+     *
+     * This prevents bidirectional open debts (A→B and B→A) after closeout consolidation
+     * or in-family overpayment swings.
+     *
+     * @param  array{month: int, year: int}|null  $closeoutContribution  When set, writes
+     *                                                                   undoable contribution
+     *                                                                   entries (negative when
+     *                                                                   reducing opposite debts).
+     */
+    public function applyInterFamilyPairNet(
+        int $familyId,
+        int $debtorId,
+        int $creditorId,
+        float $amount,
+        ?string $description = null,
+        ?array $closeoutContribution = null,
+    ): void {
+        $remaining = round($amount, 2);
+        if ($remaining < 0.01 || $debtorId === $creditorId) {
+            return;
+        }
+
+        $oppositeDebts = Debt::query()
+            ->where('family_id', $familyId)
+            ->where('debtor_id', $creditorId)
+            ->where('creditor_id', $debtorId)
+            ->where('is_pending_closeout', false)
+            ->whereNull('transaction_id')
+            ->where('balance', '>', 0)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($oppositeDebts as $oppositeDebt) {
+            if ($remaining < 0.01) {
+                break;
+            }
+
+            $applied = min($remaining, round((float) $oppositeDebt->balance, 2));
+            if ($applied < 0.01) {
+                continue;
+            }
+
+            $oppositeDebt->balance = round((float) $oppositeDebt->balance - $applied, 2);
+            $oppositeDebt->amount = max(0, round((float) $oppositeDebt->amount - $applied, 2));
+
+            if ($closeoutContribution !== null) {
+                $oppositeDebt->contributions = array_merge($oppositeDebt->contributions ?? [], [[
+                    'month' => $closeoutContribution['month'],
+                    'year' => $closeoutContribution['year'],
+                    'amount' => -$applied,
+                ]]);
+            }
+
+            $oppositeDebt->save();
+            $remaining = round($remaining - $applied, 2);
+        }
+
+        if ($remaining < 0.01) {
+            return;
+        }
+
+        $sameDirectionDebt = Debt::query()
+            ->where('family_id', $familyId)
+            ->where('debtor_id', $debtorId)
+            ->where('creditor_id', $creditorId)
+            ->where('is_pending_closeout', false)
+            ->whereNull('transaction_id')
+            ->orderByDesc('balance')
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->first();
+
+        if ($sameDirectionDebt) {
+            $sameDirectionDebt->amount = round((float) $sameDirectionDebt->amount + $remaining, 2);
+            $sameDirectionDebt->balance = round((float) $sameDirectionDebt->balance + $remaining, 2);
+
+            if ($closeoutContribution !== null) {
+                $sameDirectionDebt->contributions = array_merge($sameDirectionDebt->contributions ?? [], [[
+                    'month' => $closeoutContribution['month'],
+                    'year' => $closeoutContribution['year'],
+                    'amount' => $remaining,
+                ]]);
+            }
+
+            $sameDirectionDebt->save();
+
+            return;
+        }
+
+        $contribution = null;
+        if ($closeoutContribution !== null) {
+            $contribution = [
+                'month' => $closeoutContribution['month'],
+                'year' => $closeoutContribution['year'],
+                'amount' => $remaining,
+                'created_by_closeout_debt' => true,
+            ];
+        }
+
+        Debt::query()->create([
+            'family_id' => $familyId,
+            'debtor_id' => $debtorId,
+            'creditor_id' => $creditorId,
+            'amount' => $remaining,
+            'balance' => $remaining,
+            'description' => $description ?: 'Inter-family debt',
+            'is_pending_closeout' => false,
+            'is_family_debt' => false,
+            'contributions' => $contribution !== null ? [$contribution] : null,
+        ]);
+    }
+
+    /**
      * Pay a debt by creating corresponding transactions and updating the debt balance.
      *
      * @param  Debt  $debt  The debt record to pay
@@ -131,16 +248,13 @@ class DebtService
             if ($overpayment > 0 && $debt->creditor_id !== null) {
                 $debt->balance = '0.00';
                 $debt->save();
-                Debt::create([
-                    'family_id' => $debt->family_id,
-                    'debtor_id' => $debt->creditor_id,
-                    'creditor_id' => $debt->debtor_id,
-                    'amount' => $overpayment,
-                    'balance' => $overpayment,
-                    'description' => 'Reversed from overpayment: '.($description ?: 'Debt payment'),
-                    'is_pending_closeout' => false,
-                    'is_family_debt' => false,
-                ]);
+                $this->applyInterFamilyPairNet(
+                    (int) $debt->family_id,
+                    (int) $debt->creditor_id,
+                    (int) $debt->debtor_id,
+                    $overpayment,
+                    'Reversed from overpayment: '.($description ?: 'Debt payment'),
+                );
             } else {
                 $debt->decrement('balance', $paymentAmount);
             }

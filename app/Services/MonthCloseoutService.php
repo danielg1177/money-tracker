@@ -20,6 +20,10 @@ use InvalidArgumentException;
 
 class MonthCloseoutService
 {
+    public function __construct(
+        private DebtService $debtService,
+    ) {}
+
     /**
      * Create a soft close record for a user in a given month.
      *
@@ -864,33 +868,14 @@ class MonthCloseoutService
                     : [$highId, $lowId];
                 $netAmount = abs($net);
 
-                $existingDebt = Debt::query()
-                    ->where('family_id', $family->id)
-                    ->where('debtor_id', $actualDebtorId)
-                    ->where('creditor_id', $actualCreditorId)
-                    ->where('is_pending_closeout', false)
-                    ->whereNull('transaction_id')
-                    ->first();
-
-                $contribution = ['month' => $month, 'year' => $year, 'amount' => $netAmount];
-                if ($existingDebt) {
-                    $existingDebt->amount = (float) $existingDebt->amount + $netAmount;
-                    $existingDebt->balance = (float) $existingDebt->balance + $netAmount;
-                    $existingDebt->contributions = array_merge($existingDebt->contributions ?? [], [$contribution]);
-                    $existingDebt->save();
-                } else {
-                    $contribution['created_by_closeout_debt'] = true;
-                    Debt::query()->create([
-                        'family_id' => $family->id,
-                        'debtor_id' => $actualDebtorId,
-                        'creditor_id' => $actualCreditorId,
-                        'amount' => $netAmount,
-                        'balance' => $netAmount,
-                        'is_pending_closeout' => false,
-                        'description' => 'Split settlements from '.$month.'/'.$year,
-                        'contributions' => [$contribution],
-                    ]);
-                }
+                $this->debtService->applyInterFamilyPairNet(
+                    (int) $family->id,
+                    (int) $actualDebtorId,
+                    (int) $actualCreditorId,
+                    $netAmount,
+                    'Split settlements from '.$month.'/'.$year,
+                    ['month' => $month, 'year' => $year],
+                );
             }
         }
 

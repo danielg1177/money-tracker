@@ -318,6 +318,153 @@ class MonthCloseoutTransactionDateTest extends TestCase
         ]);
     }
 
+    public function test_hard_close_nets_pending_splits_against_opposite_direction_confirmed_debt(): void
+    {
+        $family = Family::factory()->create();
+        $manager = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'head_of_household',
+        ]);
+        $member = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'member',
+        ]);
+
+        // Member already owes manager $100 (confirmed).
+        $existing = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $member->id,
+            'creditor_id' => $manager->id,
+            'amount' => 100.00,
+            'balance' => 100.00,
+            'is_pending_closeout' => false,
+            'transaction_id' => null,
+        ]);
+
+        MonthSoftClose::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $manager->id,
+            'year' => 2026,
+            'month' => 4,
+            'closed_at' => now(),
+        ]);
+        MonthSoftClose::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $member->id,
+            'year' => 2026,
+            'month' => 4,
+            'closed_at' => now(),
+        ]);
+
+        // Pending split settlement would create manager → member $60 (opposite direction).
+        Debt::query()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $manager->id,
+            'creditor_id' => $member->id,
+            'fund_id' => null,
+            'transaction_id' => null,
+            'amount' => 60,
+            'balance' => 60,
+            'description' => 'Pending opposite',
+            'is_pending_closeout' => true,
+        ]);
+
+        $this->actingAs($manager)->postJson('/closeout/hard-close', [
+            'year' => 2026,
+            'month' => 4,
+        ])->assertOk();
+
+        $existing->refresh();
+        $this->assertEqualsWithDelta(40.00, (float) $existing->balance, 0.01);
+        $this->assertEqualsWithDelta(40.00, (float) $existing->amount, 0.01);
+
+        // Must not leave a second open debt in the opposite direction.
+        $this->assertSame(
+            0,
+            Debt::query()
+                ->where('family_id', $family->id)
+                ->where('debtor_id', $manager->id)
+                ->where('creditor_id', $member->id)
+                ->where('balance', '>', 0)
+                ->count()
+        );
+
+        $this->assertSame(
+            1,
+            Debt::query()
+                ->where('family_id', $family->id)
+                ->where('balance', '>', 0)
+                ->count()
+        );
+    }
+
+    public function test_hard_close_reverses_pair_when_pending_net_exceeds_opposite_confirmed_debt(): void
+    {
+        $family = Family::factory()->create();
+        $manager = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'head_of_household',
+        ]);
+        $member = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'member',
+        ]);
+
+        $existing = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $member->id,
+            'creditor_id' => $manager->id,
+            'amount' => 40.00,
+            'balance' => 40.00,
+            'is_pending_closeout' => false,
+            'transaction_id' => null,
+        ]);
+
+        MonthSoftClose::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $manager->id,
+            'year' => 2026,
+            'month' => 4,
+            'closed_at' => now(),
+        ]);
+        MonthSoftClose::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $member->id,
+            'year' => 2026,
+            'month' => 4,
+            'closed_at' => now(),
+        ]);
+
+        Debt::query()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $manager->id,
+            'creditor_id' => $member->id,
+            'fund_id' => null,
+            'transaction_id' => null,
+            'amount' => 100,
+            'balance' => 100,
+            'description' => 'Pending opposite larger',
+            'is_pending_closeout' => true,
+        ]);
+
+        $this->actingAs($manager)->postJson('/closeout/hard-close', [
+            'year' => 2026,
+            'month' => 4,
+        ])->assertOk();
+
+        $existing->refresh();
+        $this->assertSame('0.00', $existing->balance);
+
+        $reversed = Debt::query()
+            ->where('family_id', $family->id)
+            ->where('debtor_id', $manager->id)
+            ->where('creditor_id', $member->id)
+            ->where('balance', '>', 0)
+            ->sole();
+
+        $this->assertEqualsWithDelta(60.00, (float) $reversed->balance, 0.01);
+    }
+
     public function test_hard_close_applies_interest_through_closed_month_end_even_when_closed_late(): void
     {
         Carbon::setTestNow(Carbon::create(2026, 3, 10, 12, 0, 0));
