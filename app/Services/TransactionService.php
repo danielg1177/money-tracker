@@ -208,6 +208,9 @@ class TransactionService
                     (int) $debt->debtor_id,
                     $overpayment,
                     'Reversed from overpayment: '.((string) ($data['description'] ?? 'Debt payment')),
+                    null,
+                    (int) $debt->id,
+                    (string) $data['transaction_date'],
                 );
             } else {
                 $debt->decrement('balance', $amount);
@@ -303,6 +306,9 @@ class TransactionService
                     (int) $debt->debtor_id,
                     $overpayment,
                     'Reversed from overpayment: '.($description ?: 'Debt repayment received'),
+                    null,
+                    (int) $debt->id,
+                    (string) $transactionDate,
                 );
             } else {
                 $debt->decrement('balance', $amount);

@@ -634,14 +634,15 @@
           <div class="p-4 space-y-3 min-w-0 max-w-full">
             <!-- Debt summary line -->
             <p v-if="historyDebt.creditor_id" class="text-sm text-gray-400">
-              <span :class="historyDebt.balance === 0 ? 'text-green-400' : 'text-red-400'" class="font-medium">
-                {{ formatCurrency(historyDebt.balance) }}
+              <span :class="historyRemaining === 0 ? 'text-green-400' : 'text-red-400'" class="font-medium">
+                {{ formatCurrency(historyRemaining) }}
               </span> remaining
+              <span v-if="historyRemainingPartyLabel" class="mt-0.5 block text-xs text-gray-500">{{ historyRemainingPartyLabel }}</span>
             </p>
             <p v-else class="text-sm text-gray-400">
               <span class="text-white font-medium">{{ formatCurrency(historyDebt.amount) }}</span> original,
-              <span :class="historyDebt.balance === 0 ? 'text-green-400' : 'text-red-400'" class="font-medium">
-                {{ formatCurrency(historyDebt.balance) }}
+              <span :class="historyRemaining === 0 ? 'text-green-400' : 'text-red-400'" class="font-medium">
+                {{ formatCurrency(historyRemaining) }}
               </span> remaining
             </p>
             <!-- Loading -->
@@ -652,17 +653,17 @@
               </svg>
             </div>
             <!-- Empty -->
-            <div v-else-if="debtPayments.length === 0 && (!historyDebt.contributions || historyDebt.contributions.length === 0)" class="py-8 text-center">
+            <div v-else-if="debtPayments.length === 0 && historyContributions.length === 0" class="py-8 text-center">
               <p class="text-gray-500 text-sm">No history recorded yet</p>
             </div>
             <!-- Payment list -->
             <div v-else class="space-y-2">
               <!-- Closeout contributions -->
-              <div v-if="historyDebt.contributions && historyDebt.contributions.length > 0" class="space-y-2">
+              <div v-if="historyContributions.length > 0" class="space-y-2">
                 <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Closeout Additions</p>
                 <div
-                  v-for="(contribution, index) in [...(historyDebt.contributions)].reverse()"
-                  :key="'contrib-' + index"
+                  v-for="(contribution, index) in [...historyContributions].reverse()"
+                  :key="'contrib-' + (contribution.debt_id ?? 'debt') + '-' + index"
                   @click="navigateToMonthSummary(contribution.year, contribution.month)"
                   class="bg-gray-800 border border-amber-700/30 rounded-lg p-3 cursor-pointer hover:bg-gray-750 hover:border-amber-700/50 transition-colors"
                 >
@@ -677,69 +678,51 @@
                   </div>
                 </div>
               </div>
-              <!-- Manual payments -->
-              <div v-if="debtPayments.length > 0" class="space-y-2" :class="{ 'mt-4': historyDebt.contributions && historyDebt.contributions.length > 0 }">
-                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Payments</p>
+              <!-- Timeline (loans + payments) -->
+              <div v-if="debtPayments.length > 0" class="space-y-2" :class="{ 'mt-4': historyContributions.length > 0 }">
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">History</p>
                 <div
                   v-for="(payment, index) in debtPayments"
-                  :key="payment.id ?? `${payment.type}-${payment.transaction_date}-${index}`"
-                  :class="[
-                    'bg-gray-800 border rounded-lg p-3',
-                    payment.type === 'initial_value'
-                      ? 'border-blue-700/50 bg-blue-900/20'
-                      : payment.type === 'interest_accrual'
-                        ? 'border-amber-700/50 bg-amber-900/20'
-                        : payment.type === 'income_addition'
-                          ? 'border-violet-700/50 bg-violet-900/20'
-                          : payment.type === 'loan_receipt'
-                            ? 'border-indigo-700/50 bg-indigo-900/20'
-                            : 'border-gray-700'
-                  ]"
+                  :key="payment.id ?? `${payment.debt_id ?? 'debt'}-${payment.type}-${payment.transaction_date}-${index}`"
+                  class="bg-gray-800 border border-gray-700 rounded-lg p-3"
                 >
                   <div class="flex items-start justify-between gap-3">
                     <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-2 mb-1">
-                        <!-- Initial Value entry label -->
+                      <div class="flex flex-wrap items-center gap-2 mb-1">
                         <span
-                          v-if="payment.type === 'initial_value'"
-                          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900/30 text-blue-300 border border-blue-700/50"
+                          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border"
+                          :class="historyKindBadgeClass(payment)"
                         >
-                          Initial Value Set At
+                          {{ historyKindLabel(payment) }}
                         </span>
                         <span
-                          v-else-if="payment.type === 'interest_accrual'"
-                          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-900/30 text-amber-300 border border-amber-700/50"
-                        >
-                          Monthly Interest Accrued
-                        </span>
-                        <span
-                          v-else-if="payment.type === 'income_addition'"
-                          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-violet-900/30 text-violet-300 border border-violet-700/50"
-                        >
-                          Loan Addition
-                        </span>
-                        <span
-                          v-else-if="payment.type === 'loan_receipt'"
-                          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-900/30 text-indigo-300 border border-indigo-700/50"
-                        >
-                          Loan Received
-                        </span>
-                        <!-- Regular payment description -->
-                        <p v-else class="text-sm font-medium text-white">{{ payment.description || 'Debt payment' }}</p>
-                        <span
-                          v-if="payment.is_closeout_initiated && payment.type !== 'initial_value'"
+                          v-if="payment.is_closeout_initiated && payment.type !== 'initial_value' && payment.type !== 'interest_accrual'"
                           class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-900/30 text-purple-300 border border-purple-700/50"
                           title="Payment was initiated from month closeout"
                         >
                           Closeout
                         </span>
                       </div>
-                      <p class="text-xs text-gray-500">
+                      <p
+                        v-if="historyFlowLabel(payment)"
+                        class="text-sm font-medium text-white"
+                      >
+                        {{ historyFlowLabel(payment) }}
+                      </p>
+                      <p
+                        v-else-if="payment.type === 'expense' || payment.type === 'income'"
+                        class="text-sm font-medium text-white"
+                      >
+                        {{ payment.description || 'Debt payment' }}
+                      </p>
+                      <p class="text-xs text-gray-500 mt-0.5">
                         {{ new Date(payment.transaction_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) }}
                       </p>
-                      <p v-if="payment.paid_by_user && payment.type !== 'initial_value'" class="text-xs text-gray-600 mt-1">
-                        {{ payment.type === 'income' ? 'From:' : 'Paid by:' }}
-                        <span class="text-gray-300 font-medium">{{ payment.paid_by_user.name }}</span>
+                      <p
+                        v-if="(payment.type === 'expense' || payment.type === 'income') && payment.description && historyFlowLabel(payment)"
+                        class="text-xs text-gray-500 mt-1 truncate"
+                      >
+                        {{ payment.description }}
                       </p>
                       <p
                         v-if="payment.is_closeout_initiated && payment.type !== 'initial_value' && payment.type !== 'interest_accrual'"
@@ -912,8 +895,39 @@ const addDebtError = ref(null);
 const deleteConfirmDebt = ref(null);
 const showHistoryModal = ref(false);
 const historyDebt = ref(null);
+const historySummary = ref(null);
 const debtPayments = ref([]);
 const historyLoading = ref(false);
+
+const historyContributions = computed(() => historySummary.value?.contributions ?? []);
+const historyRemaining = computed(() => {
+  if (historySummary.value?.remaining != null) {
+    return Number(historySummary.value.remaining);
+  }
+
+  return historyDebt.value ? Number(historyDebt.value.balance) : 0;
+});
+const historyRemainingPartyLabel = computed(() => {
+  const summary = historySummary.value;
+  if (!summary || !authUser.value || historyRemaining.value < 0.01) {
+    return null;
+  }
+
+  const debtorId = summary.remaining_debtor_id;
+  const creditorId = summary.remaining_creditor_id;
+  const debtorName = summary.remaining_debtor_name || 'Debtor';
+  const creditorName = summary.remaining_creditor_name || 'Creditor';
+
+  if (debtorId != null && Number(debtorId) === Number(authUser.value.id)) {
+    return `You owe ${creditorName}`;
+  }
+
+  if (creditorId != null && Number(creditorId) === Number(authUser.value.id)) {
+    return `${debtorName} owes you`;
+  }
+
+  return `${debtorName} owes ${creditorName}`;
+});
 const showEditDebtModal = ref(false);
 const editingDebt = ref(null);
 const editDebtForm = ref({
@@ -1010,6 +1024,71 @@ function getSplitParticipantLabel(userId, userName) {
   return userId === authUser.value.id ? 'You' : userName;
 }
 
+function historyPersonLabel(userId, userName) {
+  if (userId != null && authUser.value && Number(userId) === Number(authUser.value.id)) {
+    return 'You';
+  }
+
+  return userName || 'Someone';
+}
+
+function historyFlowLabel(payment) {
+  if (!payment?.flow_from_user_name && !payment?.flow_to_user_name) {
+    return null;
+  }
+
+  const from = historyPersonLabel(payment.flow_from_user_id, payment.flow_from_user_name);
+  const to = historyPersonLabel(payment.flow_to_user_id, payment.flow_to_user_name);
+
+  return `${from} → ${to}`;
+}
+
+function historyKindLabel(payment) {
+  if (payment.type === 'initial_value') {
+    return payment.is_direction_reversal ? 'Direction reversed' : 'Loan';
+  }
+
+  if (payment.type === 'interest_accrual') {
+    return 'Interest';
+  }
+
+  if (payment.type === 'income_addition') {
+    return 'Loan addition';
+  }
+
+  if (payment.type === 'loan_receipt') {
+    return 'Loan received';
+  }
+
+  if (payment.flow_kind === 'payment' || payment.type === 'expense' || payment.type === 'income') {
+    return 'Payment';
+  }
+
+  return payment.description || 'Entry';
+}
+
+function historyKindBadgeClass(payment) {
+  if (payment.type === 'initial_value') {
+    return payment.is_direction_reversal
+      ? 'bg-orange-900/30 text-orange-300 border-orange-700/50'
+      : 'bg-sky-900/30 text-sky-300 border-sky-700/50';
+  }
+
+  if (payment.type === 'interest_accrual') {
+    return 'bg-amber-900/30 text-amber-300 border-amber-700/50';
+  }
+
+  if (payment.type === 'income_addition') {
+    return 'bg-violet-900/30 text-violet-300 border-violet-700/50';
+  }
+
+  if (payment.type === 'loan_receipt') {
+    return 'bg-indigo-900/30 text-indigo-300 border-indigo-700/50';
+  }
+
+  return 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50';
+}
+
 function paymentAmountPrefix(payment) {
   if (
     payment.type === 'initial_value'
@@ -1025,7 +1104,7 @@ function paymentAmountPrefix(payment) {
 
 function paymentAmountClass(payment) {
   if (payment.type === 'initial_value') {
-    return 'text-blue-400';
+    return payment.is_direction_reversal ? 'text-orange-400' : 'text-sky-400';
   }
 
   if (payment.type === 'interest_accrual') {
@@ -1040,7 +1119,7 @@ function paymentAmountClass(payment) {
     return 'text-indigo-400';
   }
 
-  return 'text-green-400';
+  return 'text-emerald-400';
 }
 
 function closeoutContributionDescription() {
@@ -1105,12 +1184,14 @@ function openPayModal(debt) {
 
 async function openHistoryModal(debt) {
   historyDebt.value = debt;
+  historySummary.value = null;
   debtPayments.value = [];
   historyLoading.value = true;
   showHistoryModal.value = true;
   try {
     const data = await get(`/debts/${debt.id}/payments`);
-    debtPayments.value = data;
+    historySummary.value = data;
+    debtPayments.value = data?.entries ?? [];
   } catch (err) {
     console.error('Failed to fetch payment history:', err);
   } finally {

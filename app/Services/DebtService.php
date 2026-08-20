@@ -24,6 +24,10 @@ class DebtService
      *                                                                   undoable contribution
      *                                                                   entries (negative when
      *                                                                   reducing opposite debts).
+     * @param  int|null  $reversedFromDebtId  When set, links a newly created reverse debt to the
+     *                                        overpaid source, or records direction_reversals when
+     *                                        merging into an existing reverse debt.
+     * @param  string|null  $occurredOn  Date for stored reversal timeline rows (`Y-m-d`).
      */
     public function applyInterFamilyPairNet(
         int $familyId,
@@ -32,6 +36,8 @@ class DebtService
         float $amount,
         ?string $description = null,
         ?array $closeoutContribution = null,
+        ?int $reversedFromDebtId = null,
+        ?string $occurredOn = null,
     ): void {
         $remaining = round($amount, 2);
         if ($remaining < 0.01 || $debtorId === $creditorId) {
@@ -101,7 +107,37 @@ class DebtService
                 ]]);
             }
 
+            if ($reversedFromDebtId !== null) {
+                $appliedAt = $occurredOn ?: Carbon::today()->toDateString();
+                $sameDirectionDebt->direction_reversals = array_values(array_merge(
+                    $sameDirectionDebt->direction_reversals ?? [],
+                    [[
+                        'amount' => $remaining,
+                        'source_debt_id' => $reversedFromDebtId,
+                        'applied_at' => $appliedAt,
+                    ]],
+                ));
+            }
+
             $sameDirectionDebt->save();
+
+            if ($reversedFromDebtId !== null) {
+                $sourceDebt = Debt::query()
+                    ->whereKey($reversedFromDebtId)
+                    ->lockForUpdate()
+                    ->first();
+                if ($sourceDebt) {
+                    $sourceDebt->direction_reversals = array_values(array_merge(
+                        $sourceDebt->direction_reversals ?? [],
+                        [[
+                            'amount' => $remaining,
+                            'target_debt_id' => $sameDirectionDebt->id,
+                            'applied_at' => $occurredOn ?: Carbon::today()->toDateString(),
+                        ]],
+                    ));
+                    $sourceDebt->save();
+                }
+            }
 
             return;
         }
@@ -126,6 +162,7 @@ class DebtService
             'is_pending_closeout' => false,
             'is_family_debt' => false,
             'contributions' => $contribution !== null ? [$contribution] : null,
+            'reversed_from_debt_id' => $reversedFromDebtId,
         ]);
     }
 
@@ -254,6 +291,9 @@ class DebtService
                     (int) $debt->debtor_id,
                     $overpayment,
                     'Reversed from overpayment: '.($description ?: 'Debt payment'),
+                    null,
+                    (int) $debt->id,
+                    $transactionDate,
                 );
             } else {
                 $debt->decrement('balance', $paymentAmount);

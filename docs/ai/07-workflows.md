@@ -82,12 +82,13 @@ Newly added fields track:
 - **`is_closeout_initiated`:** Whether the payment came from a manual entry (`false`) or a month closeout rule (`true`)
 
 The payment history modal in `Debts.vue` displays:
-- Date of payment
-- Amount paid
-- Who made the payment (payer's name)
+- Unified timeline rows (loan starts, direction reversals, payments) with `From → To` money-flow labels
+- For inter-family running debts, history from **overpayment reversal lineage** (not every independent loan between the same pair)
+- Remaining balance and closeout additions from the lineage envelope (so History on a settled original still shows the open reverse remaining)
+- Date of each entry and signed amount (`+` loan / `-` payment)
 - Split contribution breakdown (when payment was split), showing each participant's amount and percentage
-- Whether it was initiated from a closeout (shown as a "Closeout" badge if applicable)
-- Initial value row based on pre-closeout principal (`debt.amount - sum(contributions)`) so closeout additions do not overwrite historical debt start
+- Whether a payment was initiated from a closeout (shown as a "Closeout" badge if applicable)
+- Initial/loan rows based on pre-closeout principal (`debt.amount - sum(contributions) - incoming direction_reversals`) so closeout additions and merged reversal amounts do not overwrite historical debt start
 
 ---
 

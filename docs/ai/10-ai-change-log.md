@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-08-19 — Inter-family debt history uses reversal lineage
+
+- Files touched: `database/migrations/2026_08_20_010317_add_reversal_lineage_to_debts_table.php`, `app/Models/Debt.php`, `app/Services/DebtService.php`, `app/Services/TransactionService.php`, `app/Http/Controllers/DebtController.php`, `resources/js/pages/Debts.vue`, `tests/Feature/DebtRepaymentTransactionTest.php`, `tests/Feature/TransactionTest.php`, `tests/Feature/UndoHardCloseTest.php`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Overpayment-created reverse debts store `reversed_from_debt_id`. History follows that lineage (including later reversals of the reverse) instead of every independent loan between the same pair. Merging excess into an existing reverse debt writes `direction_reversals` on both records so each history gets a **Direction reversed** row without mixing the other loan’s origin. `GET /debts/{id}/payments` is now `{ entries, contributions, remaining, remaining_* }`; the History modal remaining figure and closeout additions come from the lineage, not only the opened card.
+
+## 2026-07-14 — Inter-family debt history spans direction reversals
+
+- Files touched: `app/Http/Controllers/DebtController.php`, `resources/js/pages/Debts.vue`, `tests/Feature/DebtRepaymentTransactionTest.php`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `GET /debts/{id}/payments` for personal in-family running debts now returns the **full pair timeline** (original + reverse after overpayment). Timeline rows include money-flow metadata (`flow_kind`, from/to user). Debts History modal uses one shared row layout for loans and payments with `You → Name` / `Name → You` labels; loan starts and direction-reversal initials are badged distinctly from repayments.
+
 ## 2026-07-14 — Creditor benefit expense from debt repayment
 
 - Files touched: `database/migrations/2026_07_14_194817_add_debt_payment_benefit_columns_to_transactions_table.php`, `app/Models/Transaction.php`, `app/Services/TransactionService.php`, `app/Http/Controllers/TransactionController.php`, `app/Http/Requests/StoreDebtPaymentBenefitRequest.php`, `routes/web.php`, `resources/js/components/DebtPaymentBenefitForm.vue`, `resources/js/pages/Transactions.vue`, `tests/Feature/DebtPaymentBenefitTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`

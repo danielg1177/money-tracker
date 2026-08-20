@@ -693,7 +693,7 @@ class UndoHardCloseTest extends TestCase
         $this->assertEqualsWithDelta(880.0, (float) $existingDebt->amount, 0.01);
         $this->assertEqualsWithDelta(880.0, (float) $existingDebt->balance, 0.01);
 
-        $history = collect($this->actingAs($manager)->getJson("/debts/{$existingDebt->id}/payments")->assertOk()->json());
+        $history = collect($this->actingAs($manager)->getJson("/debts/{$existingDebt->id}/payments")->assertOk()->json('entries'));
         $initialEntry = $history->first(fn (array $entry): bool => ($entry['type'] ?? '') === 'initial_value');
         $this->assertNotNull($initialEntry);
         $this->assertEqualsWithDelta(800.0, (float) ($initialEntry['amount'] ?? 0), 0.01);

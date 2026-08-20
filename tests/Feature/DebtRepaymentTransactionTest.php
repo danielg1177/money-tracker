@@ -548,5 +548,192 @@ class DebtRepaymentTransactionTest extends TestCase
         $this->assertEqualsWithDelta(75.00, (float) $existingReverse->amount, 0.01);
 
         $this->assertSame(2, Debt::query()->where('family_id', $family->id)->count());
+
+        $fromOriginal = collect($this->actingAs($debtor)->getJson("/debts/{$forwardDebt->id}/payments")->assertOk()->json('entries'));
+        $fromReverse = collect($this->actingAs($debtor)->getJson("/debts/{$existingReverse->id}/payments")->assertOk()->json('entries'));
+
+        $originalInitials = $fromOriginal->where('type', 'initial_value')->values();
+        $originalLoan = $originalInitials->first(fn (array $row): bool => ($row['is_direction_reversal'] ?? false) === false);
+        $originalReversal = $originalInitials->first(fn (array $row): bool => ($row['is_direction_reversal'] ?? false) === true);
+        $this->assertNotNull($originalLoan);
+        $this->assertNotNull($originalReversal);
+        $this->assertEqualsWithDelta(100.0, (float) $originalLoan['amount'], 0.01);
+        $this->assertEqualsWithDelta(50.0, (float) $originalReversal['amount'], 0.01);
+        $this->assertFalse($fromOriginal->contains(fn (array $row): bool => ($row['type'] ?? '') === 'initial_value' && abs((float) $row['amount'] - 25.0) < 0.01));
+
+        $reverseInitials = $fromReverse->where('type', 'initial_value')->values();
+        $reverseLoan = $reverseInitials->first(fn (array $row): bool => ($row['is_direction_reversal'] ?? false) === false);
+        $reverseReversal = $reverseInitials->first(fn (array $row): bool => ($row['is_direction_reversal'] ?? false) === true);
+        $this->assertNotNull($reverseLoan);
+        $this->assertNotNull($reverseReversal);
+        $this->assertEqualsWithDelta(25.0, (float) $reverseLoan['amount'], 0.01);
+        $this->assertEqualsWithDelta(50.0, (float) $reverseReversal['amount'], 0.01);
+        $this->assertFalse($fromReverse->contains(fn (array $row): bool => ($row['type'] ?? '') === 'initial_value' && abs((float) $row['amount'] - 100.0) < 0.01));
+
+        $originalPayload = $this->actingAs($debtor)->getJson("/debts/{$forwardDebt->id}/payments")->assertOk()->json();
+        $this->assertEqualsWithDelta(0.0, (float) $originalPayload['remaining'], 0.01);
+        $reversePayload = $this->actingAs($debtor)->getJson("/debts/{$existingReverse->id}/payments")->assertOk()->json();
+        $this->assertEqualsWithDelta(75.0, (float) $reversePayload['remaining'], 0.01);
+    }
+
+    public function test_payment_history_includes_both_directions_after_overpayment_reversal(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id, 'name' => 'Alex']);
+        $creditor = User::factory()->create(['family_id' => $family->id, 'name' => 'Jordan']);
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 100.00,
+            'balance' => 100.00,
+            'is_pending_closeout' => false,
+            'is_family_debt' => false,
+            'transaction_id' => null,
+            'description' => 'Original loan',
+        ]);
+
+        $this->actingAs($debtor)->postJson('/debts/pay', [
+            'debt_id' => $debt->id,
+            'amount' => 150.00,
+            'description' => 'Overpayment test',
+            'transaction_date' => '2026-06-01',
+        ])->assertOk();
+
+        $reverseDebt = Debt::query()
+            ->where('family_id', $family->id)
+            ->where('debtor_id', $creditor->id)
+            ->where('creditor_id', $debtor->id)
+            ->where('balance', '>', 0)
+            ->sole();
+        $this->assertSame($debt->id, $reverseDebt->reversed_from_debt_id);
+
+        $fromOriginalPayload = $this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->assertOk()->json();
+        $fromReversePayload = $this->actingAs($debtor)->getJson("/debts/{$reverseDebt->id}/payments")->assertOk()->json();
+        $fromOriginal = collect($fromOriginalPayload['entries']);
+        $fromReverse = collect($fromReversePayload['entries']);
+
+        $this->assertEqualsWithDelta(50.0, (float) $fromOriginalPayload['remaining'], 0.01);
+        $this->assertEqualsWithDelta(50.0, (float) $fromReversePayload['remaining'], 0.01);
+        $this->assertSame($creditor->id, $fromOriginalPayload['remaining_debtor_id']);
+        $this->assertSame($debtor->id, $fromOriginalPayload['remaining_creditor_id']);
+
+        foreach ([$fromOriginal, $fromReverse] as $history) {
+            $initials = $history->where('type', 'initial_value')->values();
+            $this->assertCount(2, $initials);
+
+            $loanStart = $initials->first(fn (array $row): bool => ($row['is_direction_reversal'] ?? false) === false);
+            $reversal = $initials->first(fn (array $row): bool => ($row['is_direction_reversal'] ?? false) === true);
+            $this->assertNotNull($loanStart);
+            $this->assertNotNull($reversal);
+            $this->assertEqualsWithDelta(100.0, (float) $loanStart['amount'], 0.01);
+            $this->assertEqualsWithDelta(50.0, (float) $reversal['amount'], 0.01);
+            $this->assertSame('loan', $loanStart['flow_kind']);
+            $this->assertSame($creditor->id, $loanStart['flow_from_user_id']);
+            $this->assertSame($debtor->id, $loanStart['flow_to_user_id']);
+            $this->assertSame('loan', $reversal['flow_kind']);
+            $this->assertSame($debtor->id, $reversal['flow_from_user_id']);
+            $this->assertSame($creditor->id, $reversal['flow_to_user_id']);
+
+            $payments = $history->where('type', 'expense')->values();
+            $this->assertCount(1, $payments);
+            $this->assertEqualsWithDelta(150.0, (float) $payments[0]['amount'], 0.01);
+            $this->assertSame('payment', $payments[0]['flow_kind']);
+            $this->assertSame($debtor->id, $payments[0]['flow_from_user_id']);
+            $this->assertSame($creditor->id, $payments[0]['flow_to_user_id']);
+        }
+
+        $creditorHistory = collect($this->actingAs($creditor)->getJson("/debts/{$reverseDebt->id}/payments")->assertOk()->json('entries'));
+        $this->assertCount(1, $creditorHistory->where('type', 'income'));
+        $this->assertCount(2, $creditorHistory->where('type', 'initial_value'));
+    }
+
+    public function test_payment_history_does_not_include_an_independent_loan_between_the_same_pair(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id, 'name' => 'Alex']);
+        $creditor = User::factory()->create(['family_id' => $family->id, 'name' => 'Jordan']);
+
+        $first = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 100.00,
+            'balance' => 100.00,
+            'is_pending_closeout' => false,
+            'is_family_debt' => false,
+            'transaction_id' => null,
+            'description' => 'First loan',
+        ]);
+        $second = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 40.00,
+            'balance' => 40.00,
+            'is_pending_closeout' => false,
+            'is_family_debt' => false,
+            'transaction_id' => null,
+            'description' => 'Second loan',
+        ]);
+
+        $firstHistory = collect($this->actingAs($debtor)->getJson("/debts/{$first->id}/payments")->assertOk()->json('entries'));
+        $initials = $firstHistory->where('type', 'initial_value')->values();
+
+        $this->assertCount(1, $initials);
+        $this->assertEqualsWithDelta(100.0, (float) $initials[0]['amount'], 0.01);
+        $this->assertFalse($firstHistory->contains(fn (array $row): bool => (float) ($row['amount'] ?? 0) === 40.0 && ($row['type'] ?? '') === 'initial_value'));
+        $this->assertSame($first->id, $initials[0]['debt_id']);
+
+        $secondHistory = collect($this->actingAs($debtor)->getJson("/debts/{$second->id}/payments")->assertOk()->json('entries'));
+        $this->assertCount(1, $secondHistory->where('type', 'initial_value'));
+        $this->assertEqualsWithDelta(40.0, (float) $secondHistory->firstWhere('type', 'initial_value')['amount'], 0.01);
+    }
+
+    public function test_payment_history_includes_closeout_contributions_from_reversal_lineage(): void
+    {
+        $family = Family::factory()->create();
+        $debtor = User::factory()->create(['family_id' => $family->id, 'name' => 'Alex']);
+        $creditor = User::factory()->create(['family_id' => $family->id, 'name' => 'Jordan']);
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $debtor->id,
+            'creditor_id' => $creditor->id,
+            'amount' => 120.00,
+            'balance' => 120.00,
+            'is_pending_closeout' => false,
+            'is_family_debt' => false,
+            'transaction_id' => null,
+            'description' => 'Original loan',
+            'contributions' => [
+                ['month' => 5, 'year' => 2026, 'amount' => 20.0],
+            ],
+        ]);
+
+        $this->actingAs($debtor)->postJson('/debts/pay', [
+            'debt_id' => $debt->id,
+            'amount' => 170.00,
+            'description' => 'Overpayment with closeout principal',
+            'transaction_date' => '2026-06-01',
+        ])->assertOk();
+
+        $reverseDebt = Debt::query()
+            ->where('family_id', $family->id)
+            ->where('debtor_id', $creditor->id)
+            ->where('creditor_id', $debtor->id)
+            ->where('balance', '>', 0)
+            ->sole();
+
+        $fromReverse = $this->actingAs($debtor)->getJson("/debts/{$reverseDebt->id}/payments")->assertOk()->json();
+        $this->assertCount(1, $fromReverse['contributions']);
+        $this->assertEqualsWithDelta(20.0, (float) $fromReverse['contributions'][0]['amount'], 0.01);
+        $this->assertSame(5, (int) $fromReverse['contributions'][0]['month']);
+        $this->assertSame($debt->id, $fromReverse['contributions'][0]['debt_id']);
+        $this->assertEqualsWithDelta(50.0, (float) $fromReverse['remaining'], 0.01);
+
+        $initials = collect($fromReverse['entries'])->where('type', 'initial_value')->values();
+        $loanStart = $initials->first(fn (array $row): bool => ($row['is_direction_reversal'] ?? false) === false);
+        $this->assertNotNull($loanStart);
+        $this->assertEqualsWithDelta(100.0, (float) $loanStart['amount'], 0.01);
     }
 }

@@ -16,6 +16,7 @@ class Debt extends Model
         'creditor_id',
         'fund_id',
         'transaction_id',
+        'reversed_from_debt_id',
         'amount',
         'balance',
         'description',
@@ -29,6 +30,7 @@ class Debt extends Model
         'interest_last_applied_at',
         'loan_received_date',
         'interest_accruals',
+        'direction_reversals',
     ];
 
     protected $casts = [
@@ -43,6 +45,7 @@ class Debt extends Model
         'interest_last_applied_at' => 'date',
         'loan_received_date' => 'date',
         'interest_accruals' => 'array',
+        'direction_reversals' => 'array',
     ];
 
     public function family(): BelongsTo
@@ -68,5 +71,10 @@ class Debt extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);
+    }
+
+    public function reversedFrom(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'reversed_from_debt_id');
     }
 }

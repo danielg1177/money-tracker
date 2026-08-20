@@ -47,6 +47,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_05_06_133500_add_interest_fields_to_debts_table` | Adds `interest_enabled`, `interest_rate`, `interest_last_applied_at` to `debts` |
 | `2026_05_06_134200_add_loan_received_date_to_debts_table` | Adds nullable `loan_received_date` to `debts` |
 | `2026_05_06_140000_add_interest_accruals_to_debts_table` | Adds nullable `interest_accruals` JSON to `debts` |
+| `2026_08_20_010317_add_reversal_lineage_to_debts_table` | Adds nullable `reversed_from_debt_id` self-FK (`nullOnDelete`) and `direction_reversals` JSON on `debts` for overpayment history lineage |
 | `2026_05_06_154936_add_bank_balance_to_users_table` | Adds `bank_balance_enabled` (bool), `bank_balance` (decimal nullable), `bank_balance_set_at` (date nullable) to `users` |
 | `2026_05_06_154936_add_completion_to_closeout_title_savings_table` | Adds `is_completed` (bool) and `completed_at` (timestamp nullable) to `closeout_title_savings` |
 | `2026_05_06_161500_add_closeout_transaction_fields` | Adds `fund_rules.closeout_expense_category_id` (nullable FK to categories) and `closeout_title_savings.completion_transaction_id` (nullable FK to transactions) |
@@ -203,6 +204,7 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `creditor_id` | bigint FK nullable | → `users.id` (null for fund-borrow or external debts) |
 | `fund_id` | bigint FK nullable | → `funds.id` (set when debt is to a fund) |
 | `transaction_id` | bigint FK nullable | → `transactions.id` (`cascadeOnDelete` — deleting the split transaction deletes this debt row) |
+| `reversed_from_debt_id` | bigint FK nullable | → `debts.id` (`nullOnDelete`); set when overpayment **creates** a reverse-direction debt |
 | `amount` | decimal(15,2) | original amount |
 | `balance` | decimal(15,2) | remaining unpaid |
 | `description` | text nullable | |
@@ -215,6 +217,7 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `interest_last_applied_at` | date nullable | last closeout month-end date that interest was applied through |
 | `loan_received_date` | date nullable | optional business start date for interest accrual calculations |
 | `interest_accruals` | json nullable | interest timeline entries: `[{year, month, amount, applied_at, period_start, period_end}]` |
+| `direction_reversals` | json nullable | Overpayment amounts merged into an existing reverse debt: `[{amount, source_debt_id?, target_debt_id?, applied_at}]`; incoming rows (`source_debt_id`) are excluded from synthetic `initial_value` |
 | `timestamps` | | |
 
 ### `fund_movements`

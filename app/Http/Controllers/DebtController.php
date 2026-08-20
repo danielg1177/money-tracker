@@ -11,6 +11,7 @@ use App\Services\DebtService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class DebtController extends Controller
 {
@@ -189,7 +190,8 @@ class DebtController extends Controller
     }
 
     /**
-     * Return payment transactions linked to a specific debt (one row per pay action for inter-member debts).
+     * Return payment history for a debt. Personal in-family running debts include overpayment
+     * reversal lineage (not every independent loan between the same pair).
      */
     public function paymentHistory(Debt $debt): JsonResponse
     {
@@ -198,8 +200,134 @@ class DebtController extends Controller
             abort(403);
         }
 
+        $relatedDebts = $this->relatedHistoryDebts($debt);
+
+        $timeline = $relatedDebts
+            ->flatMap(fn (Debt $relatedDebt) => $this->buildDebtHistoryEntries($relatedDebt, $user))
+            ->sortByDesc(function (array $entry) {
+                return sprintf('%s|%s', (string) $entry['transaction_date'], (string) $entry['created_at']);
+            })
+            ->values();
+
+        $contributions = $relatedDebts
+            ->flatMap(function (Debt $relatedDebt) {
+                return collect($relatedDebt->contributions ?? [])
+                    ->filter(fn (array $contribution): bool => isset($contribution['year'], $contribution['month']))
+                    ->map(fn (array $contribution): array => array_merge($contribution, [
+                        'debt_id' => $relatedDebt->id,
+                    ]));
+            })
+            ->sortBy([
+                ['year', 'asc'],
+                ['month', 'asc'],
+            ])
+            ->values();
+
+        $openDebt = $relatedDebts->first(
+            fn (Debt $relatedDebt): bool => round((float) $relatedDebt->balance, 2) >= 0.01
+        );
+        $remainingDebt = $openDebt ?? $debt;
+        $remainingDebt->loadMissing(['debtor', 'creditor']);
+
+        return response()->json([
+            'entries' => $timeline,
+            'contributions' => $contributions,
+            'remaining' => round((float) ($openDebt?->balance ?? 0), 2),
+            'remaining_debtor_id' => $remainingDebt->debtor_id,
+            'remaining_creditor_id' => $remainingDebt->creditor_id,
+            'remaining_debtor_name' => $remainingDebt->debtor?->name ?? 'Debtor',
+            'remaining_creditor_name' => $remainingDebt->creditor?->name ?? ($remainingDebt->creditor_name ?: 'Creditor'),
+        ]);
+    }
+
+    /**
+     * Lineage for history: this debt plus overpayment-created reverse debts linked via
+     * reversed_from_debt_id (walked both directions). Independent loans between the same
+     * pair are not included.
+     *
+     * @return Collection<int, Debt>
+     */
+    private function relatedHistoryDebts(Debt $debt): Collection
+    {
+        $debt->loadMissing(['debtor', 'creditor']);
+
+        if (! $this->isPersonalInterFamilyRunningDebt($debt)) {
+            return collect([$debt]);
+        }
+
+        $ids = [(int) $debt->id];
+
+        $current = $debt;
+        while ($current->reversed_from_debt_id) {
+            $parent = Debt::query()
+                ->where('family_id', $debt->family_id)
+                ->whereKey($current->reversed_from_debt_id)
+                ->first();
+            if ($parent === null || in_array((int) $parent->id, $ids, true)) {
+                break;
+            }
+            $ids[] = (int) $parent->id;
+            $current = $parent;
+        }
+
+        $frontier = $ids;
+        while ($frontier !== []) {
+            $children = Debt::query()
+                ->where('family_id', $debt->family_id)
+                ->whereIn('reversed_from_debt_id', $frontier)
+                ->whereNotIn('id', $ids)
+                ->pluck('id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->all();
+            if ($children === []) {
+                break;
+            }
+            $ids = array_values(array_merge($ids, $children));
+            $frontier = $children;
+        }
+
+        return Debt::query()
+            ->whereIn('id', $ids)
+            ->with(['debtor', 'creditor'])
+            ->orderBy('id')
+            ->get();
+    }
+
+    private function isPersonalInterFamilyRunningDebt(Debt $debt): bool
+    {
+        return $debt->creditor_id !== null
+            && ! $debt->is_family_debt
+            && $debt->fund_id === null
+            && $debt->transaction_id === null;
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function buildDebtHistoryEntries(Debt $debt, User $user): Collection
+    {
+        $debt->loadMissing(['debtor', 'creditor']);
+
+        $debtorName = $debt->debtor?->name ?? 'Debtor';
+        $creditorName = $debt->creditor?->name ?? ($debt->creditor_name ?: 'Creditor');
+        $isDirectionReversal = is_string($debt->description)
+            && str_starts_with($debt->description, 'Reversed from overpayment:');
+
+        $flowMeta = [
+            'debt_id' => $debt->id,
+            'debtor_id' => $debt->debtor_id,
+            'creditor_id' => $debt->creditor_id,
+            'debtor_name' => $debtorName,
+            'creditor_name' => $creditorName,
+            'is_direction_reversal' => $isDirectionReversal,
+        ];
+
         $paymentsQuery = Transaction::query()
             ->where('debt_id', $debt->id)
+            ->where(function ($query) {
+                $query->where('is_loan_receipt', false)
+                    ->orWhereNull('is_loan_receipt');
+            })
             ->with(['paidByUser', 'splits.user', 'mirrorTransaction.splits.user']);
 
         $isViewerCreditor = $debt->creditor_id !== null && $debt->creditor_id === $user->id;
@@ -214,8 +342,8 @@ class DebtController extends Controller
             ->orderByDesc('transaction_date')
             ->orderByDesc('created_at')
             ->get()
-            ->map(function ($payment) {
-                return [
+            ->map(function (Transaction $payment) use ($flowMeta, $debt) {
+                return array_merge($flowMeta, [
                     'id' => $payment->id,
                     'amount' => $payment->amount,
                     'description' => $payment->description,
@@ -229,12 +357,17 @@ class DebtController extends Controller
                         'id' => $payment->paidByUser->id,
                         'name' => $payment->paidByUser->name,
                     ] : null,
-                ];
+                    'flow_kind' => 'payment',
+                    'flow_from_user_id' => $payment->paid_by_user_id ?? $debt->debtor_id,
+                    'flow_from_user_name' => $payment->paidByUser?->name ?? $flowMeta['debtor_name'],
+                    'flow_to_user_id' => $debt->creditor_id,
+                    'flow_to_user_name' => $flowMeta['creditor_name'],
+                ]);
             });
 
         $interestAccrualEntries = collect($debt->interest_accruals ?? [])
-            ->map(function (array $accrual) {
-                return [
+            ->map(function (array $accrual) use ($flowMeta) {
+                return array_merge($flowMeta, [
                     'id' => null,
                     'amount' => (float) ($accrual['amount'] ?? 0),
                     'description' => 'Monthly Interest Accrued',
@@ -244,14 +377,19 @@ class DebtController extends Controller
                     'paid_by_user_id' => null,
                     'is_closeout_initiated' => true,
                     'paid_by_user' => null,
-                ];
+                    'flow_kind' => 'interest',
+                    'flow_from_user_id' => null,
+                    'flow_from_user_name' => null,
+                    'flow_to_user_id' => null,
+                    'flow_to_user_name' => null,
+                ]);
             })
             ->filter(fn (array $entry): bool => ! empty($entry['transaction_date']));
 
         $incomeAdditionEntries = collect($debt->income_additions ?? [])
             ->filter(fn (array $entry): bool => isset($entry['date']) && isset($entry['amount']))
-            ->map(function (array $entry): array {
-                return [
+            ->map(function (array $entry) use ($flowMeta, $debt): array {
+                return array_merge($flowMeta, [
                     'id' => $entry['transaction_id'] ?? null,
                     'amount' => (float) $entry['amount'],
                     'description' => 'Loan Addition',
@@ -261,7 +399,12 @@ class DebtController extends Controller
                     'paid_by_user_id' => null,
                     'is_closeout_initiated' => false,
                     'paid_by_user' => null,
-                ];
+                    'flow_kind' => 'loan',
+                    'flow_from_user_id' => $debt->creditor_id,
+                    'flow_from_user_name' => $flowMeta['creditor_name'],
+                    'flow_to_user_id' => $debt->debtor_id,
+                    'flow_to_user_name' => $flowMeta['debtor_name'],
+                ]);
             });
 
         $receiptEntries = Transaction::query()
@@ -270,8 +413,8 @@ class DebtController extends Controller
             ->where('is_loan_receipt', true)
             ->orderByDesc('transaction_date')
             ->get()
-            ->map(function (Transaction $tx): array {
-                return [
+            ->map(function (Transaction $tx) use ($flowMeta, $debt): array {
+                return array_merge($flowMeta, [
                     'id' => $tx->id,
                     'amount' => (float) $tx->amount,
                     'description' => $tx->description ?: 'Loan Received',
@@ -283,36 +426,71 @@ class DebtController extends Controller
                     'paid_by_user_id' => null,
                     'is_closeout_initiated' => false,
                     'paid_by_user' => null,
-                ];
+                    'flow_kind' => 'loan',
+                    'flow_from_user_id' => $debt->creditor_id,
+                    'flow_from_user_name' => $flowMeta['creditor_name'],
+                    'flow_to_user_id' => $debt->debtor_id,
+                    'flow_to_user_name' => $flowMeta['debtor_name'],
+                ]);
             });
 
         $closeoutContributionsTotal = collect($debt->contributions ?? [])
             ->sum(static fn (array $contribution): float => (float) ($contribution['amount'] ?? 0.0));
-        $initialPrincipalAmount = max(0.0, round((float) $debt->amount - (float) $closeoutContributionsTotal, 2));
+        $incomingReversalTotal = collect($debt->direction_reversals ?? [])
+            ->filter(fn (array $reversal): bool => isset($reversal['source_debt_id']))
+            ->sum(static fn (array $reversal): float => (float) ($reversal['amount'] ?? 0.0));
+        $initialPrincipalAmount = max(0.0, round((float) $debt->amount - (float) $closeoutContributionsTotal - (float) $incomingReversalTotal, 2));
 
-        $initialValueEntry = [
-            'id' => null,
-            'amount' => $initialPrincipalAmount,
-            'description' => 'Initial Value Set At',
-            'transaction_date' => $debt->created_at->toDateString(),
-            'type' => 'initial_value',
-            'created_at' => $debt->created_at,
-            'paid_by_user_id' => null,
-            'is_closeout_initiated' => false,
-            'paid_by_user' => null,
-        ];
+        $initialValueEntries = collect();
+        if ($initialPrincipalAmount >= 0.01) {
+            $initialValueEntries->push(array_merge($flowMeta, [
+                'id' => null,
+                'amount' => $initialPrincipalAmount,
+                'description' => $isDirectionReversal ? 'Direction reversed' : 'Loan started',
+                'transaction_date' => $debt->created_at->toDateString(),
+                'type' => 'initial_value',
+                'created_at' => $debt->created_at,
+                'paid_by_user_id' => null,
+                'is_closeout_initiated' => false,
+                'paid_by_user' => null,
+                'flow_kind' => 'loan',
+                'flow_from_user_id' => $debt->creditor_id,
+                'flow_from_user_name' => $creditorName,
+                'flow_to_user_id' => $debt->debtor_id,
+                'flow_to_user_name' => $debtorName,
+            ]));
+        }
 
-        $timeline = $payments
+        $directionReversalEntries = collect($debt->direction_reversals ?? [])
+            ->filter(fn (array $reversal): bool => isset($reversal['amount'], $reversal['applied_at']))
+            ->map(function (array $reversal) use ($flowMeta, $debt, $debtorName, $creditorName): array {
+                $isOutgoing = isset($reversal['target_debt_id']);
+
+                return array_merge($flowMeta, [
+                    'id' => null,
+                    'amount' => (float) $reversal['amount'],
+                    'description' => 'Direction reversed',
+                    'transaction_date' => $reversal['applied_at'],
+                    'type' => 'initial_value',
+                    'created_at' => $reversal['applied_at'],
+                    'paid_by_user_id' => null,
+                    'is_closeout_initiated' => false,
+                    'paid_by_user' => null,
+                    'is_direction_reversal' => true,
+                    'flow_kind' => 'loan',
+                    'flow_from_user_id' => $isOutgoing ? $debt->debtor_id : $debt->creditor_id,
+                    'flow_from_user_name' => $isOutgoing ? $debtorName : $creditorName,
+                    'flow_to_user_id' => $isOutgoing ? $debt->creditor_id : $debt->debtor_id,
+                    'flow_to_user_name' => $isOutgoing ? $creditorName : $debtorName,
+                ]);
+            });
+
+        return $payments
             ->concat($interestAccrualEntries)
             ->concat($incomeAdditionEntries)
             ->concat($receiptEntries)
-            ->sortByDesc(function (array $entry) {
-                return sprintf('%s|%s', (string) $entry['transaction_date'], (string) $entry['created_at']);
-            })
-            ->values()
-            ->push($initialValueEntry);
-
-        return response()->json($timeline->values());
+            ->concat($directionReversalEntries)
+            ->concat($initialValueEntries);
     }
 
     /**

@@ -160,7 +160,7 @@ class TransactionTest extends TestCase
         $this->assertTrue($transaction->is_loan_receipt);
         $this->assertSame($debt->id, $transaction->debt_id);
 
-        $history = collect($this->actingAs($user)->getJson("/debts/{$debt->id}/payments")->assertOk()->json());
+        $history = collect($this->actingAs($user)->getJson("/debts/{$debt->id}/payments")->assertOk()->json('entries'));
         $receiptEntry = $history->first(fn (array $entry): bool => ($entry['type'] ?? '') === 'loan_receipt');
         $this->assertNotNull($receiptEntry);
         $this->assertEqualsWithDelta(3000.0, (float) ($receiptEntry['amount'] ?? 0), 0.01);
@@ -429,8 +429,8 @@ class TransactionTest extends TestCase
             'transaction_date' => '2026-04-14',
         ])->assertOk();
 
-        $debtorHistory = $this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->json();
-        $creditorHistory = $this->actingAs($creditor)->getJson("/debts/{$debt->id}/payments")->json();
+        $debtorHistory = $this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->assertOk()->json('entries');
+        $creditorHistory = $this->actingAs($creditor)->getJson("/debts/{$debt->id}/payments")->assertOk()->json('entries');
 
         $debtorExpenseRows = array_values(array_filter($debtorHistory, fn ($row) => ($row['type'] ?? '') === 'expense'));
         $this->assertCount(1, $debtorExpenseRows);
@@ -453,7 +453,7 @@ class TransactionTest extends TestCase
             'transaction_date' => '2026-04-16',
         ])->assertOk();
 
-        $twoPays = $this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->json();
+        $twoPays = $this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->assertOk()->json('entries');
         $twoPayExpenses = collect($twoPays)->where('type', 'expense')->pluck('amount')->map(fn ($a) => round((float) $a, 2))->sort()->values()->all();
         $this->assertSame([10.0, 25.0], $twoPayExpenses);
         $this->assertCount(1, collect($twoPays)->where('type', 'initial_value'));
@@ -485,8 +485,8 @@ class TransactionTest extends TestCase
             'split_percentage' => 25,
         ])->assertOk();
 
-        $debtorHistory = collect($this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->json());
-        $creditorHistory = collect($this->actingAs($creditor)->getJson("/debts/{$debt->id}/payments")->json());
+        $debtorHistory = collect($this->actingAs($debtor)->getJson("/debts/{$debt->id}/payments")->assertOk()->json('entries'));
+        $creditorHistory = collect($this->actingAs($creditor)->getJson("/debts/{$debt->id}/payments")->assertOk()->json('entries'));
 
         $debtorPayment = $debtorHistory->first(fn ($row) => ($row['type'] ?? null) === 'expense');
         $this->assertNotNull($debtorPayment);
