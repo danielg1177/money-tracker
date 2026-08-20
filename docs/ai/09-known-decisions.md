@@ -95,6 +95,9 @@ When User B pays toward a debt owed to User A, A receives mirrored debt-payment 
 ### Session-based auth with CSRF (not API tokens)
 Fortify provides session authentication. This means the app cannot be used as a pure API backend without significant changes. The CSRF token is embedded in the Blade shell and sent with every Axios request.
 
+### Family expense view is a read-only overlay
+`users.view_family_expenses` (Settings toggle) does not change closeout math, owed/split balances, Fund In/Out, or Dashboard. `GET /transactions?view=family` is opt-in so Dashboard stays viewer-scoped. While the overlay is on, Transactions does not edit or delete any row (including the viewer’s own). Split transactions already visible to the viewer are not duplicated.
+
 ---
 
 ## Known Bugs

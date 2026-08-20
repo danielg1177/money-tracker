@@ -55,7 +55,7 @@ class MonthSummaryController extends Controller
         $debtRepayments = $this->getDebtRepaymentsSummary($user, $year, $month);
         $titleSavings = $this->getTitleSavings($user, $year, $month, $isHardClosed);
 
-        return response()->json([
+        $payload = [
             'year' => $year,
             'month' => $month,
             'is_hard_closed' => $isHardClosed,
@@ -68,7 +68,14 @@ class MonthSummaryController extends Controller
             'fund_movements' => $fundMovements,
             'debt_repayments' => $debtRepayments,
             'title_savings' => $titleSavings,
-        ]);
+        ];
+
+        if ($user->view_family_expenses) {
+            $payload['family_category_totals'] = $this->getFamilyCategoryTotals($user, $year, $month);
+            $payload['family_category_transactions'] = $this->getFamilyCategoryTransactions($user, $year, $month);
+        }
+
+        return response()->json($payload);
     }
 
     /**
@@ -443,6 +450,199 @@ class MonthSummaryController extends Controller
     }
 
     /**
+     * Household-scoped category totals for family expense view. Split expenses count once at
+     * the full transaction amount (not summed split shares). Viewer {@see getCategoryTotals()}
+     * is unchanged.
+     *
+     * @return array<int, array{type: string, category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int}>
+     */
+    private function getFamilyCategoryTotals(User $viewer, int $year, int $month): array
+    {
+        $grouped = [];
+
+        $familyIncomes = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'income')
+            ->where('is_debt_payment', false)
+            ->where('is_borrow', false)
+            ->where('is_repayment', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with('category')
+            ->get();
+
+        foreach ($familyIncomes as $tx) {
+            $this->addViewerCategoryAggregate(
+                $grouped,
+                'income',
+                $tx->category_id,
+                $tx->category,
+                (float) $tx->amount,
+                1
+            );
+        }
+
+        $familySoloExpenses = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_debt_payment', false)
+            ->where('is_closeout_initiated', false)
+            ->where('is_repaid', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with('category')
+            ->get();
+
+        foreach ($familySoloExpenses as $tx) {
+            $this->addViewerCategoryAggregate(
+                $grouped,
+                'expense',
+                $tx->category_id,
+                $tx->category,
+                (float) $tx->amount,
+                1
+            );
+        }
+
+        $familySplitExpenses = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'expense')
+            ->where('is_split', true)
+            ->where('is_debt_payment', false)
+            ->where('is_repaid', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with('category')
+            ->get();
+
+        foreach ($familySplitExpenses as $tx) {
+            $this->addViewerCategoryAggregate(
+                $grouped,
+                'expense',
+                $tx->category_id,
+                $tx->category,
+                (float) $tx->amount,
+                1
+            );
+        }
+
+        $this->mergeFamilyDebtRepaymentExpenseCategoryTotals($grouped, $viewer, $year, $month);
+
+        $result = array_values($grouped);
+
+        usort($result, function ($a, $b) {
+            if ($a['type'] !== $b['type']) {
+                return $a['type'] === 'expense' ? -1 : 1;
+            }
+
+            return (float) $b['total'] <=> (float) $a['total'];
+        });
+
+        return $result;
+    }
+
+    /**
+     * Merge household debt-repayment expenses into family category totals. Split repayments
+     * count once at the full parent amount.
+     *
+     * @param  array<string, array{type: string, category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int}>  $grouped
+     */
+    private function mergeFamilyDebtRepaymentExpenseCategoryTotals(array &$grouped, User $viewer, int $year, int $month): void
+    {
+        $soloCategorized = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_debt_payment', true)
+            ->where('is_closeout_initiated', false)
+            ->whereNotNull('category_id')
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with('category')
+            ->get();
+
+        foreach ($soloCategorized as $tx) {
+            $this->addViewerCategoryAggregate(
+                $grouped,
+                'expense',
+                $tx->category_id,
+                $tx->category,
+                (float) $tx->amount,
+                1,
+            );
+        }
+
+        $soloUncategorizedTotal = (float) Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_debt_payment', true)
+            ->where('is_closeout_initiated', false)
+            ->whereNull('category_id')
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->sum('amount');
+
+        $soloUncategorizedCount = (int) Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_debt_payment', true)
+            ->where('is_closeout_initiated', false)
+            ->whereNull('category_id')
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->count();
+
+        $splitParents = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'expense')
+            ->where('is_split', true)
+            ->where('is_debt_payment', true)
+            ->where('is_closeout_initiated', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with('category')
+            ->get();
+
+        $splitUncategorizedTotal = 0.0;
+        $splitUncategorizedCount = 0;
+
+        foreach ($splitParents as $tx) {
+            if ($tx->category_id === null) {
+                $splitUncategorizedTotal += (float) $tx->amount;
+                $splitUncategorizedCount++;
+            } else {
+                $this->addViewerCategoryAggregate(
+                    $grouped,
+                    'expense',
+                    $tx->category_id,
+                    $tx->category,
+                    (float) $tx->amount,
+                    1,
+                );
+            }
+        }
+
+        $syntheticTotal = $soloUncategorizedTotal + $splitUncategorizedTotal;
+        $syntheticCount = $soloUncategorizedCount + $splitUncategorizedCount;
+
+        if (abs($syntheticTotal) < 0.005 && $syntheticCount === 0) {
+            return;
+        }
+
+        $grouped['expense_synthetic_debt_payments'] = [
+            'type' => 'expense',
+            'category_id' => self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID,
+            'category_name' => 'Uncategorized Debt Payments',
+            'category_icon' => null,
+            'total' => round($syntheticTotal, 2),
+            'transaction_count' => $syntheticCount,
+        ];
+    }
+
+    /**
      * @param  array<string, array{type: string, category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int}>  $grouped
      */
     private function addViewerCategoryAggregate(array &$grouped, string $type, ?int $categoryId, ?Category $category, float $amount, int $countDelta): void
@@ -586,6 +786,8 @@ class MonthSummaryController extends Controller
      *     description: string|null,
      *     amount: float,
      *     is_split: bool,
+     *     user_id: int|null,
+     *     user_name: string|null,
      *     split_breakdown: array<int, array{
      *         user_id: int,
      *         user_name: string,
@@ -607,7 +809,7 @@ class MonthSummaryController extends Controller
             ->where('is_repayment', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
-            ->with(['splits.user'])
+            ->with(['splits.user', 'user'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -626,7 +828,7 @@ class MonthSummaryController extends Controller
             ->where('is_repaid', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
-            ->with(['splits.user'])
+            ->with(['splits.user', 'user'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -645,7 +847,7 @@ class MonthSummaryController extends Controller
                 ->where('is_repaid', false)
                 ->whereYear('transaction_date', $year)
                 ->whereMonth('transaction_date', $month))
-            ->with(['transaction.splits.user'])
+            ->with(['transaction.splits.user', 'transaction.user'])
             ->get();
 
         foreach ($viewerSplitShares as $split) {
@@ -658,6 +860,87 @@ class MonthSummaryController extends Controller
         }
 
         $this->mergeDebtRepaymentCategoryTransactions($grouped, $viewer, $year, $month);
+
+        return $grouped;
+    }
+
+    /**
+     * Unique household transactions per category bucket for family expense view.
+     * Split expenses appear once at the full transaction amount.
+     *
+     * @return array<string, array<int, array{
+     *     id: int,
+     *     transaction_date: string,
+     *     description: string|null,
+     *     amount: float,
+     *     is_split: bool,
+     *     user_id: int|null,
+     *     user_name: string|null,
+     *     split_breakdown: array<int, array{
+     *         user_id: int,
+     *         user_name: string,
+     *         share_percentage: float,
+     *         amount: float
+     *     }>
+     * }>>
+     */
+    private function getFamilyCategoryTransactions(User $viewer, int $year, int $month): array
+    {
+        $grouped = [];
+
+        $familyIncomes = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'income')
+            ->where('is_debt_payment', false)
+            ->where('is_borrow', false)
+            ->where('is_repayment', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with(['splits.user', 'user'])
+            ->orderBy('transaction_date')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($familyIncomes as $tx) {
+            $this->addCategoryTransactionRow($grouped, 'income', $tx->category_id, $tx, (float) $tx->amount);
+        }
+
+        $familySoloExpenses = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_debt_payment', false)
+            ->where('is_closeout_initiated', false)
+            ->where('is_repaid', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with(['splits.user', 'user'])
+            ->orderBy('transaction_date')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($familySoloExpenses as $tx) {
+            $this->addCategoryTransactionRow($grouped, 'expense', $tx->category_id, $tx, (float) $tx->amount);
+        }
+
+        $familySplitExpenses = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'expense')
+            ->where('is_split', true)
+            ->where('is_debt_payment', false)
+            ->where('is_repaid', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with(['splits.user', 'user'])
+            ->orderBy('transaction_date')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($familySplitExpenses as $tx) {
+            $this->addCategoryTransactionRow($grouped, 'expense', $tx->category_id, $tx, (float) $tx->amount);
+        }
+
+        $this->mergeFamilyDebtRepaymentCategoryTransactions($grouped, $viewer, $year, $month);
 
         return $grouped;
     }
@@ -718,6 +1001,8 @@ class MonthSummaryController extends Controller
      *     description: string|null,
      *     amount: float,
      *     is_split: bool,
+     *     user_id: int|null,
+     *     user_name: string|null,
      *     split_breakdown: array<int, array{
      *         user_id: int,
      *         user_name: string,
@@ -736,6 +1021,12 @@ class MonthSummaryController extends Controller
         $key = "{$type}_".($categoryId === null ? 'null' : (string) $categoryId);
         $grouped[$key] ??= [];
 
+        foreach ($grouped[$key] as $existing) {
+            if ((int) $existing['id'] === (int) $transaction->id) {
+                return;
+            }
+        }
+
         $grouped[$key][] = [
             'id' => (int) $transaction->id,
             'transaction_date' => $transaction->transaction_date instanceof \DateTimeInterface
@@ -744,6 +1035,8 @@ class MonthSummaryController extends Controller
             'description' => $transaction->description,
             'amount' => round($amount, 2),
             'is_split' => (bool) $transaction->is_split,
+            'user_id' => $transaction->user_id !== null ? (int) $transaction->user_id : null,
+            'user_name' => $transaction->user?->name,
             'split_breakdown' => $transaction->is_split ? $this->serializeSplitBreakdown($transaction) : [],
         ];
     }
@@ -755,6 +1048,8 @@ class MonthSummaryController extends Controller
      *     description: string|null,
      *     amount: float,
      *     is_split: bool,
+     *     user_id: int|null,
+     *     user_name: string|null,
      *     split_breakdown: array<int, array{
      *         user_id: int,
      *         user_name: string,
@@ -774,7 +1069,7 @@ class MonthSummaryController extends Controller
             ->where('is_closeout_initiated', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
-            ->with(['splits.user'])
+            ->with(['splits.user', 'user'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -794,7 +1089,7 @@ class MonthSummaryController extends Controller
                 ->where('is_closeout_initiated', false)
                 ->whereYear('transaction_date', $year)
                 ->whereMonth('transaction_date', $month))
-            ->with(['transaction.splits.user'])
+            ->with(['transaction.splits.user', 'transaction.user'])
             ->get();
 
         foreach ($splitShares as $split) {
@@ -805,6 +1100,43 @@ class MonthSummaryController extends Controller
 
             $categoryId = $tx->category_id ?? self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID;
             $this->addCategoryTransactionRow($grouped, 'expense', $categoryId, $tx, (float) $split->amount);
+        }
+    }
+
+    /**
+     * @param  array<string, array<int, array{
+     *     id: int,
+     *     transaction_date: string,
+     *     description: string|null,
+     *     amount: float,
+     *     is_split: bool,
+     *     user_id: int|null,
+     *     user_name: string|null,
+     *     split_breakdown: array<int, array{
+     *         user_id: int,
+     *         user_name: string,
+     *         share_percentage: float,
+     *         amount: float
+     *     }>
+     * }>>  $grouped
+     */
+    private function mergeFamilyDebtRepaymentCategoryTransactions(array &$grouped, User $viewer, int $year, int $month): void
+    {
+        $rows = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'expense')
+            ->where('is_debt_payment', true)
+            ->where('is_closeout_initiated', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->with(['splits.user', 'user'])
+            ->orderBy('transaction_date')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($rows as $tx) {
+            $categoryId = $tx->category_id ?? self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID;
+            $this->addCategoryTransactionRow($grouped, 'expense', $categoryId, $tx, (float) $tx->amount);
         }
     }
 

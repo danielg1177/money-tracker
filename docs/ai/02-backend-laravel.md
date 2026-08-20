@@ -10,7 +10,7 @@
 ## Models
 
 ### User (`app/Models/User.php`)
-- Fields: `name`, `email`, `password`, `family_id` (nullable FK), `role`, `is_admin` (boolean), `bank_balance_enabled` (boolean), `bank_balance` (decimal nullable), `bank_balance_set_at` (date nullable)
+- Fields: `name`, `email`, `password`, `family_id` (nullable FK), `role`, `is_admin` (boolean), `bank_balance_enabled` (boolean), `bank_balance` (decimal nullable), `bank_balance_set_at` (date nullable), `view_family_expenses` (boolean, default false)
 - Role values (strings): `head_of_household`, `member` (admin is now a separate boolean)
 - System admin: Boolean `is_admin` column; when true, grants admin permissions independent of family role
 - Appended computed attributes (serialized in JSON): `is_admin`, `is_head_of_household`, `can_manage_family`
@@ -125,7 +125,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 
 ### TransactionController
 - `repayableExpenses(Request)` — `GET /transactions/repayable-expenses`; auth user's own expenses eligible for expense-repayment linking (`is_repaid=false`, not `is_repayment_mirror` or `is_closeout_initiated`); optional date filters; `category` eager-loaded
-- `index(Request)` — returns viewer-scoped family transactions (`user_id` or `transaction_splits` participation), filtered by `start_date`/`end_date`, eager-loads `user`, `category`, `splits.user`, `debt` (+ nested relations), `advanceFund`, `debtPaymentBenefitExpense`, `debtPaymentIncome`, `plaidPendingImport.plaidItem` (null for non-Plaid rows; provides `institution_name`); excludes split debt-payment expenses for the creditor when they duplicate that creditor’s repayment income row
+- `index(Request)` — default: viewer-scoped family transactions (`user_id` or `transaction_splits` participation). Optional `view=family` returns all family rows in range (splits still unique by id). Filtered by `start_date`/`end_date`, eager-loads `user`, `category`, `splits.user`, `debt` (+ nested relations), `advanceFund`, `debtPaymentBenefitExpense`, `debtPaymentIncome`, `plaidPendingImport.plaidItem` (null for non-Plaid rows; provides `institution_name`); excludes split debt-payment expenses for the creditor when they duplicate that creditor’s repayment income row
 - `store(StoreTransactionRequest)` — validates closed-month status via `ClosedMonthGuard`, then delegates to `TransactionService::createTransaction`
 - `update(StoreTransactionRequest, Transaction)` — checks ownership or same family, validates both the existing row month and target payload month via `ClosedMonthGuard`, then delegates to `TransactionService::updateTransaction`
 - `destroy(Transaction)` — checks ownership or same family; validates closed-month status via `ClosedMonthGuard`; delegates `TransactionService::deleteTransaction()` (paired debt-payment cleanup + mirror rows + benefit expense)
@@ -187,6 +187,9 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `completeTitleSaving(int $id)` — marks one user-owned `CloseoutTitleSaving` row as completed, stamps `completed_at`, and creates a closeout-tagged expense transaction (`is_closeout_initiated=true`) using the rule’s optional `closeout_expense_category_id`
 - `incompleteTitleSaving(int $id)` — clears completion state/timestamp and deletes the generated completion transaction when present
 
+### UserSettingsController
+- `update(UpdateUserSettingsRequest)` — `PUT /user/settings`; persists `view_family_expenses` on the authenticated user and returns the refreshed user JSON
+
 ### PlaidController
 - `linkToken(Request)` — `GET /plaid/link-token`; calls Plaid `/link/token/create` with `products` `['transactions']`, `country_codes` `['US']`, `transactions.days_requested` from config, and **`financekit_supported: true`** when `config('plaid.financekit_supported')` is true (env `PLAID_FINANCEKIT_SUPPORTED`, default true) so Link can offer FinanceKit / Apple Card where supported; returns `{link_token}`; `503` when credentials missing
 - `exchange(ExchangePlaidTokenRequest)` — `POST /plaid/exchange`; exchanges `public_token`, persists `PlaidItem` with encrypted access token, hydrates institution metadata, runs initial `PlaidTransactionSyncService::syncItem` (returns JSON `pull` including raw Plaid rows; creates `plaid_pending_imports` for new `added` transactions and may auto-create ledger rows when `PlaidMerchantRule` qualifies)
@@ -230,7 +233,7 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `closedMonths(Request)` — `GET /closeout/closed-months`; returns array of `{year, month}` hard-closed months for the auth user's family
 
 ### MonthSummaryController
-- `show(Request)` — `GET /month-summary?year=&month=`; read-only overview for a specific month; requires family membership; returns `{year, month, is_hard_closed, close_status, category_totals, category_transactions, member_balances, rule_preview, fund_advance_transactions, fund_movements, debt_repayments, title_savings}`
+- `show(Request)` — `GET /month-summary?year=&month=`; read-only overview for a specific month; requires family membership; returns `{year, month, is_hard_closed, close_status, category_totals, category_transactions, member_balances, rule_preview, fund_advance_transactions, fund_movements, debt_repayments, title_savings}` plus **`family_category_totals`** / **`family_category_transactions`** when `users.view_family_expenses` is true (household category overlay; split expenses counted once at full amount; does not change member_balances / rule_preview / fund_movements)
   - `category_totals`: **authenticated user only** — income rows with **`user_id` = viewer** (**non–debt-payment**, **`is_borrow` false** — fund borrows align with **`rule_preview.basis.gross_income`** and appear under **Fund In/Out**), non-split viewer expenses **excluding** `is_debt_payment` and **`is_closeout_initiated`** from the main expense loop (closeout ledger expenses match **`rule_preview`/closeout basis exclusions**; see Fund In/Out / debt repayment UI for those movements), plus **split expense** **`transaction_splits.amount`** rows for the viewer (excluding split lines on debt-payment parents). **Debt-payment expenses** are merged afterward: **with** `category_id` they add to that category’s expense total; **without** `category_id` (solo or split parent uncategorized) they aggregate to synthetic **Uncategorized Debt Payments** (`category_id = -1`); sorted expenses first then by total descending
   - `member_balances`: split-expense net IOUs dated in that month (**`is_split`, `type=expense`**, includes split debt repayments, excludes **`is_closeout_initiated`**), direction (`they_owe_you` / `you_owe_them`); only non-zero nets are returned. Each row also includes source breakdown by transaction creator: `from_you_created_amount`, `from_them_created_amount`, and two history arrays (`from_you_created_transactions`, `from_them_created_transactions`) with per-transaction `transaction_id`, `transaction_date`, `category_name`, `category_icon`, `description`, `total_amount`, and `balance_amount`.
   - `fund_advance_transactions`: map of fund id → viewer expense rows with `advance_fund_id` in that month (`getFundAdvanceTransactions`; same scope as **`MonthCloseoutService::fundAdvanceOutstandingByFundForUserMonth`**)

@@ -12,6 +12,7 @@ use App\Http\Controllers\PlaidController;
 use App\Http\Controllers\PlaidImportController;
 use App\Http\Controllers\PlaidWebhookController;
 use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\UserSettingsController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -39,12 +40,15 @@ Route::view('/plaid/calibrate/{itemId}', 'app');
 
 Route::view('/month-summary/{yearMonth}', 'app');
 
+Route::view('/settings', 'app');
+
 Route::middleware(['auth'])->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->expectsJson()
             ? auth()->user()
             : view('app');
     });
+    Route::put('/user/settings', [UserSettingsController::class, 'update']);
 
     Route::get('/transactions/repayable-expenses', [TransactionController::class, 'repayableExpenses']);
 

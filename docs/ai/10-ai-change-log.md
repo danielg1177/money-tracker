@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-20 — Settings page, password change, and family expense view
+
+- Files touched: `database/migrations/2026_08_20_235002_add_view_family_expenses_to_users_table.php`, `app/Models/User.php`, `database/factories/UserFactory.php`, `app/Http/Controllers/UserSettingsController.php`, `app/Http/Requests/UpdateUserSettingsRequest.php`, `app/Http/Controllers/TransactionController.php`, `app/Http/Controllers/MonthSummaryController.php`, `routes/web.php`, `resources/js/pages/Settings.vue`, `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `resources/js/router/index.js`, `resources/js/components/AppNav.vue`, `tests/Feature/UserSettingsTest.php`, `tests/Feature/FamilyExpenseViewTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Account menu **Settings** shows email (read-only), Fortify password change, and a persisted **View all family expenses** toggle. When that toggle is on, Transactions requests `GET /transactions?view=family` and Month Summary adds household category totals; both pages show You vs Family figures. Family view is browse-only (no edit/delete). Split rows are not duplicated. Split balances, closeout, Fund In/Out, and Dashboard stay personal/viewer-scoped.
+
 ## 2026-08-19 — Inter-family debt history uses reversal lineage
 
 - Files touched: `database/migrations/2026_08_20_010317_add_reversal_lineage_to_debts_table.php`, `app/Models/Debt.php`, `app/Services/DebtService.php`, `app/Services/TransactionService.php`, `app/Http/Controllers/DebtController.php`, `resources/js/pages/Debts.vue`, `tests/Feature/DebtRepaymentTransactionTest.php`, `tests/Feature/TransactionTest.php`, `tests/Feature/UndoHardCloseTest.php`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`

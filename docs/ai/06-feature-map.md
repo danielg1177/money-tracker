@@ -11,14 +11,27 @@ This document maps each user-visible feature to the backend and frontend files t
 | Layer | Files |
 |---|---|
 | Backend | Fortify routes (auto-registered), `app/Actions/Fortify/CreateNewUser.php`, `app/Providers/FortifyServiceProvider.php` |
-| Frontend | `resources/js/pages/Login.vue`, `resources/js/composables/useAuth.js`, `resources/js/support/authUser.js` |
+| Frontend | `resources/js/pages/Login.vue`, `resources/js/pages/Settings.vue`, `resources/js/composables/useAuth.js`, `resources/js/support/authUser.js` |
 | Config | `config/fortify.php` |
+
+---
+
+## 1b. Settings
+
+**What it does:** Every authenticated user can view their email, change their password, and toggle a persisted **View all family expenses** preference. Family view is a read-only overlay on Transactions and Month Summary (Dashboard stays personal).
+
+| Layer | Files |
+|---|---|
+| Backend | `PUT /user/password` (Fortify `UpdateUserPassword`); `PUT /user/settings` → `UserSettingsController`; `GET /user` includes `view_family_expenses` |
+| Request | `app/Http/Requests/UpdateUserSettingsRequest.php` |
+| Frontend | `resources/js/pages/Settings.vue`, Account menu link in `resources/js/components/AppNav.vue` |
+| Tests | `tests/Feature/UserSettingsTest.php`, `tests/Feature/FamilyExpenseViewTest.php` |
 
 ---
 
 ## 2. Dashboard / Summary
 
-**What it does:** Shows current-month income/expense totals and displays the same **viewer-scoped** transaction list as the Transactions page (see section 3). Also displays **This Month's Split Expenses** (per-counterpart net and a View Details sheet); there is no separate aggregate “split balance” card. For users in a family, it also shows a **Bank Account** card that reads/writes `/bank-balance` for enabling tracking and setting a baseline account balance.
+**What it does:** Shows current-month income/expense totals and displays the **viewer-scoped** transaction list from `GET /transactions` (own rows plus split co-participations; Dashboard does **not** use `view=family`). Also displays **This Month's Split Expenses** (per-counterpart net and a View Details sheet); there is no separate aggregate “split balance” card. For users in a family, it also shows a **Bank Account** card that reads/writes `/bank-balance` for enabling tracking and setting a baseline account balance.
 
 | Layer | Files |
 |---|---|
@@ -31,7 +44,7 @@ This document maps each user-visible feature to the backend and frontend files t
 
 ## 3. Transactions
 
-**What it does:** Record income and expense transactions for a family. Support date filtering, category assignment, split between members, edit, and delete. The index list is **scoped to the signed-in user**: their own transactions plus any family transaction where they appear in `transaction_splits` (shared splits created by someone else). **All transactions are included**, including debt payment rows (`is_debt_payment=true`), except the mirrored **expense** leg for a **creditor** who is also on that expense’s splits (same payment as their `debt_id` income row). The month picker state is persisted in the route query as `month=YYYY-MM`, so refresh/back-forward navigation restores the selected month.
+**What it does:** Record income and expense transactions for a family. Support date filtering, category assignment, split between members, edit, and delete. The index list is **scoped to the signed-in user** by default: their own transactions plus any family transaction where they appear in `transaction_splits` (shared splits created by someone else). When **View all family expenses** is on, the Transactions page requests `?view=family` (read-only overlay). **Dashboard still uses the default viewer-scoped list.** **All transactions are included**, including debt payment rows (`is_debt_payment=true`), except the mirrored **expense** leg for a **creditor** who is also on that expense’s splits (same payment as their `debt_id` income row). The month picker state is persisted in the route query as `month=YYYY-MM`, so refresh/back-forward navigation restores the selected month.
 
 | Layer | Files |
 |---|---|
@@ -39,7 +52,7 @@ This document maps each user-visible feature to the backend and frontend files t
 | Service | `app/Services/TransactionService.php`, `app/Services/ClosedMonthGuard.php`, `app/Services/PlaidClient.php`, `app/Services/PlaidCalibrationService.php`, `app/Services/PlaidMatchingService.php`, `app/Services/PlaidTransactionSyncService.php` |
 | Model | `app/Models/Transaction.php`, `app/Models/TransactionSplit.php`, `app/Models/PlaidItem.php`, `app/Models/PlaidPendingImport.php`, `app/Models/PlaidMerchantRule.php` |
 | Request | `app/Http/Requests/StoreTransactionRequest.php` |
-| Frontend | `resources/js/pages/Transactions.vue` (calendar-month filter triggers **`GET /month-summary`** for **`member_balances`** only alongside the usual transaction fetches; **Split balances (this month)** card when applicable; **light violet card tint** on rows owned by another family member), `resources/js/pages/BankConnections.vue` (Plaid Link, pending-import banner, sync-this-month, calibrate links), `resources/js/pages/PlaidImportReview.vue`, `resources/js/pages/PlaidCalibrate.vue`, `resources/js/components/TransactionForm.vue`, `resources/js/components/SplitEditor.vue` |
+| Frontend | `resources/js/pages/Transactions.vue` (calendar-month filter triggers **`GET /month-summary`** for **`member_balances`** only alongside the usual transaction fetches; **Split balances (this month)** card when applicable; **light violet card tint** on split rows owned by another family member; **teal tint** on other members’ non-split rows when family view is on), `resources/js/pages/BankConnections.vue` (Plaid Link, pending-import banner, sync-this-month, calibrate links), `resources/js/pages/PlaidImportReview.vue`, `resources/js/pages/PlaidCalibrate.vue`, `resources/js/components/TransactionForm.vue`, `resources/js/components/SplitEditor.vue` |
 
 **Closed-month guard:** `ClosedMonthGuard` rejects transaction-producing mutations when the family month is hard-closed, or when the **initiating** user (transaction owner / debt payer / fund actor) has soft-closed the month. Soft close does **not** block other open members from splitting with or paying a soft-closed member. Debt payments and fund borrow/repay use the same guard through their controllers.
 
@@ -244,12 +257,13 @@ Categories with `advance_fund_id` (expense only) can set `is_non_necessity_defau
 | Service | `app/Services/MonthCloseoutService` (read-only `isHardClosed`, `getMonthStatus`) |
 | Models | `Transaction`, `TransactionSplit`, `FundRule`, `Debt`, `Fund` (all read-only) |
 | Frontend | `resources/js/pages/MonthSummary.vue` (route: `/month-summary/:yearMonth`); **`resources/js/pages/Transactions.vue`** shows the same **`member_balances`** as **Split balances (this month)** when a calendar month (not **Custom Range**) is selected |
-| Tests | **`tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`** guards **`category_totals`** (**solo expenses exclude `is_closeout_initiated`; viewer income excludes `is_borrow`**) stays aligned with **`rule_preview.basis.total_expenses`** / **`gross_income`**, plus **`member_balances`** (split-expense net includes split debt-payment parents, omits closeout split parents, nets to zero). **`tests/Feature/MonthCloseoutTransactionDateTest.php`**, **`PreviewHardCloseConsistencyTest.php`** add further month-summary / closeout coverage |
+| Tests | **`tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`** guards **`category_totals`** (**solo expenses exclude `is_closeout_initiated`; viewer income excludes `is_borrow`**) stays aligned with **`rule_preview.basis.total_expenses`** / **`gross_income`**, plus **`member_balances`** (split-expense net includes split debt-payment parents, omits closeout split parents, nets to zero). **`tests/Feature/FamilyExpenseViewTest.php`** covers household overlay totals. **`tests/Feature/MonthCloseoutTransactionDateTest.php`**, **`PreviewHardCloseConsistencyTest.php`** add further month-summary / closeout coverage |
 
-**Response shape:** `{year, month, is_hard_closed, close_status, category_totals, category_transactions, member_balances, rule_preview, fund_advance_transactions, fund_movements, debt_repayments, title_savings}`
+**Response shape:** `{year, month, is_hard_closed, close_status, category_totals, category_transactions, member_balances, rule_preview, fund_advance_transactions, fund_movements, debt_repayments, title_savings}` plus optional `family_category_totals` / `family_category_transactions` when `view_family_expenses` is true
 
 - `category_totals`: **viewer-scoped** category totals for the authenticated user only (solo incomes **excluding `is_borrow`** so fund borrows align with **`rule_preview.basis.gross_income`**; solo expenses **excluding `is_closeout_initiated`** so hard-close ledger lines align with **`rule_preview.basis.total_expenses`**; viewer’s shares of split expenses; **tracked debt repayments** you pay merge into their **transaction category** when `category_id` is set, otherwise into a synthetic **Uncategorized Debt Payments** row with `category_id=-1`), sorted expenses then income by total descending
-- `category_transactions`: per-category detail rows for month-summary category buckets, keyed as `{type}_{categoryId}` (uncategorized key uses `null`; synthetic uncategorized debt repayments use `expense_-1`). Each row includes `{id, transaction_date, description, amount, is_split, split_breakdown[]}` and follows the same viewer-scoped inclusion rules as `category_totals` (split rows use viewer share amounts)
+- `family_category_totals` / `family_category_transactions`: household overlay (same exclusion flags as viewer totals; split expenses counted **once at full amount**; rows include `user_id` / `user_name`). Omitted when the preference is off. Does not change `member_balances`, `rule_preview`, `fund_movements`, `debt_repayments`, or `title_savings`.
+- `category_transactions`: per-category detail rows for month-summary category buckets, keyed as `{type}_{categoryId}` (uncategorized key uses `null`; synthetic uncategorized debt repayments use `expense_-1`). Each row includes `{id, transaction_date, description, amount, is_split, user_id, user_name, split_breakdown[]}` and follows the same viewer-scoped inclusion rules as `category_totals` (split rows use viewer share amounts)
 - `member_balances`: net split-expense IOUs between the auth user and each other family member for **`is_split` expenses dated in that month (**includes** split debt repayments, **excludes** **`is_closeout_initiated`** parents); only members with a non-zero net appear
 - `fund_movements`: monthly fund movement summary for funds visible to the auth user, grouped by fund with in/out/net totals and movement lines
 - `fund_advance_transactions`: map keyed by fund id (string) → array of viewer expense rows with `advance_fund_id` set in that month (`id`, `transaction_date`, `description`, `amount`, `category_name`, `category_icon`, `is_non_necessity`); same scope as closeout advance netting

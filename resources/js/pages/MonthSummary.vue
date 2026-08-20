@@ -302,14 +302,57 @@ function sortCategoriesByTotalDesc(rows) {
   return [...rows].sort((a, b) => Number(b.total) - Number(a.total));
 }
 
+const isFamilyExpenseView = computed(() => Boolean(currentUser.value?.view_family_expenses));
+
+function categoryMergeKey(cat) {
+  return `${cat.type}_${cat.category_id ?? 'null'}`;
+}
+
+function mergeYouAndFamilyCategories(youRows, familyRows) {
+  const map = new Map();
+
+  youRows.forEach((row) => {
+    map.set(categoryMergeKey(row), {
+      ...row,
+      you_total: Number(row.total || 0),
+      family_total: 0,
+    });
+  });
+
+  familyRows.forEach((row) => {
+    const key = categoryMergeKey(row);
+    if (map.has(key)) {
+      map.get(key).family_total = Number(row.total || 0);
+    } else {
+      map.set(key, {
+        ...row,
+        you_total: 0,
+        family_total: Number(row.total || 0),
+      });
+    }
+  });
+
+  return [...map.values()].sort((a, b) => Number(b.family_total) - Number(a.family_total) || Number(b.you_total) - Number(a.you_total));
+}
+
 const sortedExpenseCategories = computed(() => {
-  const rows = (summary.value?.category_totals || []).filter(cat => cat.type === 'expense');
-  return sortCategoriesByTotalDesc(rows);
+  const youRows = (summary.value?.category_totals || []).filter(cat => cat.type === 'expense');
+  if (!isFamilyExpenseView.value) {
+    return sortCategoriesByTotalDesc(youRows);
+  }
+
+  const familyRows = (summary.value?.family_category_totals || []).filter(cat => cat.type === 'expense');
+  return mergeYouAndFamilyCategories(youRows, familyRows);
 });
 
 const sortedIncomeCategories = computed(() => {
-  const rows = (summary.value?.category_totals || []).filter(cat => cat.type === 'income');
-  return sortCategoriesByTotalDesc(rows);
+  const youRows = (summary.value?.category_totals || []).filter(cat => cat.type === 'income');
+  if (!isFamilyExpenseView.value) {
+    return sortCategoriesByTotalDesc(youRows);
+  }
+
+  const familyRows = (summary.value?.family_category_totals || []).filter(cat => cat.type === 'income');
+  return mergeYouAndFamilyCategories(youRows, familyRows);
 });
 
 const displayedExpenseCategories = computed(() => {
@@ -342,8 +385,24 @@ const expenseCategoriesTotal = computed(() =>
   sortedExpenseCategories.value.reduce((sum, cat) => sum + Number(cat.total || 0), 0),
 );
 
+const expenseCategoriesYouTotal = computed(() =>
+  sortedExpenseCategories.value.reduce((sum, cat) => sum + Number(cat.you_total ?? cat.total ?? 0), 0),
+);
+
+const expenseCategoriesFamilyTotal = computed(() =>
+  sortedExpenseCategories.value.reduce((sum, cat) => sum + Number(cat.family_total || 0), 0),
+);
+
 const incomeCategoriesTotal = computed(() =>
   sortedIncomeCategories.value.reduce((sum, cat) => sum + Number(cat.total || 0), 0),
+);
+
+const incomeCategoriesYouTotal = computed(() =>
+  sortedIncomeCategories.value.reduce((sum, cat) => sum + Number(cat.you_total ?? cat.total ?? 0), 0),
+);
+
+const incomeCategoriesFamilyTotal = computed(() =>
+  sortedIncomeCategories.value.reduce((sum, cat) => sum + Number(cat.family_total || 0), 0),
 );
 
 const fundMovementGroups = computed(() => {
@@ -499,6 +558,9 @@ const selectedCategoryTransactions = computed(() => {
   }
 
   const key = categoryTransactionsKey(selectedCategory.value);
+  if (isFamilyExpenseView.value) {
+    return summary.value?.family_category_transactions?.[key] ?? [];
+  }
   return summary.value?.category_transactions?.[key] ?? [];
 });
 
@@ -662,10 +724,11 @@ function movementTypeLabel(type) {
           Debt repayments you pay use the transaction’s category when set; otherwise they appear under
           <span class="text-gray-300">Uncategorized Debt Payments</span>
           (same amounts feed <span class="text-gray-300">Projected closeout → Expenses</span>). Hard-close-generated ledger entries (fund transfers, debt payments) are excluded here; they appear in Fund In/Out and Debt Repayments below.
+          <span v-if="isFamilyExpenseView" class="block mt-1">Family amounts are the household combined total for each category (splits counted once at the full amount).</span>
         </p>
 
         <div v-if="sortedExpenseCategories.length === 0" class="text-sm text-gray-500">
-          No expenses for you this month
+          {{ isFamilyExpenseView ? 'No expenses for the family this month' : 'No expenses for you this month' }}
         </div>
 
         <div v-else class="space-y-2">
@@ -682,7 +745,11 @@ function movementTypeLabel(type) {
               </span>
               <span class="text-sm text-gray-300 truncate">{{ cat.category_name }}</span>
             </div>
-            <span class="text-sm font-medium shrink-0 text-red-400">
+            <span v-if="isFamilyExpenseView" class="text-right shrink-0">
+              <span class="block text-[10px] text-gray-500 tabular-nums">You −{{ formatCurrency(cat.you_total) }}</span>
+              <span class="block text-sm font-medium text-red-400 tabular-nums">Family −{{ formatCurrency(cat.family_total) }}</span>
+            </span>
+            <span v-else class="text-sm font-medium shrink-0 text-red-400">
               −{{ formatCurrency(cat.total) }}
             </span>
           </button>
@@ -700,7 +767,11 @@ function movementTypeLabel(type) {
             class="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-900/80 rounded-lg border border-gray-600"
           >
             <span class="text-sm font-semibold text-gray-200">Total expenses</span>
-            <span class="text-sm font-semibold shrink-0 text-red-400 tabular-nums">
+            <span v-if="isFamilyExpenseView" class="text-right shrink-0">
+              <span class="block text-[10px] text-gray-400 tabular-nums">You −{{ formatCurrency(expenseCategoriesYouTotal) }}</span>
+              <span class="block text-sm font-semibold text-red-400 tabular-nums">Family −{{ formatCurrency(expenseCategoriesFamilyTotal) }}</span>
+            </span>
+            <span v-else class="text-sm font-semibold shrink-0 text-red-400 tabular-nums">
               −{{ formatCurrency(expenseCategoriesTotal) }}
             </span>
           </div>
@@ -727,10 +798,11 @@ function movementTypeLabel(type) {
         <p class="text-xs text-gray-500 mb-3">
           Category totals exclude repayments received on tracked debts (shown under <span class="text-gray-300">Debt repayments</span>)
           and fund borrow withdrawals (shown under <span class="text-gray-300">Fund In/Out</span>). Both are excluded from <span class="text-gray-300">Gross Income</span> when closeout rules run.
+          <span v-if="isFamilyExpenseView" class="block mt-1">Family amounts are the household combined total for each category.</span>
         </p>
 
         <div v-if="sortedIncomeCategories.length === 0" class="text-sm text-gray-500">
-          No income for you this month
+          {{ isFamilyExpenseView ? 'No income for the family this month' : 'No income for you this month' }}
         </div>
 
         <div v-else class="space-y-2">
@@ -747,7 +819,11 @@ function movementTypeLabel(type) {
               </span>
               <span class="text-sm text-gray-300 truncate">{{ cat.category_name }}</span>
             </div>
-            <span class="text-sm font-medium shrink-0 text-green-400">
+            <span v-if="isFamilyExpenseView" class="text-right shrink-0">
+              <span class="block text-[10px] text-gray-500 tabular-nums">You +{{ formatCurrency(cat.you_total) }}</span>
+              <span class="block text-sm font-medium text-green-400 tabular-nums">Family +{{ formatCurrency(cat.family_total) }}</span>
+            </span>
+            <span v-else class="text-sm font-medium shrink-0 text-green-400">
               +{{ formatCurrency(cat.total) }}
             </span>
           </button>
@@ -765,7 +841,11 @@ function movementTypeLabel(type) {
             class="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-900/80 rounded-lg border border-gray-600"
           >
             <span class="text-sm font-semibold text-gray-200">Total income</span>
-            <span class="text-sm font-semibold shrink-0 text-green-400 tabular-nums">
+            <span v-if="isFamilyExpenseView" class="text-right shrink-0">
+              <span class="block text-[10px] text-gray-400 tabular-nums">You +{{ formatCurrency(incomeCategoriesYouTotal) }}</span>
+              <span class="block text-sm font-semibold text-green-400 tabular-nums">Family +{{ formatCurrency(incomeCategoriesFamilyTotal) }}</span>
+            </span>
+            <span v-else class="text-sm font-semibold shrink-0 text-green-400 tabular-nums">
               +{{ formatCurrency(incomeCategoriesTotal) }}
             </span>
           </div>
@@ -1252,6 +1332,7 @@ function movementTypeLabel(type) {
               >
                 <div class="min-w-0">
                   <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
+                  <p v-if="row.user_name" class="text-[11px] text-gray-400 truncate">{{ row.user_name }}</p>
                   <p class="text-sm text-gray-200 truncate">
                     {{ row.description || selectedCategory?.category_name || 'No description' }}
                   </p>

@@ -35,7 +35,7 @@ money-tracker/
 ├── app/
 │   ├── Actions/Fortify/       # Fortify action overrides (user creation, password update)
 │   ├── Http/
-│   │   ├── Controllers/       # Admin, BankBalance, Category, Dashboard, Debt, Fund, MonthCloseout, MonthSummary, Plaid (+ webhook), Transaction + base Controller
+│   │   ├── Controllers/       # Admin, BankBalance, Category, Dashboard, Debt, Fund, MonthCloseout, MonthSummary, Plaid (+ webhook), Transaction, UserSettings + base Controller
 │   │   └── Requests/          # Form Request classes (incl. ExchangePlaidTokenRequest)
 │   ├── Models/                # 16 Eloquent models
 │   ├── Policies/              # FundPolicy, DebtPolicy
@@ -79,5 +79,5 @@ money-tracker/
 - No Enums exist yet. Roles and allocation types are plain strings.
 - No API versioning — routes are in `web.php`, not `api.php`.
 - No Eloquent API Resources — controllers return models/collections directly.
-- Funds: **personal** funds are per-user (`user_id`, `family_id` null). **Family** funds share `family_id` with the household but still store `user_id` as the creator; **`GET /funds`** lists personal funds and family funds separately so each fund row appears once (family rows are not duplicated under the creator’s personal list). Categories and transactions are **per-family** (stored); **`GET /transactions` lists only rows relevant to the signed-in user** (their own plus split co-participations). See `docs/ai/01-architecture.md` (data scoping).
+- Funds: **personal** funds are per-user (`user_id`, `family_id` null). **Family** funds share `family_id` with the household but still store `user_id` as the creator; **`GET /funds`** lists personal funds and family funds separately so each fund row appears once (family rows are not duplicated under the creator’s personal list). Categories and transactions are **per-family** (stored); **`GET /transactions` defaults to rows relevant to the signed-in user** (their own plus split co-participations). Pass **`?view=family`** for the read-only household overlay used by the Transactions page when Settings **View all family expenses** is on. Dashboard keeps the default viewer-scoped list. See `docs/ai/01-architecture.md` (data scoping).
 - A user without a `family_id` is essentially unusable (most endpoints 403 or return empty).

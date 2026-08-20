@@ -4,7 +4,9 @@
     <div class="sticky top-0 pt-safe bg-gray-900 border-b border-gray-800 px-4 py-3 z-10 flex items-start justify-between gap-3">
       <div class="min-w-0">
         <h1 class="text-2xl font-bold text-white">Transactions</h1>
-        <p class="text-gray-400 text-sm mt-1">Manage your spending and income</p>
+        <p class="text-gray-400 text-sm mt-1">
+          {{ isFamilyExpenseView ? 'Showing all family expenses' : 'Manage your spending and income' }}
+        </p>
       </div>
       <div
         v-if="showCloseOutHeaderButton"
@@ -135,11 +137,27 @@
       <div class="flex justify-between gap-4">
         <div>
           <p class="text-xs font-medium uppercase text-gray-400">Income</p>
-          <p class="font-semibold text-green-400">+{{ formatCurrency(totalIncome) }}</p>
+          <template v-if="isFamilyExpenseView">
+            <p class="mt-0.5 text-[11px] text-gray-500">
+              You <span class="font-semibold text-green-400 tabular-nums">+{{ formatCurrency(totalIncome) }}</span>
+            </p>
+            <p class="text-[11px] text-gray-500">
+              Family <span class="font-semibold text-green-400 tabular-nums">+{{ formatCurrency(familyTotalIncome) }}</span>
+            </p>
+          </template>
+          <p v-else class="font-semibold text-green-400">+{{ formatCurrency(totalIncome) }}</p>
         </div>
         <div class="text-right">
           <p class="text-xs font-medium uppercase text-gray-400">Expenses</p>
-          <p class="font-semibold text-red-400">−{{ formatCurrency(totalExpenses) }}</p>
+          <template v-if="isFamilyExpenseView">
+            <p class="mt-0.5 text-[11px] text-gray-500">
+              You <span class="font-semibold text-red-400 tabular-nums">−{{ formatCurrency(totalExpenses) }}</span>
+            </p>
+            <p class="text-[11px] text-gray-500">
+              Family <span class="font-semibold text-red-400 tabular-nums">−{{ formatCurrency(familyTotalExpenses) }}</span>
+            </p>
+          </template>
+          <p v-else class="font-semibold text-red-400">−{{ formatCurrency(totalExpenses) }}</p>
         </div>
       </div>
       <template v-if="hasNonNecessityExpenses">
@@ -160,6 +178,7 @@
       >
         Split <span class="text-gray-400">expenses</span> use <span class="text-gray-400">your share</span> in the expense total and in each day’s expense sum.
         <span class="block mt-1 text-gray-500">Income totals exclude <span class="text-sky-300/90">debt repayments</span> received (they do not count as earned income for closeout).</span>
+        <span v-if="isFamilyExpenseView" class="block mt-1 text-gray-500">Family totals use the full amount of each household transaction (splits counted once).</span>
       </p>
     </div>
 
@@ -266,6 +285,8 @@
                     ? 'border-cyan-700/30 bg-cyan-950/10'
                     : transaction.is_repayment_mirror
                       ? 'border-amber-700/30 bg-amber-950/10'
+                      : isFamilyExpenseView && isTransactionOwnedByOther(transaction) && !isSplitListRow(transaction)
+                      ? 'border-teal-700/40 bg-teal-950/20'
                       : isTransactionOwnedByOther(transaction)
                         ? 'border-violet-700/35 bg-violet-950/25'
                         : 'border-gray-700 bg-gray-800',
@@ -343,15 +364,21 @@
                     Needs Review — repaid{{ transaction.mirror_repayment_link?.repayment_transaction?.user?.name ? ' on behalf of ' + transaction.mirror_repayment_link.repayment_transaction.user.name : '' }}
                   </span>
                   <button
-                    v-if="transaction.is_debt_payment_benefit"
+                    v-if="transaction.is_debt_payment_benefit && !isFamilyExpenseView"
                     type="button"
                     class="inline-flex shrink-0 items-center rounded-md border border-emerald-700/30 bg-emerald-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-300 cursor-pointer hover:bg-emerald-800/50"
                     @click.stop="openBenefitFormFromBenefit(transaction)"
                   >
                     From debt repayment
                   </button>
+                  <span
+                    v-else-if="transaction.is_debt_payment_benefit"
+                    class="inline-flex shrink-0 items-center rounded-md border border-emerald-700/30 bg-emerald-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-300"
+                  >
+                    From debt repayment
+                  </span>
                   <button
-                    v-else-if="transaction.is_debt_payment && transaction.type === 'income' && transaction.debt_payment_benefit_expense"
+                    v-else-if="transaction.is_debt_payment && transaction.type === 'income' && transaction.debt_payment_benefit_expense && !isFamilyExpenseView"
                     type="button"
                     class="inline-flex shrink-0 items-center rounded-md border border-emerald-700/30 bg-emerald-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-300 cursor-pointer hover:bg-emerald-800/50"
                     @click.stop="openBenefitForm(transaction)"
@@ -379,8 +406,8 @@
                     🏦 {{ transaction.plaid_pending_import.plaid_item.institution_name }}
                   </button>
                 </div>
-                <div v-if="transaction.user?.name" class="hidden sm:block text-xs text-gray-500 mt-1.5">
-                  {{ transaction.user.name }}
+                <div v-if="transaction.user?.name" class="text-xs text-gray-500 mt-1.5" :class="isFamilyExpenseView ? '' : 'hidden sm:block'">
+                  {{ transactionPayerDisplayLabel(transaction) }}
                 </div>
               </div>
 
@@ -432,7 +459,7 @@
                   </svg>
 
                   <!-- Action Buttons -->
-                  <div v-if="!confirmDelete[transaction.id]" class="flex gap-1">
+                  <div v-if="!isFamilyExpenseView && !confirmDelete[transaction.id]" class="flex gap-1">
                     <button
                       @click.stop="confirmDelete[transaction.id] = true"
                       :disabled="isSelectedMonthLocked || transaction.is_closeout_initiated || transaction.is_debt_payment_benefit"
@@ -446,7 +473,7 @@
                   </div>
 
                   <!-- Delete Confirmation -->
-                  <div v-else class="flex gap-1">
+                  <div v-else-if="!isFamilyExpenseView" class="flex gap-1">
                     <button
                       @click.stop="handleDeleteConfirm(transaction.id)"
                       class="px-2 py-0.5 text-[10px] sm:text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
@@ -1067,6 +1094,7 @@ async function fetchData(startDate = null, endDate = null) {
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
+    if (isFamilyExpenseView.value) params.append('view', 'family');
     const query = params.toString() ? `?${params.toString()}` : '';
 
     const [txData, catData, usersData, fundsData, debtsData] = await Promise.all([
@@ -1169,10 +1197,10 @@ function expenseAmountForViewerTotals(transaction) {
     return Number(transaction.amount) || 0;
   }
   if (isSplitListRow(transaction)) {
-    const mine = currentUserSplitAmount(transaction);
-    if (mine != null) {
-      return mine;
-    }
+    return currentUserSplitAmount(transaction) ?? 0;
+  }
+  if (isTransactionOwnedByOther(transaction)) {
+    return 0;
   }
   return Number(transaction.amount) || 0;
 }
@@ -1213,7 +1241,9 @@ const transactionsByDay = computed(() => {
         grouped[date].totalIncome += Number(tx.amount) || 0;
       }
     } else if (!tx.is_repaid) {
-      grouped[date].totalExpenses += expenseAmountForViewerTotals(tx);
+      grouped[date].totalExpenses += isFamilyExpenseView.value
+        ? (Number(tx.amount) || 0)
+        : expenseAmountForViewerTotals(tx);
     }
   });
 
@@ -1237,7 +1267,15 @@ const transactionsByDay = computed(() => {
     .sort((a, b) => parseDateStringAsLocal(b.date) - parseDateStringAsLocal(a.date));
 });
 
+const isFamilyExpenseView = computed(() => Boolean(currentUser.value?.view_family_expenses));
+
 const totalIncome = computed(() => {
+  return transactions.value
+    .filter(tx => tx.type === 'income' && !tx.is_debt_payment && !tx.is_repayment && !isTransactionOwnedByOther(tx))
+    .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+});
+
+const familyTotalIncome = computed(() => {
   return transactions.value
     .filter(tx => tx.type === 'income' && !tx.is_debt_payment && !tx.is_repayment)
     .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
@@ -1247,6 +1285,12 @@ const totalExpenses = computed(() => {
   return transactions.value
     .filter(tx => tx.type === 'expense' && !tx.is_repaid)
     .reduce((sum, tx) => sum + expenseAmountForViewerTotals(tx), 0);
+});
+
+const familyTotalExpenses = computed(() => {
+  return transactions.value
+    .filter(tx => tx.type === 'expense' && !tx.is_repaid)
+    .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
 });
 
 const totalNonNecessityExpenses = computed(() => {
@@ -1464,7 +1508,8 @@ function closePillModal() {
 
 function canRecordDebtPaymentBenefit(transaction) {
   return Boolean(
-    transaction?.is_debt_payment
+    !isFamilyExpenseView.value
+    && transaction?.is_debt_payment
     && transaction?.type === 'income'
     && !transaction?.debt_payment_benefit_expense
     && !isSelectedMonthLocked.value
@@ -1603,6 +1648,10 @@ function isSystemCloseoutEntry(transaction) {
 }
 
 function isTransactionEditLocked(transaction) {
+  if (isFamilyExpenseView.value) {
+    return true;
+  }
+
   if (isSystemCloseoutEntry(transaction)) {
     return true;
   }

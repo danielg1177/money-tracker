@@ -27,6 +27,9 @@ class TransactionController extends Controller
      * Split debt payments create a payer expense (with optional splits) plus creditor income;
      * when the creditor is also a split participant on that expense, the income row is kept
      * and the mirrored expense leg is omitted so the payment appears once in their list.
+     *
+     * Pass `view=family` to include every family transaction in the date range (read-only
+     * household overlay). Default (and Dashboard) remain viewer-scoped.
      */
     public function index(Request $request): JsonResponse
     {
@@ -34,6 +37,12 @@ class TransactionController extends Controller
         if (! $user->family_id) {
             return response()->json([]);
         }
+
+        $request->validate([
+            'view' => ['sometimes', 'nullable', 'in:family'],
+            'start_date' => ['sometimes', 'nullable', 'date'],
+            'end_date' => ['sometimes', 'nullable', 'date'],
+        ]);
 
         $query = $user->family->transactions()
             ->with([
@@ -50,24 +59,28 @@ class TransactionController extends Controller
                 'debtPaymentBenefitExpense.advanceFund',
                 'debtPaymentIncome.debt.creditor',
                 'debtPaymentIncome.debt.debtor',
-            ])
-            ->where(function ($q) use ($user): void {
+            ]);
+
+        if ($request->input('view') !== 'family') {
+            $query->where(function ($q) use ($user): void {
                 $q->where('user_id', $user->id)
                     ->orWhereHas('splits', function ($splitQuery) use ($user): void {
                         $splitQuery->where('user_id', $user->id);
                     });
-            })
-            ->whereNot(function ($q) use ($user): void {
-                $q->where('is_debt_payment', true)
-                    ->where('type', 'expense')
-                    ->where('user_id', '!=', $user->id)
-                    ->whereHas('splits', function ($splitQuery) use ($user): void {
-                        $splitQuery->where('user_id', $user->id);
-                    })
-                    ->whereHas('debt', function ($debtQuery) use ($user): void {
-                        $debtQuery->where('creditor_id', $user->id);
-                    });
             });
+        }
+
+        $query->whereNot(function ($q) use ($user): void {
+            $q->where('is_debt_payment', true)
+                ->where('type', 'expense')
+                ->where('user_id', '!=', $user->id)
+                ->whereHas('splits', function ($splitQuery) use ($user): void {
+                    $splitQuery->where('user_id', $user->id);
+                })
+                ->whereHas('debt', function ($debtQuery) use ($user): void {
+                    $debtQuery->where('creditor_id', $user->id);
+                });
+        });
 
         if ($request->filled('start_date')) {
             $query->whereDate('transaction_date', '>=', $request->input('start_date'));

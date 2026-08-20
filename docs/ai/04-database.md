@@ -49,6 +49,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_05_06_140000_add_interest_accruals_to_debts_table` | Adds nullable `interest_accruals` JSON to `debts` |
 | `2026_08_20_010317_add_reversal_lineage_to_debts_table` | Adds nullable `reversed_from_debt_id` self-FK (`nullOnDelete`) and `direction_reversals` JSON on `debts` for overpayment history lineage |
 | `2026_05_06_154936_add_bank_balance_to_users_table` | Adds `bank_balance_enabled` (bool), `bank_balance` (decimal nullable), `bank_balance_set_at` (date nullable) to `users` |
+| `2026_08_20_235002_add_view_family_expenses_to_users_table` | Adds `view_family_expenses` (bool, default false) to `users` |
 | `2026_05_06_154936_add_completion_to_closeout_title_savings_table` | Adds `is_completed` (bool) and `completed_at` (timestamp nullable) to `closeout_title_savings` |
 | `2026_05_06_161500_add_closeout_transaction_fields` | Adds `fund_rules.closeout_expense_category_id` (nullable FK to categories) and `closeout_title_savings.completion_transaction_id` (nullable FK to transactions) |
 | `2026_05_08_020419_add_is_non_necessity_default_to_categories_table` | (Historical) added `is_non_necessity_default` boolean to `categories` |
@@ -79,6 +80,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `bank_balance_enabled` | boolean | default false; opt-in flag — user must enable bank balance tracking |
 | `bank_balance` | decimal(15,2) nullable | user-set anchor balance (the manually reconciled amount) |
 | `bank_balance_set_at` | date nullable | date when anchor was last set; transactions on/after this date form the running delta |
+| `view_family_expenses` | boolean | default false; when true, Transactions/Month Summary show a read-only household overlay |
 | `two_factor_*` | various | Fortify 2FA columns |
 | `timestamps` | | |
 
