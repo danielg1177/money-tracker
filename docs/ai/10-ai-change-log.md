@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-20 — Stronger orange for other family members’ rows
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Family-view rows owned by another member use a more visible orange fill and a brighter Family member pill (Transactions and View month category sheet). Type-colored borders are unchanged.
+
 ## 2026-08-20 — Same-day splits you paid sort above family-paid splits
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

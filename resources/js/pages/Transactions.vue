@@ -1238,7 +1238,7 @@ function transactionRowBackgroundClass(transaction) {
     return 'bg-amber-950/10';
   }
   if (isFamilyExpenseView.value && isTransactionOwnedByOther(transaction)) {
-    return 'bg-orange-950/20';
+    return 'bg-orange-800/40';
   }
   if (isTransactionOwnedByOther(transaction)) {
     return 'bg-violet-950/25';
@@ -1539,7 +1539,7 @@ function transactionKindPills(tx) {
     pills.push({
       key: 'family-member',
       label: 'Family member',
-      classes: 'bg-orange-900/55 text-orange-200',
+      classes: 'bg-orange-600/80 text-orange-50',
       title: tx.user?.name ? `Recorded by ${tx.user.name}` : 'Recorded by a family member',
     });
   }

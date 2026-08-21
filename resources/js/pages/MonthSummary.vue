@@ -130,7 +130,7 @@ function categoryRowBorderClass(row) {
 
 function categoryRowBackgroundClass(row) {
   if (isFamilyExpenseView.value && isCategoryRowOwnedByOther(row)) {
-    return 'bg-orange-950/20';
+    return 'bg-orange-800/40';
   }
 
   return 'bg-gray-800';
@@ -1399,7 +1399,7 @@ function movementTypeLabel(type) {
               >
                 <div class="min-w-0">
                   <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
-                  <p v-if="isFamilyExpenseView && isCategoryRowOwnedByOther(row)" class="text-[11px] text-orange-300 truncate">
+                  <p v-if="isFamilyExpenseView && isCategoryRowOwnedByOther(row)" class="text-[11px] text-orange-200 truncate">
                     Family member{{ row.user_name ? ` · ${row.user_name}` : '' }}
                   </p>
                   <p v-else-if="row.user_name" class="text-[11px] text-gray-400 truncate">{{ row.user_name }}</p>
