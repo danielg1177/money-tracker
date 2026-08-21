@@ -1365,12 +1365,13 @@ function movementTypeLabel(type) {
                 v-else
                 v-for="row in selectedCategoryTransactions"
                 :key="`cat-row-${row.id}-${row.transaction_date}-${row.amount}`"
-                class="overflow-hidden rounded-lg bg-gray-800"
+                class="flex overflow-hidden rounded-lg bg-gray-800"
               >
                 <div
                   v-if="isCategoryRowOwnedByOther(row)"
-                  class="h-1 w-full bg-yellow-500"
+                  class="w-1 shrink-0 self-stretch bg-yellow-500"
                 ></div>
+                <div class="min-w-0 flex-1">
                 <div class="flex items-center justify-between gap-3 px-3 py-2.5">
                 <div class="min-w-0">
                   <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
@@ -1403,6 +1404,7 @@ function movementTypeLabel(type) {
                 </span>
                 </div>
                 <div class="h-2 w-full" :style="categoryRowTypeBarStyle(row, selectedCategory?.type)"></div>
+                </div>
               </div>
             </div>
           </div>

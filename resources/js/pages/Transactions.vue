@@ -264,12 +264,13 @@
           <div
             v-for="transaction in closeoutFundMovementTransactions"
             :key="'closeout-fund-' + transaction.id"
-            class="overflow-hidden rounded-lg sm:rounded-xl cursor-default bg-blue-950/25"
+            class="flex overflow-hidden rounded-lg sm:rounded-xl cursor-default bg-blue-950/25"
           >
             <div
               v-if="isFamilyExpenseView && isTransactionOwnedByOther(transaction)"
-              class="h-1 w-full bg-yellow-500"
+              class="w-1 shrink-0 self-stretch bg-yellow-500"
             ></div>
+            <div class="min-w-0 flex-1">
             <div class="p-2 sm:p-3">
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
               <div class="min-w-0 flex-1">
@@ -292,6 +293,7 @@
             </div>
             </div>
             <div class="h-2 w-full" :style="closeoutFundTypeBarStyle()"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -337,7 +339,7 @@
           </div>
           <div
             :class="[
-              'overflow-hidden rounded-lg sm:rounded-xl transition-colors',
+              'flex overflow-hidden rounded-lg sm:rounded-xl transition-colors',
               confirmDelete[transaction.id]
                 ? 'bg-red-900/20'
                 : transactionRowBackgroundClass(transaction),
@@ -350,8 +352,9 @@
           >
             <div
               v-if="isTransactionOwnedByOther(transaction)"
-              class="h-1 w-full bg-yellow-500"
+              class="w-1 shrink-0 self-stretch bg-yellow-500"
             ></div>
+            <div class="min-w-0 flex-1">
             <div class="p-2 sm:p-3">
             <!-- Main transaction row: one horizontal row on all breakpoints so amount + split stay beside title on mobile -->
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
@@ -572,6 +575,7 @@
               class="h-2 w-full"
               :style="transactionTypeBarStyle(transaction, { confirmDelete: Boolean(confirmDelete[transaction.id]) })"
             ></div>
+            </div>
           </div>
           </template>
         </div>
