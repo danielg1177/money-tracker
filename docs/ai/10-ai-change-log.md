@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-21 — Family totals omit inter-member debt payments
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/FamilyExpenseViewTest.php`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: When **View all family expenses** is on, **Family** expense totals no longer include one family member paying a debt to another (internal transfers). **You** totals still count those payments. External and fund debt payments still count as family spending. Applies to Transactions period/day **Family** figures and Month Summary **`family_category_totals`**. Closeout math is unchanged.
+
 ## 2026-08-21 — Other-member rows: yellow name/icon + left bar, not fill
 
 - Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`

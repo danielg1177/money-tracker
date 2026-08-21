@@ -740,7 +740,7 @@ function movementTypeLabel(type) {
           Debt repayments you pay use the transaction’s category when set; otherwise they appear under
           <span class="text-gray-300">Uncategorized Debt Payments</span>
           (same amounts feed <span class="text-gray-300">Projected closeout → Expenses</span>). Hard-close-generated ledger entries (fund transfers, debt payments) are excluded here; they appear in Fund In/Out and Debt Repayments below.
-          <span v-if="isFamilyExpenseView" class="block mt-1">Family amounts are the household combined total for each category (splits counted once at the full amount).</span>
+          <span v-if="isFamilyExpenseView" class="block mt-1">Family amounts are the household combined total for each category (splits counted once at the full amount). Payments from one family member to another are not counted as family expenses.</span>
         </p>
 
         <div v-if="sortedExpenseCategories.length === 0" class="text-sm text-gray-500">

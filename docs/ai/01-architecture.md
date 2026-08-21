@@ -78,7 +78,7 @@ routes/web.php
 - `PlaidMatchingService` — match Plaid payloads to ledger `Transaction` rows and read/update `PlaidMerchantRule` suggestions (not used by routes yet)
 
 **Read-only controllers:**
-- `MonthSummaryController::show` — returns comprehensive month overview (close status, category totals including optional synthetic **Uncategorized Debt Payments** for repayments without a category, member balances, rule preview) without modifying data; **`rule_preview.basis.total_expenses`** aligns with **`MonthCloseoutService::expenseTotalTowardRemainingBasis`** (tracked repayments included; non-necessity advance expenses excluded from the basis and settled via fund advances). **`rule_preview.basis.remaining_after_expenses`** is the **signed** post-allocation figure; **`rule_preview.expense_closeout_basis.lines`** documents the expense basis for the preview.
+- `MonthSummaryController::show` — returns comprehensive month overview (close status, category totals including optional synthetic **Uncategorized Debt Payments** for repayments without a category, member balances, rule preview) without modifying data; when **`view_family_expenses`** is on, **`family_category_totals`** omit inter-member debt payments; **`rule_preview.basis.total_expenses`** aligns with **`MonthCloseoutService::expenseTotalTowardRemainingBasis`** (tracked repayments included; non-necessity advance expenses excluded from the basis and settled via fund advances). **`rule_preview.basis.remaining_after_expenses`** is the **signed** post-allocation figure; **`rule_preview.expense_closeout_basis.lines`** documents the expense basis for the preview.
 
 ## Data scoping summary
 

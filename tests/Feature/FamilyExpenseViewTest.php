@@ -225,4 +225,120 @@ class FamilyExpenseViewTest extends TestCase
         $paid = collect($summary->json('debt_repayments.paid'));
         $this->assertTrue($paid->contains(fn (array $row) => (int) $row['debt_id'] === $debt->id && $row['is_family_debt'] === true));
     }
+
+    public function test_month_summary_family_totals_exclude_inter_member_debt_payments(): void
+    {
+        $family = Family::factory()->create();
+        $alice = User::factory()->create([
+            'family_id' => $family->id,
+            'view_family_expenses' => true,
+        ]);
+        $bob = User::factory()->create([
+            'family_id' => $family->id,
+            'view_family_expenses' => true,
+        ]);
+
+        $expenseCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Groceries',
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => $expenseCat->id,
+            'type' => 'expense',
+            'amount' => 30,
+            'description' => 'Alice groceries',
+            'transaction_date' => '2026-07-05',
+            'is_split' => false,
+            'is_debt_payment' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $bob->id,
+            'category_id' => $expenseCat->id,
+            'type' => 'expense',
+            'amount' => 25,
+            'description' => 'Bob groceries',
+            'transaction_date' => '2026-07-06',
+            'is_split' => false,
+            'is_debt_payment' => false,
+        ]);
+
+        $interMemberDebt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $alice->id,
+            'creditor_id' => $bob->id,
+            'creditor_name' => null,
+            'is_family_debt' => false,
+            'amount' => 100,
+            'balance' => 100,
+            'is_pending_closeout' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => $expenseCat->id,
+            'type' => 'expense',
+            'amount' => 40,
+            'description' => 'Alice pays Bob',
+            'transaction_date' => '2026-07-08',
+            'is_split' => false,
+            'is_debt_payment' => true,
+            'debt_id' => $interMemberDebt->id,
+        ]);
+
+        $externalDebt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $alice->id,
+            'creditor_id' => null,
+            'creditor_name' => 'Car Loan',
+            'is_family_debt' => true,
+            'amount' => 500,
+            'balance' => 500,
+            'is_pending_closeout' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => null,
+            'type' => 'expense',
+            'amount' => 50,
+            'description' => 'Alice family debt pay',
+            'transaction_date' => '2026-07-10',
+            'is_split' => false,
+            'is_debt_payment' => true,
+            'debt_id' => $externalDebt->id,
+        ]);
+
+        $summary = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=7')->assertOk();
+
+        $aliceExpenseTotal = collect($summary->json('category_totals'))
+            ->where('type', 'expense')
+            ->sum('total');
+        $familyExpenseTotal = collect($summary->json('family_category_totals'))
+            ->where('type', 'expense')
+            ->sum('total');
+
+        $this->assertEqualsWithDelta(120.0, $aliceExpenseTotal, 0.001);
+        $this->assertEqualsWithDelta(105.0, $familyExpenseTotal, 0.001);
+
+        $familyGroceryRows = $summary->json('family_category_transactions.expense_'.$expenseCat->id);
+        $this->assertIsArray($familyGroceryRows);
+        $this->assertCount(2, $familyGroceryRows);
+        $this->assertFalse(
+            collect($familyGroceryRows)->contains(fn (array $row) => $row['description'] === 'Alice pays Bob')
+        );
+
+        $viewerGroceryRows = $summary->json('category_transactions.expense_'.$expenseCat->id);
+        $this->assertTrue(
+            collect($viewerGroceryRows)->contains(fn (array $row) => $row['description'] === 'Alice pays Bob')
+        );
+    }
 }

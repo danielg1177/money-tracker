@@ -178,7 +178,7 @@
       >
         Split <span class="text-gray-400">expenses</span> use <span class="text-gray-400">your share</span> in the expense total and in each day’s expense sum.
         <span class="block mt-1 text-gray-500">Income totals exclude <span class="text-sky-300/90">debt repayments</span> received (they do not count as earned income for closeout).</span>
-        <span v-if="isFamilyExpenseView" class="block mt-1 text-gray-500">Family totals use the full amount of each household transaction (splits counted once).</span>
+        <span v-if="isFamilyExpenseView" class="block mt-1 text-gray-500">Family totals use the full amount of each household transaction (splits counted once). Payments from one family member to another are not counted as family expenses.</span>
       </p>
     </div>
 
@@ -1319,6 +1319,22 @@ function expenseAmountForViewerTotals(transaction) {
   return Number(transaction.amount) || 0;
 }
 
+function isInterMemberDebtPaymentExpense(transaction) {
+  return transaction?.type === 'expense'
+    && Boolean(transaction?.is_debt_payment)
+    && transaction?.debt?.creditor_id != null;
+}
+
+function expenseAmountForFamilyTotals(transaction) {
+  if (transaction.type !== 'expense' || transaction.is_repaid) {
+    return 0;
+  }
+  if (isInterMemberDebtPaymentExpense(transaction)) {
+    return 0;
+  }
+  return Number(transaction.amount) || 0;
+}
+
 function normalizeSortText(value) {
   return String(value ?? '').trim().toLocaleLowerCase();
 }
@@ -1360,7 +1376,7 @@ const transactionsByDay = computed(() => {
           }
         }
       } else if (!tx.is_repaid) {
-        grouped[date].familyTotalExpenses += Number(tx.amount) || 0;
+        grouped[date].familyTotalExpenses += expenseAmountForFamilyTotals(tx);
         grouped[date].youTotalExpenses += expenseAmountForViewerTotals(tx);
       }
   });
@@ -1447,7 +1463,7 @@ const totalExpenses = computed(() => {
 const familyTotalExpenses = computed(() => {
   return ledgerTransactions.value
     .filter(tx => tx.type === 'expense' && !tx.is_repaid)
-    .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    .reduce((sum, tx) => sum + expenseAmountForFamilyTotals(tx), 0);
 });
 
 const totalNonNecessityExpenses = computed(() => {

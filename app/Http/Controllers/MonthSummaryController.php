@@ -12,6 +12,7 @@ use App\Models\Transaction;
 use App\Models\TransactionSplit;
 use App\Models\User;
 use App\Services\MonthCloseoutService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -506,7 +507,8 @@ class MonthSummaryController extends Controller
     /**
      * Household-scoped category totals for family expense view. Split expenses count once at
      * the full transaction amount (not summed split shares). Viewer {@see getCategoryTotals()}
-     * is unchanged.
+     * is unchanged. Inter-member debt payments (one family member paying another) are omitted
+     * from family expense totals because they are internal transfers, not household spending.
      *
      * @return array<int, array{type: string, category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int}>
      */
@@ -598,21 +600,16 @@ class MonthSummaryController extends Controller
 
     /**
      * Merge household debt-repayment expenses into family category totals. Split repayments
-     * count once at the full parent amount.
+     * count once at the full parent amount. Inter-member payments (`debt.creditor_id` set)
+     * are excluded; external and fund debt payments still count as family spending.
      *
      * @param  array<string, array{type: string, category_id: int|null, category_name: string, category_icon: string|null, total: float, transaction_count: int}>  $grouped
      */
     private function mergeFamilyDebtRepaymentExpenseCategoryTotals(array &$grouped, User $viewer, int $year, int $month): void
     {
-        $soloCategorized = Transaction::query()
-            ->where('family_id', $viewer->family_id)
-            ->where('type', 'expense')
+        $soloCategorized = $this->familyExternalDebtPaymentExpensesQuery($viewer, $year, $month)
             ->where('is_split', false)
-            ->where('is_debt_payment', true)
-            ->where('is_closeout_initiated', false)
             ->whereNotNull('category_id')
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
             ->with('category')
             ->get();
 
@@ -627,36 +624,18 @@ class MonthSummaryController extends Controller
             );
         }
 
-        $soloUncategorizedTotal = (float) Transaction::query()
-            ->where('family_id', $viewer->family_id)
-            ->where('type', 'expense')
+        $soloUncategorizedTotal = (float) $this->familyExternalDebtPaymentExpensesQuery($viewer, $year, $month)
             ->where('is_split', false)
-            ->where('is_debt_payment', true)
-            ->where('is_closeout_initiated', false)
             ->whereNull('category_id')
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
             ->sum('amount');
 
-        $soloUncategorizedCount = (int) Transaction::query()
-            ->where('family_id', $viewer->family_id)
-            ->where('type', 'expense')
+        $soloUncategorizedCount = (int) $this->familyExternalDebtPaymentExpensesQuery($viewer, $year, $month)
             ->where('is_split', false)
-            ->where('is_debt_payment', true)
-            ->where('is_closeout_initiated', false)
             ->whereNull('category_id')
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
             ->count();
 
-        $splitParents = Transaction::query()
-            ->where('family_id', $viewer->family_id)
-            ->where('type', 'expense')
+        $splitParents = $this->familyExternalDebtPaymentExpensesQuery($viewer, $year, $month)
             ->where('is_split', true)
-            ->where('is_debt_payment', true)
-            ->where('is_closeout_initiated', false)
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
             ->with('category')
             ->get();
 
@@ -920,7 +899,8 @@ class MonthSummaryController extends Controller
 
     /**
      * Unique household transactions per category bucket for family expense view.
-     * Split expenses appear once at the full transaction amount.
+     * Split expenses appear once at the full transaction amount. Inter-member debt
+     * payments are omitted (same rule as {@see getFamilyCategoryTotals()}).
      *
      * @return array<string, array<int, array{
      *     id: int,
@@ -1176,13 +1156,7 @@ class MonthSummaryController extends Controller
      */
     private function mergeFamilyDebtRepaymentCategoryTransactions(array &$grouped, User $viewer, int $year, int $month): void
     {
-        $rows = Transaction::query()
-            ->where('family_id', $viewer->family_id)
-            ->where('type', 'expense')
-            ->where('is_debt_payment', true)
-            ->where('is_closeout_initiated', false)
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
+        $rows = $this->familyExternalDebtPaymentExpensesQuery($viewer, $year, $month)
             ->with(['splits.user', 'user'])
             ->orderBy('transaction_date')
             ->orderBy('id')
@@ -1303,6 +1277,27 @@ class MonthSummaryController extends Controller
         }
 
         return $memberBalances;
+    }
+
+    /**
+     * Debt-payment expenses that leave the household (external creditor or fund).
+     * One family member paying another (`debts.creditor_id` set) is an internal transfer
+     * and is omitted from family overlay expense totals.
+     *
+     * @return Builder<Transaction>
+     */
+    private function familyExternalDebtPaymentExpensesQuery(User $viewer, int $year, int $month): Builder
+    {
+        return Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'expense')
+            ->where('is_debt_payment', true)
+            ->where('is_closeout_initiated', false)
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->whereDoesntHave('debt', function ($debtQuery): void {
+                $debtQuery->whereNotNull('creditor_id');
+            });
     }
 
     /**
