@@ -264,24 +264,21 @@
           <div
             v-for="transaction in closeoutFundMovementTransactions"
             :key="'closeout-fund-' + transaction.id"
-            :class="[
-              'overflow-hidden rounded-lg sm:rounded-xl cursor-default',
-              isFamilyExpenseView && isTransactionOwnedByOther(transaction)
-                ? 'bg-yellow-800/40'
-                : 'bg-blue-950/25',
-            ]"
+            class="overflow-hidden rounded-lg sm:rounded-xl cursor-default bg-blue-950/25"
           >
+            <div
+              v-if="isFamilyExpenseView && isTransactionOwnedByOther(transaction)"
+              class="h-1 w-full bg-yellow-500"
+            ></div>
             <div class="p-2 sm:p-3">
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
               <div class="min-w-0 flex-1">
-                <p class="text-[11px] sm:text-base font-medium truncate leading-tight"
-                  :class="isFamilyExpenseView && isTransactionOwnedByOther(transaction) ? 'text-yellow-50' : 'text-blue-100'"
-                >
+                <p class="text-[11px] sm:text-base font-medium truncate leading-tight text-blue-100">
                   {{ closeoutFundName(transaction) }}
                 </p>
                 <p
                   v-if="isFamilyExpenseView && isTransactionOwnedByOther(transaction)"
-                  class="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-yellow-200"
+                  class="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-yellow-400"
                 >
                   <svg class="h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                     <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
@@ -289,10 +286,7 @@
                   <span class="truncate">{{ transactionPayerDisplayLabel(transaction) }}</span>
                 </p>
               </div>
-              <span
-                class="text-sm sm:text-base font-medium shrink-0 tabular-nums"
-                :class="isFamilyExpenseView && isTransactionOwnedByOther(transaction) ? 'text-yellow-200' : 'text-blue-300'"
-              >
+              <span class="text-sm sm:text-base font-medium shrink-0 tabular-nums text-blue-300">
                 −{{ formatCurrency(transaction.amount) }}
               </span>
             </div>
@@ -354,6 +348,10 @@
             ]"
             @click="!confirmDelete[transaction.id] && !isSelectedMonthLocked && !isTransactionEditLocked(transaction) && openEditForm(transaction.id)"
           >
+            <div
+              v-if="isTransactionOwnedByOther(transaction)"
+              class="h-1 w-full bg-yellow-500"
+            ></div>
             <div class="p-2 sm:p-3">
             <!-- Main transaction row: one horizontal row on all breakpoints so amount + split stay beside title on mobile -->
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
@@ -466,8 +464,11 @@
                 </div>
                 <div
                   v-if="transaction.user?.name"
-                  class="mt-1.5 flex min-w-0 items-center gap-1 text-xs text-gray-500"
-                  :class="!isFamilyExpenseView && !isTransactionOwnedByOther(transaction) ? 'hidden sm:block' : ''"
+                  class="mt-1.5 flex min-w-0 items-center gap-1 text-xs"
+                  :class="[
+                    isTransactionOwnedByOther(transaction) ? 'text-yellow-400' : 'text-gray-500',
+                    !isFamilyExpenseView && !isTransactionOwnedByOther(transaction) ? 'hidden sm:block' : '',
+                  ]"
                 >
                   <svg
                     v-if="isTransactionOwnedByOther(transaction)"
@@ -1230,9 +1231,6 @@ function isSplitListRow(transaction) {
 }
 
 function transactionRowBackgroundClass(transaction) {
-  if (isTransactionOwnedByOther(transaction)) {
-    return 'bg-yellow-800/40';
-  }
   if (transaction?.is_closeout_initiated) {
     return 'bg-purple-900/10';
   }

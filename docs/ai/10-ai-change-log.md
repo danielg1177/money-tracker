@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-21 — Other-member rows: yellow name/icon + top bar, not fill
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Transactions paid by another family member no longer use a yellow card background. They keep normal card fills and instead show a yellow family icon + owner name plus a 4px yellow top bar (half the 8px bottom type bar). Same treatment on Closeout fund movements (family view) and the View month category detail sheet.
+
 ## 2026-08-20 — Shared selected month for Transactions and Month Summary
 
 - Files touched: `resources/js/composables/useSelectedMonth.js`, `resources/js/support/yearMonth.js`, `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`

@@ -107,14 +107,6 @@ function isCategoryRowOwnedByOther(row) {
   return Number(row.user_id) !== Number(uid);
 }
 
-function categoryRowBackgroundClass(row) {
-  if (isCategoryRowOwnedByOther(row)) {
-    return 'bg-yellow-800/40';
-  }
-
-  return 'bg-gray-800';
-}
-
 // Lock icon states
 const isHardClosed = computed(() => summary.value?.is_hard_closed === true);
 const allSoftClosed = computed(() => summary.value?.close_status?.all_soft_closed === true);
@@ -1373,13 +1365,16 @@ function movementTypeLabel(type) {
                 v-else
                 v-for="row in selectedCategoryTransactions"
                 :key="`cat-row-${row.id}-${row.transaction_date}-${row.amount}`"
-                class="overflow-hidden rounded-lg"
-                :class="categoryRowBackgroundClass(row)"
+                class="overflow-hidden rounded-lg bg-gray-800"
               >
+                <div
+                  v-if="isCategoryRowOwnedByOther(row)"
+                  class="h-1 w-full bg-yellow-500"
+                ></div>
                 <div class="flex items-center justify-between gap-3 px-3 py-2.5">
                 <div class="min-w-0">
                   <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
-                  <p v-if="isCategoryRowOwnedByOther(row)" class="flex min-w-0 items-center gap-1 text-[11px]" :class="isFamilyExpenseView ? 'text-yellow-200' : 'text-gray-400'">
+                  <p v-if="isCategoryRowOwnedByOther(row)" class="flex min-w-0 items-center gap-1 text-[11px] text-yellow-400">
                     <svg class="h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                       <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
                     </svg>
