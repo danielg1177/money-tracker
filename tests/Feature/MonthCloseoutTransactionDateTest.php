@@ -134,6 +134,72 @@ class MonthCloseoutTransactionDateTest extends TestCase
             'type' => 'closeout_allocation',
             'amount' => 120.00,
         ]);
+
+        $closeoutTx = Transaction::query()
+            ->where('user_id', $user->id)
+            ->where('is_closeout_initiated', true)
+            ->where('is_debt_payment', false)
+            ->sole();
+
+        $this->assertDatabaseHas('fund_movements', [
+            'fund_id' => $fund->id,
+            'type' => 'closeout_allocation',
+            'transaction_id' => $closeoutTx->id,
+        ]);
+    }
+
+    public function test_dashboard_monthly_totals_exclude_closeout_fund_allocation_expenses(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 5, 20, 12, 0, 0));
+
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $fund = Fund::factory()->create(['user_id' => $user->id, 'family_id' => null, 'balance' => 0]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'income',
+            'amount' => 1000,
+            'description' => 'Salary',
+            'transaction_date' => '2026-05-01',
+            'is_split' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 50,
+            'description' => 'Groceries',
+            'transaction_date' => '2026-05-05',
+            'is_split' => false,
+            'is_closeout_initiated' => false,
+        ]);
+
+        FundRule::query()->create([
+            'user_id' => $user->id,
+            'fund_id' => $fund->id,
+            'name' => 'Fund contribution',
+            'order' => 1,
+            'allocation_type' => 'fixed',
+            'amount' => 120,
+            'allocation_base' => 'gross_income',
+            'is_active' => true,
+            'destination_type' => 'fund',
+            'destination_id' => $fund->id,
+            'destination_title' => null,
+        ]);
+
+        $this->actingAs($user)->postJson('/closeout/soft-close', [
+            'year' => 2026,
+            'month' => 5,
+        ])->assertOk();
+
+        $this->actingAs($user)->getJson('/dashboard/monthly-totals')
+            ->assertOk()
+            ->assertJsonPath('total_income', 1000)
+            ->assertJsonPath('total_expenses', 50);
     }
 
     public function test_title_completion_creates_and_reverses_closeout_expense_transaction(): void

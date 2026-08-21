@@ -346,6 +346,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useAuth } from '../composables/useAuth';
 import { useApi } from '../composables/useApi';
 import { debtPaymentCategoryLine } from '../support/debtPaymentLabel.js';
+import { isCloseoutFundMovement } from '../support/closeoutFundMovement.js';
 import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 
 const { user } = useAuth();
@@ -403,7 +404,8 @@ const transactionCountThisMonth = computed(() => {
   const d = new Date();
 
   return transactions.value.filter(tx =>
-    isTransactionInCalendarMonth(tx, d.getFullYear(), d.getMonth() + 1),
+    isTransactionInCalendarMonth(tx, d.getFullYear(), d.getMonth() + 1)
+    && !isCloseoutFundMovement(tx),
   ).length;
 });
 const fundCount = computed(() => funds.value.length);

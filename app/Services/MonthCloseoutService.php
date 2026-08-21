@@ -671,7 +671,7 @@ class MonthCloseoutService
         $fund = Fund::query()->findOrFail($rule->destination_id);
         $fund->increment('balance', $amount);
 
-        Transaction::query()->create([
+        $transaction = Transaction::query()->create([
             'family_id' => $user->family_id,
             'user_id' => $user->id,
             'category_id' => $rule->closeout_expense_category_id,
@@ -690,6 +690,7 @@ class MonthCloseoutService
             'user_id' => $user->id,
             'type' => 'closeout_allocation',
             'amount' => $amount,
+            'transaction_id' => $transaction->id,
             'description' => sprintf('Closeout rule: %s (%04d-%02d)', $rule->name, $year, $month),
         ]);
 

@@ -174,7 +174,7 @@ Requires `PLAID_CLIENT_ID` + `PLAID_SECRET` in the environment. Link tokens use 
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|
-| GET | `/dashboard/monthly-totals` | `DashboardController::monthlyTotals` | Returns `{total_income, total_expenses}` for current month, auth user only |
+| GET | `/dashboard/monthly-totals` | `DashboardController::monthlyTotals` | Returns `{total_income, total_expenses}` for current month, auth user only; expenses exclude `is_debt_payment` and `is_closeout_initiated` |
 
 ### Bank balance & title savings completion
 

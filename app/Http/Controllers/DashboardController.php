@@ -31,6 +31,7 @@ class DashboardController extends Controller
             ->where('user_id', $user->id)
             ->where('type', 'expense')
             ->where('is_debt_payment', false)
+            ->where('is_closeout_initiated', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
             ->sum('amount');

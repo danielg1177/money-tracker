@@ -47,6 +47,7 @@ class TransactionController extends Controller
         $query = $user->family->transactions()
             ->with([
                 'user', 'category', 'splits.user', 'debt.creditor', 'debt.debtor', 'debt.fund', 'advanceFund', 'plaidPendingImport.plaidItem',
+                'fundMovements.fund',
                 'repaymentLinks.repaidTransaction.category',
                 'repaymentLinks.mirrorTransaction.user',
                 'repaymentLinks.repaidUser',

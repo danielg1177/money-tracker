@@ -252,8 +252,40 @@
       </div>
     </div>
 
-    <!-- Transactions List (grouped by day) -->
+    <!-- Transactions List (grouped by day; closeout fund transfers are a separate group) -->
     <div v-if="!loading && transactions.length > 0" class="space-y-0 px-0 py-4">
+      <div v-if="closeoutFundMovementTransactions.length > 0">
+        <div class="flex items-center justify-between px-4 py-1.5 mt-2">
+          <span class="text-[10px] sm:text-sm font-semibold text-blue-300">
+            Closeout fund movements
+          </span>
+        </div>
+        <div class="space-y-2 px-4 py-1.5">
+          <div
+            v-for="transaction in closeoutFundMovementTransactions"
+            :key="'closeout-fund-' + transaction.id"
+            class="rounded-lg sm:rounded-xl border border-blue-500/45 bg-blue-950/25 p-2 sm:p-3 cursor-default"
+          >
+            <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-[11px] sm:text-base text-blue-100 font-medium truncate leading-tight">
+                  {{ closeoutFundName(transaction) }}
+                </p>
+                <p
+                  v-if="isFamilyExpenseView && isTransactionOwnedByOther(transaction)"
+                  class="text-[11px] text-blue-300/80 truncate mt-0.5"
+                >
+                  {{ transactionPayerDisplayLabel(transaction) }}
+                </p>
+              </div>
+              <span class="text-sm sm:text-base font-medium text-blue-300 shrink-0 tabular-nums">
+                −{{ formatCurrency(transaction.amount) }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div v-for="dayGroup in transactionsByDay" :key="dayGroup.date">
         <!-- Day Header -->
         <div class="flex items-center justify-between px-4 py-1.5 mt-2">
@@ -937,6 +969,7 @@ import { useApi } from '../composables/useApi';
 import TransactionForm from '../components/TransactionForm.vue';
 import DebtPaymentBenefitForm from '../components/DebtPaymentBenefitForm.vue';
 import { debtPaymentCategoryLine } from '../support/debtPaymentLabel.js';
+import { closeoutFundName, isCloseoutFundMovement } from '../support/closeoutFundMovement.js';
 
 const router = useRouter();
 const route = useRoute();
@@ -1225,6 +1258,10 @@ function dayTransactionGroupRank(transaction) {
   return 0;
 }
 
+function dayTransactionPayerRank(transaction) {
+  return isTransactionOwnedByOther(transaction) ? 1 : 0;
+}
+
 function currentUserSplitAmount(transaction) {
   const uid = currentUser.value?.id;
   if (uid == null || !transaction?.splits?.length) {
@@ -1270,7 +1307,7 @@ function transactionAlphabeticalSortKey(transaction) {
 const transactionsByDay = computed(() => {
   const grouped = {};
 
-  transactions.value.forEach(tx => {
+  ledgerTransactions.value.forEach(tx => {
     const date = tx.transaction_date;
     if (!grouped[date]) {
         grouped[date] = {
@@ -1305,6 +1342,11 @@ const transactionsByDay = computed(() => {
           return groupCompare;
         }
 
+        const payerCompare = dayTransactionPayerRank(a) - dayTransactionPayerRank(b);
+        if (payerCompare !== 0) {
+          return payerCompare;
+        }
+
         const categoryCompare = transactionCategorySortKey(a).localeCompare(transactionCategorySortKey(b));
         if (categoryCompare !== 0) {
           return categoryCompare;
@@ -1323,32 +1365,49 @@ const transactionsByDay = computed(() => {
 
 const isFamilyExpenseView = computed(() => Boolean(currentUser.value?.view_family_expenses));
 
+const ledgerTransactions = computed(() =>
+  transactions.value.filter((tx) => !isCloseoutFundMovement(tx)),
+);
+
+const closeoutFundMovementTransactions = computed(() =>
+  transactions.value
+    .filter((tx) => isCloseoutFundMovement(tx))
+    .sort((a, b) => {
+      const nameCompare = closeoutFundName(a).localeCompare(closeoutFundName(b));
+      if (nameCompare !== 0) {
+        return nameCompare;
+      }
+
+      return Number(a.id || 0) - Number(b.id || 0);
+    }),
+);
+
 const totalIncome = computed(() => {
-  return transactions.value
+  return ledgerTransactions.value
     .filter(tx => tx.type === 'income' && !tx.is_debt_payment && !tx.is_repayment && !isTransactionOwnedByOther(tx))
     .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
 });
 
 const familyTotalIncome = computed(() => {
-  return transactions.value
+  return ledgerTransactions.value
     .filter(tx => tx.type === 'income' && !tx.is_debt_payment && !tx.is_repayment)
     .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
 });
 
 const totalExpenses = computed(() => {
-  return transactions.value
+  return ledgerTransactions.value
     .filter(tx => tx.type === 'expense' && !tx.is_repaid)
     .reduce((sum, tx) => sum + expenseAmountForViewerTotals(tx), 0);
 });
 
 const familyTotalExpenses = computed(() => {
-  return transactions.value
+  return ledgerTransactions.value
     .filter(tx => tx.type === 'expense' && !tx.is_repaid)
     .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
 });
 
 const totalNonNecessityExpenses = computed(() => {
-  return transactions.value
+  return ledgerTransactions.value
     .filter(tx => tx.type === 'expense' && tx.is_non_necessity && !tx.is_closeout_initiated)
     .reduce((sum, tx) => sum + expenseAmountForViewerTotals(tx), 0);
 });
@@ -1531,7 +1590,7 @@ function transactionKindPills(tx) {
     });
   }
 
-  if (tx.is_closeout_initiated) {
+  if (tx.is_closeout_initiated && !isCloseoutFundMovement(tx)) {
     pills.push({
       key: 'closeout',
       label: 'Closeout',

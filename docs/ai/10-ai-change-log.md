@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-08-20 — Same-day splits you paid sort above family-paid splits
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: On a given date, split rows you paid for list above split rows another family member paid for (still after your solo rows and before other members’ solo rows).
+
+## 2026-08-20 — Closeout fund transfers get their own Transactions group
+
+- Files touched: `app/Services/MonthCloseoutService.php`, `app/Models/Transaction.php`, `app/Http/Controllers/TransactionController.php`, `app/Http/Controllers/DashboardController.php`, `resources/js/support/closeoutFundMovement.js`, `resources/js/pages/Transactions.vue`, `resources/js/pages/Dashboard.vue`, `tests/Feature/MonthCloseoutTransactionDateTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Hard-close fund allocations no longer sit on the last calendar day or inflate Transactions period/day totals or Dashboard monthly expenses. They appear in a blue **Closeout fund movements** group titled with the destination fund name. `FundMovement.transaction_id` is now set on `closeout_allocation`. Category totals, closeout basis, bank balance, and Fund In/Out behavior are unchanged aside from Dashboard excluding `is_closeout_initiated` expenses.
+
 ## 2026-08-20 — Type-colored transaction borders (income/expense/split)
 
 - Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

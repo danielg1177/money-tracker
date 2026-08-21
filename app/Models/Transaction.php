@@ -138,4 +138,9 @@ class Transaction extends Model
     {
         return $this->hasOne(TransactionRepaymentLink::class, 'mirror_transaction_id');
     }
+
+    public function fundMovements(): HasMany
+    {
+        return $this->hasMany(FundMovement::class);
+    }
 }
