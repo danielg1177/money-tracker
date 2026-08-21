@@ -569,10 +569,7 @@
             </div>
             <div
               class="h-2 w-full"
-              :style="transactionTypeBarStyle(transaction, {
-                confirmDelete: Boolean(confirmDelete[transaction.id]),
-                otherMemberSplit: !isFamilyExpenseView && isTransactionOwnedByOther(transaction),
-              })"
+              :style="transactionTypeBarStyle(transaction, { confirmDelete: Boolean(confirmDelete[transaction.id]) })"
             ></div>
           </div>
           </template>
@@ -1268,7 +1265,7 @@ function isSplitListRow(transaction) {
 }
 
 function transactionRowBackgroundClass(transaction) {
-  if (isFamilyExpenseView.value && isTransactionOwnedByOther(transaction)) {
+  if (isTransactionOwnedByOther(transaction)) {
     return 'bg-yellow-800/40';
   }
   if (transaction?.is_closeout_initiated) {
@@ -1282,9 +1279,6 @@ function transactionRowBackgroundClass(transaction) {
   }
   if (transaction?.is_repayment_mirror) {
     return 'bg-amber-950/10';
-  }
-  if (isTransactionOwnedByOther(transaction)) {
-    return 'bg-violet-950/25';
   }
 
   return 'bg-gray-800';

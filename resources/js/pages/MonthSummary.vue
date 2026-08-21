@@ -119,7 +119,7 @@ function isCategoryRowOwnedByOther(row) {
 }
 
 function categoryRowBackgroundClass(row) {
-  if (isFamilyExpenseView.value && isCategoryRowOwnedByOther(row)) {
+  if (isCategoryRowOwnedByOther(row)) {
     return 'bg-yellow-800/40';
   }
 
@@ -1418,7 +1418,7 @@ function movementTypeLabel(type) {
                   {{ selectedCategory?.type === 'expense' ? '−' : '+' }}{{ formatCurrency(row.amount) }}
                 </span>
                 </div>
-                <div class="h-2 w-full" :style="categoryRowTypeBarStyle(row, selectedCategory?.type, { otherMemberSplit: !isFamilyExpenseView && isCategoryRowOwnedByOther(row) })"></div>
+                <div class="h-2 w-full" :style="categoryRowTypeBarStyle(row, selectedCategory?.type)"></div>
               </div>
             </div>
           </div>

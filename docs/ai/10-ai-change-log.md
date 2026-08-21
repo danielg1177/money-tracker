@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-20 — Overlay-off other-paid splits use yellow fill, not yellow bar
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `resources/js/support/transactionTypeBar.js`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Splits another member paid (visible with family view off) use the same yellow card fill as family view. The yellow middle third on the type bar is removed; split bars are violet + type color again.
+
 ## 2026-08-20 — Overlay-off other-paid splits keep owner label and yellow bar third
 
 - Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `resources/js/support/transactionTypeBar.js`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
