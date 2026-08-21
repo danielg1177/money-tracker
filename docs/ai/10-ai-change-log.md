@@ -11,6 +11,21 @@ Format:
 
 ---
 
+## 2026-08-20 — Family member pill replaced by family icon before name
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: The **Family member** pill is gone. Other members’ rows show the family icon at the bottom left immediately before the owner name (Transactions, Closeout fund movements, and View month category sheet).
+
+## 2026-08-20 — Family-member transaction tint is yellow
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Other family members’ transaction cards and **Family member** pills use yellow instead of orange. Placement and which rows get that tint are unchanged.
+
+## 2026-08-20 — Family-view others stay orange; external reimbursement matches reimbursed-externally fill
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: In family view, other members’ cards always use the orange fill (repayment/closeout no longer override it). The viewer’s **External reimbursement** income uses the same gray card fill as **Reimbursed externally** expenses instead of the dark cyan repayment tint.
+
 ## 2026-08-20 — Smaller family-solo gap with a centered dot
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

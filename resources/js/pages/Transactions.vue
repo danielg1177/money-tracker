@@ -267,36 +267,31 @@
             :class="[
               'overflow-hidden rounded-lg sm:rounded-xl cursor-default',
               isFamilyExpenseView && isTransactionOwnedByOther(transaction)
-                ? 'bg-orange-800/40'
+                ? 'bg-yellow-800/40'
                 : 'bg-blue-950/25',
             ]"
           >
             <div class="p-2 sm:p-3">
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
               <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
-                  <p class="text-[11px] sm:text-base font-medium truncate leading-tight min-w-0 flex-1"
-                    :class="isFamilyExpenseView && isTransactionOwnedByOther(transaction) ? 'text-orange-50' : 'text-blue-100'"
-                  >
-                    {{ closeoutFundName(transaction) }}
-                  </p>
-                  <span
-                    v-if="isFamilyExpenseView && isTransactionOwnedByOther(transaction)"
-                    class="inline-flex shrink-0 items-center rounded-full bg-orange-600/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-orange-50"
-                  >
-                    Family member
-                  </span>
-                </div>
+                <p class="text-[11px] sm:text-base font-medium truncate leading-tight"
+                  :class="isFamilyExpenseView && isTransactionOwnedByOther(transaction) ? 'text-yellow-50' : 'text-blue-100'"
+                >
+                  {{ closeoutFundName(transaction) }}
+                </p>
                 <p
                   v-if="isFamilyExpenseView && isTransactionOwnedByOther(transaction)"
-                  class="text-[11px] text-orange-200 truncate mt-0.5"
+                  class="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-yellow-200"
                 >
-                  {{ transactionPayerDisplayLabel(transaction) }}
+                  <svg class="h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+                  </svg>
+                  <span class="truncate">{{ transactionPayerDisplayLabel(transaction) }}</span>
                 </p>
               </div>
               <span
                 class="text-sm sm:text-base font-medium shrink-0 tabular-nums"
-                :class="isFamilyExpenseView && isTransactionOwnedByOther(transaction) ? 'text-orange-200' : 'text-blue-300'"
+                :class="isFamilyExpenseView && isTransactionOwnedByOther(transaction) ? 'text-yellow-200' : 'text-blue-300'"
               >
                 −{{ formatCurrency(transaction.amount) }}
               </span>
@@ -469,8 +464,21 @@
                     🏦 {{ transaction.plaid_pending_import.plaid_item.institution_name }}
                   </button>
                 </div>
-                <div v-if="transaction.user?.name" class="text-xs text-gray-500 mt-1.5" :class="isFamilyExpenseView ? '' : 'hidden sm:block'">
-                  {{ transactionPayerDisplayLabel(transaction) }}
+                <div
+                  v-if="transaction.user?.name"
+                  class="mt-1.5 flex min-w-0 items-center gap-1 text-xs text-gray-500"
+                  :class="isFamilyExpenseView ? '' : 'hidden sm:block'"
+                >
+                  <svg
+                    v-if="isFamilyExpenseView && isTransactionOwnedByOther(transaction)"
+                    class="h-3.5 w-3.5 shrink-0"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                    aria-hidden="true"
+                  >
+                    <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+                  </svg>
+                  <span class="truncate">{{ transactionPayerDisplayLabel(transaction) }}</span>
                 </div>
               </div>
 
@@ -1252,8 +1260,14 @@ function isSplitListRow(transaction) {
 }
 
 function transactionRowBackgroundClass(transaction) {
+  if (isFamilyExpenseView.value && isTransactionOwnedByOther(transaction)) {
+    return 'bg-yellow-800/40';
+  }
   if (transaction?.is_closeout_initiated) {
     return 'bg-purple-900/10';
+  }
+  if (isExternalReimbursementIncome(transaction)) {
+    return 'bg-gray-800';
   }
   if (transaction?.is_repayment) {
     return 'bg-cyan-950/10';
@@ -1261,14 +1275,15 @@ function transactionRowBackgroundClass(transaction) {
   if (transaction?.is_repayment_mirror) {
     return 'bg-amber-950/10';
   }
-  if (isFamilyExpenseView.value && isTransactionOwnedByOther(transaction)) {
-    return 'bg-orange-800/40';
-  }
   if (isTransactionOwnedByOther(transaction)) {
     return 'bg-violet-950/25';
   }
 
   return 'bg-gray-800';
+}
+
+function isExternalReimbursementIncome(transaction) {
+  return Boolean(transaction?.is_repayment && transaction.repayment_links?.[0]?.is_external_repayment);
 }
 
 function dayTransactionGroupRank(transaction) {
@@ -1588,15 +1603,6 @@ function transactionKindPills(tx) {
 
   /** @type {{ key: string, label: string, classes: string, title?: string, onClick?: boolean }[]} */
   const pills = [];
-
-  if (isFamilyExpenseView.value && isTransactionOwnedByOther(tx)) {
-    pills.push({
-      key: 'family-member',
-      label: 'Family member',
-      classes: 'bg-orange-600/80 text-orange-50',
-      title: tx.user?.name ? `Recorded by ${tx.user.name}` : 'Recorded by a family member',
-    });
-  }
 
   if (tx.type === 'income' && tx.is_borrow) {
     pills.push({
