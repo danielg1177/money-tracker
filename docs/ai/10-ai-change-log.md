@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-20 — Shared selected month for Transactions and Month Summary
+
+- Files touched: `resources/js/composables/useSelectedMonth.js`, `resources/js/support/yearMonth.js`, `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Changing the calendar month on Transactions or View month stores it in a single SPA state (`useSelectedMonth`, also `sessionStorage`). Navigating away and back restores that month instead of jumping to the current calendar month. Transactions still honors `?month=YYYY-MM` when present. Custom Range does not overwrite the remembered month.
+
 ## 2026-08-20 — Overlay-off other-paid splits use yellow fill, not yellow bar
 
 - Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `resources/js/support/transactionTypeBar.js`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

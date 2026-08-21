@@ -54,6 +54,8 @@ app.js
               └── <router-view> (page components)
 ```
 
+Shared SPA client state (no Pinia): `useAuth` (user) and `useSelectedMonth` (Transactions / Month Summary calendar month).
+
 The SPA is entirely rendered client-side after the initial `app.blade.php` shell loads. Vue Router uses HTML5 history mode — all paths that should render the SPA are explicitly registered as `Route::view(..., 'app')` in `web.php` so Laravel doesn't 404 on direct navigation or page refresh.
 
 ## Backend layer separation

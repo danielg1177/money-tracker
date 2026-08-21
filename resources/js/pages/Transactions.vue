@@ -1018,10 +1018,13 @@ import DebtPaymentBenefitForm from '../components/DebtPaymentBenefitForm.vue';
 import { debtPaymentCategoryLine } from '../support/debtPaymentLabel.js';
 import { closeoutFundName, isCloseoutFundMovement } from '../support/closeoutFundMovement.js';
 import { closeoutFundTypeBarStyle, transactionTypeBarStyle } from '../support/transactionTypeBar.js';
+import { useSelectedMonth } from '../composables/useSelectedMonth';
+import { buildQuickSelectMonths, parseYearMonth } from '../support/yearMonth.js';
 
 const router = useRouter();
 const route = useRoute();
 const { get, put, del, post, loading, error } = useApi();
+const { selectedMonth, setSelectedMonth } = useSelectedMonth();
 
 const transactions = ref([]);
 const categories = ref([]);
@@ -1057,49 +1060,11 @@ function handleTransactionCreatedFromFab(event) {
   void reloadCurrentFilterData();
 }
 
-const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-const quickSelectMonths = computed(() => {
-  const months = [];
-  const cursor = new Date();
-  cursor.setDate(1);
-  cursor.setMonth(cursor.getMonth() + 2);
-
-  for (let i = 0; i < 26; i += 1) {
-    const year = cursor.getFullYear();
-    const monthIndex = cursor.getMonth();
-    const monthNumber = monthIndex + 1;
-    months.push({
-      label: `${monthNames[monthIndex]} ${year}`,
-      value: `${year}-${String(monthNumber).padStart(2, '0')}`,
-    });
-    cursor.setMonth(cursor.getMonth() - 1);
-  }
-
-  return months;
-});
-
-function getDefaultMonthValue() {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
-}
-
-function parseMonthQueryValue(value) {
-  const normalized = Array.isArray(value) ? value[0] : value;
-  if (typeof normalized !== 'string') {
-    return null;
-  }
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(normalized)) {
-    return null;
-  }
-  return normalized;
-}
+const quickSelectMonths = computed(() => buildQuickSelectMonths());
 
 function syncMonthQuery(monthValue) {
-  const normalizedMonth = parseMonthQueryValue(monthValue);
-  const currentMonthQuery = parseMonthQueryValue(route.query.month);
+  const normalizedMonth = parseYearMonth(monthValue);
+  const currentMonthQuery = parseYearMonth(route.query.month);
 
   if (normalizedMonth === currentMonthQuery) {
     return;
@@ -1117,13 +1082,14 @@ function syncMonthQuery(monthValue) {
 
 function applyMonthSelection(monthValue) {
   selectedMonthFilter.value = monthValue;
+  setSelectedMonth(monthValue);
   const [startDate, endDate] = getMonthDateRange(monthValue);
   fetchData(startDate, endDate);
 }
 
 function initializeMonthFilterFromQuery() {
-  const monthFromQuery = parseMonthQueryValue(route.query.month);
-  const resolvedMonth = monthFromQuery || getDefaultMonthValue();
+  const monthFromQuery = parseYearMonth(route.query.month);
+  const resolvedMonth = monthFromQuery || selectedMonth.value;
   applyMonthSelection(resolvedMonth);
 
   if (!monthFromQuery) {
@@ -1141,19 +1107,17 @@ onMounted(async () => {
 watch(
   () => route.query.month,
   (monthQueryValue) => {
-    const monthFromQuery = parseMonthQueryValue(monthQueryValue);
+    const monthFromQuery = parseYearMonth(monthQueryValue);
+    if (selectedMonthFilter.value === 'custom' && !monthFromQuery) {
+      return;
+    }
+    const resolvedMonth = monthFromQuery || selectedMonth.value;
+    if (resolvedMonth !== selectedMonthFilter.value) {
+      applyMonthSelection(resolvedMonth);
+    }
     if (!monthFromQuery) {
-      const defaultMonth = getDefaultMonthValue();
-      if (defaultMonth !== selectedMonthFilter.value) {
-        applyMonthSelection(defaultMonth);
-      }
-      syncMonthQuery(defaultMonth);
-      return;
+      syncMonthQuery(resolvedMonth);
     }
-    if (monthFromQuery === selectedMonthFilter.value) {
-      return;
-    }
-    applyMonthSelection(monthFromQuery);
   }
 );
 
@@ -1248,6 +1212,7 @@ function handleMonthFilterChange() {
     customEndDate.value = today.toISOString().split('T')[0];
     syncMonthQuery(null);
   } else {
+    setSelectedMonth(selectedMonthFilter.value);
     syncMonthQuery(selectedMonthFilter.value);
     const [startDate, endDate] = getMonthDateRange(selectedMonthFilter.value);
     fetchData(startDate, endDate);

@@ -16,7 +16,7 @@ All routes are in `web.php` under no version prefix. The app uses Laravel's web 
 Controllers return raw Eloquent model/collection JSON. This keeps code simpler but means the response shape is tightly coupled to the model's `$appends`, `$casts`, and eager-loaded relations.
 
 ### No global state management (Vuex/Pinia)
-Each page fetches its own data on mount. `localStorage` is the only cross-component state mechanism (auth user). This is a deliberate simplicity choice at the cost of potential stale data and redundant API calls.
+Each page fetches its own data on mount. There is no Vuex/Pinia store. Cross-page client state is limited to module-level composable refs: **`useAuth`** (auth user, also `localStorage`) and **`useSelectedMonth`** (calendar month for Transactions and Month Summary, also `sessionStorage` so a same-tab reload keeps it). This is a deliberate simplicity choice at the cost of potential stale data and redundant API calls.
 
 ### Funds: personal vs family-scoped
 **Personal** funds belong to one user (`funds.user_id`, `family_id` null) and are private to that user. **Family** funds set `funds.family_id` (creator still has `user_id`); all members of that family see them via `GET /funds`. The index lists personal rows only when `family_id` is null so a family fund is not returned twice (once as “personal” and once as family).

@@ -2,49 +2,28 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
+import { useSelectedMonth } from '../composables/useSelectedMonth';
 import { categoryRowTypeBarStyle } from '../support/transactionTypeBar.js';
+import { buildQuickSelectMonths, monthNames, parseYearMonth } from '../support/yearMonth.js';
 
 const route = useRoute();
 const router = useRouter();
 const { get, post, del, loading, error } = useApi();
+const { selectedMonth, setSelectedMonth } = useSelectedMonth();
 
 const summary = ref(null);
 const currentUser = ref(null);
 const isClosing = ref(false);
-const selectedMonthFilter = ref(typeof route.params.yearMonth === 'string' ? route.params.yearMonth : '');
+const selectedMonthFilter = ref(parseYearMonth(route.params.yearMonth) || selectedMonth.value);
 
-// Month label
-const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const currentYear = computed(() => Number.parseInt(String(selectedMonthFilter.value).split('-')[0] || '0', 10));
 const currentMonth = computed(() => Number.parseInt(String(selectedMonthFilter.value).split('-')[1] || '0', 10));
 const monthLabel = computed(() => `${monthNames[(currentMonth.value || 1) - 1]} ${currentYear.value} Summary`);
 
-const quickSelectMonths = computed(() => {
-  const months = [];
-  const cursor = new Date();
-  cursor.setDate(1);
-  cursor.setMonth(cursor.getMonth() + 2);
-
-  for (let i = 0; i < 26; i += 1) {
-    const year = cursor.getFullYear();
-    const monthIndex = cursor.getMonth();
-    const monthNumber = monthIndex + 1;
-    months.push({
-      label: `${monthNames[monthIndex]} ${year}`,
-      value: `${year}-${String(monthNumber).padStart(2, '0')}`,
-    });
-    cursor.setMonth(cursor.getMonth() - 1);
-  }
-
-  return months;
-});
-
-function parseMonthValue(value) {
-  return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(value)) ? String(value) : '';
-}
+const quickSelectMonths = computed(() => buildQuickSelectMonths());
 
 async function loadSummaryForSelectedMonth() {
-  const monthValue = parseMonthValue(selectedMonthFilter.value);
+  const monthValue = parseYearMonth(selectedMonthFilter.value);
   if (!monthValue) {
     summary.value = null;
     return;
@@ -56,21 +35,29 @@ async function loadSummaryForSelectedMonth() {
   }
 }
 
-// Load data on mount
 onMounted(async () => {
   await fetchCurrentUser();
-  await loadSummaryForSelectedMonth();
+  const parsed = parseYearMonth(route.params.yearMonth);
+  if (parsed) {
+    selectedMonthFilter.value = parsed;
+    setSelectedMonth(parsed);
+    await loadSummaryForSelectedMonth();
+    return;
+  }
+  selectedMonthFilter.value = selectedMonth.value;
+  await router.replace(`/month-summary/${selectedMonth.value}`);
 });
 
 watch(
   () => route.params.yearMonth,
   async (nextYearMonth) => {
-    const parsed = parseMonthValue(nextYearMonth);
+    const parsed = parseYearMonth(nextYearMonth);
     if (!parsed) {
       return;
     }
     const shouldReload = parsed !== selectedMonthFilter.value || !summary.value;
     selectedMonthFilter.value = parsed;
+    setSelectedMonth(parsed);
     if (!shouldReload) {
       return;
     }
@@ -79,10 +66,12 @@ watch(
 );
 
 async function handleMonthFilterChange() {
-  const parsed = parseMonthValue(selectedMonthFilter.value);
+  const parsed = parseYearMonth(selectedMonthFilter.value);
   if (!parsed) {
     return;
   }
+
+  setSelectedMonth(parsed);
 
   // Always refresh immediately from the selected month value.
   await loadSummaryForSelectedMonth();

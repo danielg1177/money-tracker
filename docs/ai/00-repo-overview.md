@@ -51,10 +51,10 @@ money-tracker/
 │   │   ├── app.js             # Entry point — mounts AppShell
 │   │   ├── AppShell.vue       # Root layout (nav wrapper)
 │   │   ├── components/        # AppNav, TransactionForm, SplitEditor, IconPicker, App.vue (legacy)
-│   │   ├── composables/       # useApi.js, useAuth.js
+│   │   ├── composables/       # useApi.js, useAuth.js, useSelectedMonth.js
 │   │   ├── pages/             # user pages incl. BankConnections + admin pages
 │   │   ├── router/index.js    # Vue Router config + beforeEach guards
-│   │   └── support/           # authUser.js (normalizeAuthUser), debtPaymentLabel.js (debt label helper)
+│   │   └── support/           # authUser.js, yearMonth.js, debtPaymentLabel.js, etc.
 │   └── views/
 │       ├── app.blade.php      # SPA shell (single <div id="app">)
 │       └── welcome.blade.php  # Default Laravel welcome (not used in app flow)
