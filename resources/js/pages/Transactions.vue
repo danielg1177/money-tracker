@@ -467,10 +467,10 @@
                 <div
                   v-if="transaction.user?.name"
                   class="mt-1.5 flex min-w-0 items-center gap-1 text-xs text-gray-500"
-                  :class="isFamilyExpenseView ? '' : 'hidden sm:block'"
+                  :class="!isFamilyExpenseView && !isTransactionOwnedByOther(transaction) ? 'hidden sm:block' : ''"
                 >
                   <svg
-                    v-if="isFamilyExpenseView && isTransactionOwnedByOther(transaction)"
+                    v-if="isTransactionOwnedByOther(transaction)"
                     class="h-3.5 w-3.5 shrink-0"
                     fill="currentColor"
                     viewBox="0 0 20 20"
@@ -569,7 +569,10 @@
             </div>
             <div
               class="h-2 w-full"
-              :style="transactionTypeBarStyle(transaction, { confirmDelete: Boolean(confirmDelete[transaction.id]) })"
+              :style="transactionTypeBarStyle(transaction, {
+                confirmDelete: Boolean(confirmDelete[transaction.id]),
+                otherMemberSplit: !isFamilyExpenseView && isTransactionOwnedByOther(transaction),
+              })"
             ></div>
           </div>
           </template>

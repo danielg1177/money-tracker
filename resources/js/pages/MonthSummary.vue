@@ -1390,7 +1390,7 @@ function movementTypeLabel(type) {
                 <div class="flex items-center justify-between gap-3 px-3 py-2.5">
                 <div class="min-w-0">
                   <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
-                  <p v-if="isFamilyExpenseView && isCategoryRowOwnedByOther(row)" class="flex min-w-0 items-center gap-1 text-[11px] text-yellow-200">
+                  <p v-if="isCategoryRowOwnedByOther(row)" class="flex min-w-0 items-center gap-1 text-[11px]" :class="isFamilyExpenseView ? 'text-yellow-200' : 'text-gray-400'">
                     <svg class="h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                       <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
                     </svg>
@@ -1418,7 +1418,7 @@ function movementTypeLabel(type) {
                   {{ selectedCategory?.type === 'expense' ? '−' : '+' }}{{ formatCurrency(row.amount) }}
                 </span>
                 </div>
-                <div class="h-2 w-full" :style="categoryRowTypeBarStyle(row, selectedCategory?.type)"></div>
+                <div class="h-2 w-full" :style="categoryRowTypeBarStyle(row, selectedCategory?.type, { otherMemberSplit: !isFamilyExpenseView && isCategoryRowOwnedByOther(row) })"></div>
               </div>
             </div>
           </div>

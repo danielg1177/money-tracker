@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-20 — Overlay-off other-paid splits keep owner label and yellow bar third
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `resources/js/support/transactionTypeBar.js`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: With **View all family expenses** off, splits another member paid still show the family icon and their name at the bottom left. Those cards use a three-part bottom bar (violet, yellow middle third, type color).
+
 ## 2026-08-20 — Split share labels align as You: / Name: columns
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
