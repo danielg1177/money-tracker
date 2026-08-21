@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-08-20 — Type-colored transaction borders (income/expense/split)
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Transaction cards (viewer and family-member) keep existing fills; borders are **green** for income, **red** for expense, and **violet** for splits. Delete-confirm still uses a full red card. Same border rules in the View month category sheet.
+
+## 2026-08-20 — Other-member split rows keep orange fill with violet border
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: In family view, split transactions paid by another member keep the orange card background but use the violet split border (Transactions list and category-detail modal).
+
 ## 2026-08-20 — Date-header Family/You alignment and per-day row order
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

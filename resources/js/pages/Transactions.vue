@@ -292,21 +292,11 @@
               'rounded-lg sm:rounded-xl border p-2 sm:p-3 transition-colors',
               confirmDelete[transaction.id]
                 ? 'border-red-600 bg-red-900/20'
-                : transaction.is_closeout_initiated
-                  ? 'border-purple-600/40 bg-purple-900/10'
-                  : transaction.is_repayment
-                    ? 'border-cyan-700/30 bg-cyan-950/10'
-                    : transaction.is_repayment_mirror
-                      ? 'border-amber-700/30 bg-amber-950/10'
-                      : isFamilyExpenseView && isTransactionOwnedByOther(transaction)
-                      ? 'border-orange-600/40 bg-orange-950/20'
-                      : isTransactionOwnedByOther(transaction)
-                        ? 'border-violet-700/35 bg-violet-950/25'
-                        : 'border-gray-700 bg-gray-800',
+                : `${transactionRowBorderClass(transaction)} ${transactionRowBackgroundClass(transaction)}`,
               transaction.is_repaid ? 'opacity-40' : '',
               isSelectedMonthLocked ? 'opacity-75' : '',
               !confirmDelete[transaction.id] && !isSelectedMonthLocked && isTransactionEditLocked(transaction) ? 'cursor-default' : '',
-              !confirmDelete[transaction.id] && !isSelectedMonthLocked && !isTransactionEditLocked(transaction) ? 'cursor-pointer hover:border-gray-600' : '',
+              !confirmDelete[transaction.id] && !isSelectedMonthLocked && !isTransactionEditLocked(transaction) ? 'cursor-pointer' : '',
             ]"
             @click="!confirmDelete[transaction.id] && !isSelectedMonthLocked && !isTransactionEditLocked(transaction) && openEditForm(transaction.id)"
           >
@@ -1191,6 +1181,37 @@ function applyCustomRange() {
 
 function isSplitListRow(transaction) {
   return Boolean(transaction?.splits?.length);
+}
+
+function transactionRowBorderClass(transaction) {
+  if (isSplitListRow(transaction)) {
+    return 'border-violet-700/35';
+  }
+  if (transaction?.type === 'income') {
+    return 'border-green-600/45';
+  }
+
+  return 'border-red-600/45';
+}
+
+function transactionRowBackgroundClass(transaction) {
+  if (transaction?.is_closeout_initiated) {
+    return 'bg-purple-900/10';
+  }
+  if (transaction?.is_repayment) {
+    return 'bg-cyan-950/10';
+  }
+  if (transaction?.is_repayment_mirror) {
+    return 'bg-amber-950/10';
+  }
+  if (isFamilyExpenseView.value && isTransactionOwnedByOther(transaction)) {
+    return 'bg-orange-950/20';
+  }
+  if (isTransactionOwnedByOther(transaction)) {
+    return 'bg-violet-950/25';
+  }
+
+  return 'bg-gray-800';
 }
 
 function dayTransactionGroupRank(transaction) {

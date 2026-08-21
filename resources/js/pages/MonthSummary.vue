@@ -117,6 +117,25 @@ function isCategoryRowOwnedByOther(row) {
   return Number(row.user_id) !== Number(uid);
 }
 
+function categoryRowBorderClass(row) {
+  if (row?.is_split) {
+    return 'border-violet-700/35';
+  }
+  if (selectedCategory.value?.type === 'income') {
+    return 'border-green-600/45';
+  }
+
+  return 'border-red-600/45';
+}
+
+function categoryRowBackgroundClass(row) {
+  if (isFamilyExpenseView.value && isCategoryRowOwnedByOther(row)) {
+    return 'bg-orange-950/20';
+  }
+
+  return 'bg-gray-800';
+}
+
 // Lock icon states
 const isHardClosed = computed(() => summary.value?.is_hard_closed === true);
 const allSoftClosed = computed(() => summary.value?.close_status?.all_soft_closed === true);
@@ -1376,9 +1395,7 @@ function movementTypeLabel(type) {
                 v-for="row in selectedCategoryTransactions"
                 :key="`cat-row-${row.id}-${row.transaction_date}-${row.amount}`"
                 class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5"
-                :class="isFamilyExpenseView && isCategoryRowOwnedByOther(row)
-                  ? 'border-orange-600/40 bg-orange-950/20'
-                  : 'border-gray-700 bg-gray-800'"
+                :class="`${categoryRowBorderClass(row)} ${categoryRowBackgroundClass(row)}`"
               >
                 <div class="min-w-0">
                   <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
