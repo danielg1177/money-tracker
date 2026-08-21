@@ -260,33 +260,26 @@
           <span class="text-[10px] sm:text-sm font-semibold text-gray-400">
             {{ formatDate(dayGroup.date) }}
           </span>
-            <div class="flex flex-col items-end gap-0.5 text-right leading-tight">
-              <template v-if="isFamilyExpenseView">
-                <template v-if="dayGroup.youTotalIncome > 0.005 || dayGroup.familyTotalIncome > 0.005">
-                  <span class="text-[10px] sm:text-xs font-medium text-green-400">
-                    You +{{ formatCurrency(dayGroup.youTotalIncome) }}
-                  </span>
-                  <span class="text-[10px] sm:text-xs font-medium text-green-400/80">
-                    Family +{{ formatCurrency(dayGroup.familyTotalIncome) }}
-                  </span>
-                </template>
-                <template v-if="dayGroup.youTotalExpenses > 0.005 || dayGroup.familyTotalExpenses > 0.005">
-                  <span class="text-[10px] sm:text-xs font-medium text-red-400">
-                    You −{{ formatCurrency(dayGroup.youTotalExpenses) }}
-                  </span>
-                  <span class="text-[10px] sm:text-xs font-medium text-red-400/80">
-                    Family −{{ formatCurrency(dayGroup.familyTotalExpenses) }}
-                  </span>
-                </template>
+            <div
+              v-if="isFamilyExpenseView"
+              class="grid grid-cols-[max-content_max-content] gap-x-3 gap-y-0.5 justify-items-start text-[10px] sm:text-xs font-medium leading-tight tabular-nums"
+            >
+              <template v-if="dayGroup.youTotalIncome > 0.005 || dayGroup.familyTotalIncome > 0.005">
+                <span class="whitespace-nowrap text-green-400/80">Family +{{ formatCurrency(dayGroup.familyTotalIncome) }}</span>
+                <span class="whitespace-nowrap text-green-400">You +{{ formatCurrency(dayGroup.youTotalIncome) }}</span>
               </template>
-              <template v-else>
-                <span v-if="dayGroup.youTotalIncome > 0.005" class="text-[10px] sm:text-xs font-medium text-green-400">
-                  +{{ formatCurrency(dayGroup.youTotalIncome) }}
-                </span>
-                <span v-if="dayGroup.youTotalExpenses > 0.005" class="text-[10px] sm:text-xs font-medium text-red-400">
-                  −{{ formatCurrency(dayGroup.youTotalExpenses) }}
-                </span>
+              <template v-if="dayGroup.youTotalExpenses > 0.005 || dayGroup.familyTotalExpenses > 0.005">
+                <span class="whitespace-nowrap text-red-400/80">Family −{{ formatCurrency(dayGroup.familyTotalExpenses) }}</span>
+                <span class="whitespace-nowrap text-red-400">You −{{ formatCurrency(dayGroup.youTotalExpenses) }}</span>
               </template>
+            </div>
+            <div v-else class="flex flex-col items-end gap-0.5 text-right leading-tight">
+              <span v-if="dayGroup.youTotalIncome > 0.005" class="text-[10px] sm:text-xs font-medium text-green-400">
+                +{{ formatCurrency(dayGroup.youTotalIncome) }}
+              </span>
+              <span v-if="dayGroup.youTotalExpenses > 0.005" class="text-[10px] sm:text-xs font-medium text-red-400">
+                −{{ formatCurrency(dayGroup.youTotalExpenses) }}
+              </span>
             </div>
         </div>
 
@@ -1200,6 +1193,17 @@ function isSplitListRow(transaction) {
   return Boolean(transaction?.splits?.length);
 }
 
+function dayTransactionGroupRank(transaction) {
+  if (isSplitListRow(transaction)) {
+    return 1;
+  }
+  if (isTransactionOwnedByOther(transaction)) {
+    return 2;
+  }
+
+  return 0;
+}
+
 function currentUserSplitAmount(transaction) {
   const uid = currentUser.value?.id;
   if (uid == null || !transaction?.splits?.length) {
@@ -1275,6 +1279,11 @@ const transactionsByDay = computed(() => {
     .map(dayGroup => ({
       ...dayGroup,
       transactions: [...dayGroup.transactions].sort((a, b) => {
+        const groupCompare = dayTransactionGroupRank(a) - dayTransactionGroupRank(b);
+        if (groupCompare !== 0) {
+          return groupCompare;
+        }
+
         const categoryCompare = transactionCategorySortKey(a).localeCompare(transactionCategorySortKey(b));
         if (categoryCompare !== 0) {
           return categoryCompare;

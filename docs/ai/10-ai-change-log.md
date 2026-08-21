@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-20 — Date-header Family/You alignment and per-day row order
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Family-view date totals put **Family** then **You** on one line (income above expenses when both exist), with those labels column-aligned. Each day’s list is **your rows**, then **splits**, then **other members’** rows.
+
 ## 2026-08-20 — Family view orange rows, stacked date totals, and family-debt repayments
 
 - Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `app/Http/Controllers/MonthSummaryController.php`, `tests/Feature/FamilyExpenseViewTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
