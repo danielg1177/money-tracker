@@ -119,13 +119,13 @@ function isCategoryRowOwnedByOther(row) {
 
 function categoryRowBorderClass(row) {
   if (row?.is_split) {
-    return 'border-violet-700/35';
+    return 'border-b-4 border-violet-700/35';
   }
   if (selectedCategory.value?.type === 'income') {
-    return 'border-green-600/45';
+    return 'border-b-4 border-green-600/45';
   }
 
-  return 'border-red-600/45';
+  return 'border-b-4 border-red-600/45';
 }
 
 function categoryRowBackgroundClass(row) {
@@ -1394,7 +1394,7 @@ function movementTypeLabel(type) {
                 v-else
                 v-for="row in selectedCategoryTransactions"
                 :key="`cat-row-${row.id}-${row.transaction_date}-${row.amount}`"
-                class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5"
+                class="flex items-center justify-between gap-3 rounded-lg px-3 py-2.5"
                 :class="`${categoryRowBorderClass(row)} ${categoryRowBackgroundClass(row)}`"
               >
                 <div class="min-w-0">

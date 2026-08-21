@@ -264,21 +264,39 @@
           <div
             v-for="transaction in closeoutFundMovementTransactions"
             :key="'closeout-fund-' + transaction.id"
-            class="rounded-lg sm:rounded-xl border border-blue-500/45 bg-blue-950/25 p-2 sm:p-3 cursor-default"
+            :class="[
+              'rounded-lg sm:rounded-xl border-b-4 border-blue-500/45 p-2 sm:p-3 cursor-default',
+              isFamilyExpenseView && isTransactionOwnedByOther(transaction)
+                ? 'bg-orange-800/40'
+                : 'bg-blue-950/25',
+            ]"
           >
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
               <div class="min-w-0 flex-1">
-                <p class="text-[11px] sm:text-base text-blue-100 font-medium truncate leading-tight">
-                  {{ closeoutFundName(transaction) }}
-                </p>
+                <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
+                  <p class="text-[11px] sm:text-base font-medium truncate leading-tight min-w-0 flex-1"
+                    :class="isFamilyExpenseView && isTransactionOwnedByOther(transaction) ? 'text-orange-50' : 'text-blue-100'"
+                  >
+                    {{ closeoutFundName(transaction) }}
+                  </p>
+                  <span
+                    v-if="isFamilyExpenseView && isTransactionOwnedByOther(transaction)"
+                    class="inline-flex shrink-0 items-center rounded-full bg-orange-600/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-orange-50"
+                  >
+                    Family member
+                  </span>
+                </div>
                 <p
                   v-if="isFamilyExpenseView && isTransactionOwnedByOther(transaction)"
-                  class="text-[11px] text-blue-300/80 truncate mt-0.5"
+                  class="text-[11px] text-orange-200 truncate mt-0.5"
                 >
                   {{ transactionPayerDisplayLabel(transaction) }}
                 </p>
               </div>
-              <span class="text-sm sm:text-base font-medium text-blue-300 shrink-0 tabular-nums">
+              <span
+                class="text-sm sm:text-base font-medium shrink-0 tabular-nums"
+                :class="isFamilyExpenseView && isTransactionOwnedByOther(transaction) ? 'text-orange-200' : 'text-blue-300'"
+              >
                 −{{ formatCurrency(transaction.amount) }}
               </span>
             </div>
@@ -321,9 +339,9 @@
             v-for="transaction in dayGroup.transactions"
             :key="transaction.id"
             :class="[
-              'rounded-lg sm:rounded-xl border p-2 sm:p-3 transition-colors',
+              'rounded-lg sm:rounded-xl p-2 sm:p-3 transition-colors',
               confirmDelete[transaction.id]
-                ? 'border-red-600 bg-red-900/20'
+                ? 'border-b-4 border-red-600 bg-red-900/20'
                 : `${transactionRowBorderClass(transaction)} ${transactionRowBackgroundClass(transaction)}`,
               transaction.is_repaid ? 'opacity-40' : '',
               isSelectedMonthLocked ? 'opacity-75' : '',
@@ -1218,13 +1236,13 @@ function isSplitListRow(transaction) {
 
 function transactionRowBorderClass(transaction) {
   if (isSplitListRow(transaction)) {
-    return 'border-violet-700/35';
+    return 'border-b-4 border-violet-700/35';
   }
   if (transaction?.type === 'income') {
-    return 'border-green-600/45';
+    return 'border-b-4 border-green-600/45';
   }
 
-  return 'border-red-600/45';
+  return 'border-b-4 border-red-600/45';
 }
 
 function transactionRowBackgroundClass(transaction) {
@@ -1260,6 +1278,10 @@ function dayTransactionGroupRank(transaction) {
 
 function dayTransactionPayerRank(transaction) {
   return isTransactionOwnedByOther(transaction) ? 1 : 0;
+}
+
+function dayTransactionTypeRank(transaction) {
+  return transaction?.type === 'income' ? 0 : 1;
 }
 
 function currentUserSplitAmount(transaction) {
@@ -1347,6 +1369,13 @@ const transactionsByDay = computed(() => {
           return payerCompare;
         }
 
+        if (!isTransactionOwnedByOther(a) && !isTransactionOwnedByOther(b)) {
+          const typeCompare = dayTransactionTypeRank(a) - dayTransactionTypeRank(b);
+          if (typeCompare !== 0) {
+            return typeCompare;
+          }
+        }
+
         const categoryCompare = transactionCategorySortKey(a).localeCompare(transactionCategorySortKey(b));
         if (categoryCompare !== 0) {
           return categoryCompare;
@@ -1373,6 +1402,11 @@ const closeoutFundMovementTransactions = computed(() =>
   transactions.value
     .filter((tx) => isCloseoutFundMovement(tx))
     .sort((a, b) => {
+      const payerCompare = dayTransactionPayerRank(a) - dayTransactionPayerRank(b);
+      if (payerCompare !== 0) {
+        return payerCompare;
+      }
+
       const nameCompare = closeoutFundName(a).localeCompare(closeoutFundName(b));
       if (nameCompare !== 0) {
         return nameCompare;

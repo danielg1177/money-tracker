@@ -11,6 +11,21 @@ Format:
 
 ---
 
+## 2026-08-20 — Transaction type color is a thick bottom border only
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Income/expense/split (and closeout fund) cards keep the same type colors but use a thick bottom border instead of a full outline. Applies on Transactions and the View month category sheet.
+
+## 2026-08-20 — Your same-day rows sort income before expenses
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: For transactions you created, each day’s list puts **income** above **expenses** (still before splits and other members’ rows; then category / alphabetical).
+
+## 2026-08-20 — Closeout fund group sorts yours first; others orange
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: In **Closeout fund movements**, your rows stay blue and list first; other family members’ closeout fund rows sit at the bottom with the same orange fill as their other family-view transactions.
+
 ## 2026-08-20 — Stronger orange for other family members’ rows
 
 - Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
