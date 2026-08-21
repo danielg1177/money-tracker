@@ -265,12 +265,13 @@
             v-for="transaction in closeoutFundMovementTransactions"
             :key="'closeout-fund-' + transaction.id"
             :class="[
-              'rounded-lg sm:rounded-xl border-b-4 border-blue-500/45 p-2 sm:p-3 cursor-default',
+              'overflow-hidden rounded-lg sm:rounded-xl cursor-default',
               isFamilyExpenseView && isTransactionOwnedByOther(transaction)
                 ? 'bg-orange-800/40'
                 : 'bg-blue-950/25',
             ]"
           >
+            <div class="p-2 sm:p-3">
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
@@ -300,6 +301,8 @@
                 −{{ formatCurrency(transaction.amount) }}
               </span>
             </div>
+            </div>
+            <div class="h-2 w-full" :style="closeoutFundTypeBarStyle()"></div>
           </div>
         </div>
       </div>
@@ -334,15 +337,16 @@
         </div>
 
         <!-- Day's Transactions -->
-        <div class="space-y-2 px-4 py-1.5">
+        <div class="flex flex-col gap-2 px-4 py-1.5">
           <div
             v-for="transaction in dayGroup.transactions"
             :key="transaction.id"
             :class="[
-              'rounded-lg sm:rounded-xl p-2 sm:p-3 transition-colors',
+              'overflow-hidden rounded-lg sm:rounded-xl transition-colors',
               confirmDelete[transaction.id]
-                ? 'border-b-4 border-red-600 bg-red-900/20'
-                : `${transactionRowBorderClass(transaction)} ${transactionRowBackgroundClass(transaction)}`,
+                ? 'bg-red-900/20'
+                : transactionRowBackgroundClass(transaction),
+              isFirstUnassociatedFamilySoloOfDay(dayGroup, transaction) ? 'mt-8' : '',
               transaction.is_repaid ? 'opacity-40' : '',
               isSelectedMonthLocked ? 'opacity-75' : '',
               !confirmDelete[transaction.id] && !isSelectedMonthLocked && isTransactionEditLocked(transaction) ? 'cursor-default' : '',
@@ -350,6 +354,7 @@
             ]"
             @click="!confirmDelete[transaction.id] && !isSelectedMonthLocked && !isTransactionEditLocked(transaction) && openEditForm(transaction.id)"
           >
+            <div class="p-2 sm:p-3">
             <!-- Main transaction row: one horizontal row on all breakpoints so amount + split stay beside title on mobile -->
             <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
               <div
@@ -543,6 +548,11 @@
                 </div>
               </div>
             </div>
+            </div>
+            <div
+              class="h-2 w-full"
+              :style="transactionTypeBarStyle(transaction, { confirmDelete: Boolean(confirmDelete[transaction.id]) })"
+            ></div>
           </div>
         </div>
       </div>
@@ -988,6 +998,7 @@ import TransactionForm from '../components/TransactionForm.vue';
 import DebtPaymentBenefitForm from '../components/DebtPaymentBenefitForm.vue';
 import { debtPaymentCategoryLine } from '../support/debtPaymentLabel.js';
 import { closeoutFundName, isCloseoutFundMovement } from '../support/closeoutFundMovement.js';
+import { closeoutFundTypeBarStyle, transactionTypeBarStyle } from '../support/transactionTypeBar.js';
 
 const router = useRouter();
 const route = useRoute();
@@ -1234,17 +1245,6 @@ function isSplitListRow(transaction) {
   return Boolean(transaction?.splits?.length);
 }
 
-function transactionRowBorderClass(transaction) {
-  if (isSplitListRow(transaction)) {
-    return 'border-b-4 border-violet-700/35';
-  }
-  if (transaction?.type === 'income') {
-    return 'border-b-4 border-green-600/45';
-  }
-
-  return 'border-b-4 border-red-600/45';
-}
-
 function transactionRowBackgroundClass(transaction) {
   if (transaction?.is_closeout_initiated) {
     return 'bg-purple-900/10';
@@ -1278,6 +1278,20 @@ function dayTransactionGroupRank(transaction) {
 
 function dayTransactionPayerRank(transaction) {
   return isTransactionOwnedByOther(transaction) ? 1 : 0;
+}
+
+function isUnassociatedFamilySolo(transaction) {
+  return isTransactionOwnedByOther(transaction) && !isSplitListRow(transaction);
+}
+
+function isFirstUnassociatedFamilySoloOfDay(dayGroup, transaction) {
+  const txs = dayGroup?.transactions || [];
+  const firstUnassociated = txs.find((row) => isUnassociatedFamilySolo(row));
+  if (!firstUnassociated || Number(firstUnassociated.id) !== Number(transaction?.id)) {
+    return false;
+  }
+
+  return txs.some((row) => !isUnassociatedFamilySolo(row));
 }
 
 function dayTransactionTypeRank(transaction) {

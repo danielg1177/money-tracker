@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-20 — Thicker type bars, diagonal split colors, family-solo gap
+
+- Files touched: `resources/js/support/transactionTypeBar.js`, `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Bottom type bars are 8px. Splits use a diagonal purple-then-green/red bar. Other members’ non-split rows on a day are separated by extra space from the last viewer-associated row (own + splits).
+
 ## 2026-08-20 — Transaction type color is a thick bottom border only
 
 - Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

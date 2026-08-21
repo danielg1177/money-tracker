@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
+import { categoryRowTypeBarStyle } from '../support/transactionTypeBar.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -115,17 +116,6 @@ function isCategoryRowOwnedByOther(row) {
   }
 
   return Number(row.user_id) !== Number(uid);
-}
-
-function categoryRowBorderClass(row) {
-  if (row?.is_split) {
-    return 'border-b-4 border-violet-700/35';
-  }
-  if (selectedCategory.value?.type === 'income') {
-    return 'border-b-4 border-green-600/45';
-  }
-
-  return 'border-b-4 border-red-600/45';
 }
 
 function categoryRowBackgroundClass(row) {
@@ -1394,9 +1384,10 @@ function movementTypeLabel(type) {
                 v-else
                 v-for="row in selectedCategoryTransactions"
                 :key="`cat-row-${row.id}-${row.transaction_date}-${row.amount}`"
-                class="flex items-center justify-between gap-3 rounded-lg px-3 py-2.5"
-                :class="`${categoryRowBorderClass(row)} ${categoryRowBackgroundClass(row)}`"
+                class="overflow-hidden rounded-lg"
+                :class="categoryRowBackgroundClass(row)"
               >
+                <div class="flex items-center justify-between gap-3 px-3 py-2.5">
                 <div class="min-w-0">
                   <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
                   <p v-if="isFamilyExpenseView && isCategoryRowOwnedByOther(row)" class="text-[11px] text-orange-200 truncate">
@@ -1423,6 +1414,8 @@ function movementTypeLabel(type) {
                 >
                   {{ selectedCategory?.type === 'expense' ? '−' : '+' }}{{ formatCurrency(row.amount) }}
                 </span>
+                </div>
+                <div class="h-2 w-full" :style="categoryRowTypeBarStyle(row, selectedCategory?.type)"></div>
               </div>
             </div>
           </div>
