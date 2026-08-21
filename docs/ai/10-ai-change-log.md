@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-20 — Split cards stack each member’s share under Total
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Split transaction cards show each member’s share stacked (logged-in user first) with **Total: {amount}** underneath instead of the **Split: Total … by …** pill. Tapping the amount stack still opens the split breakdown sheet.
+
 ## 2026-08-20 — Family member pill replaced by family icon before name
 
 - Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

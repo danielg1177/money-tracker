@@ -493,24 +493,24 @@
                       : 'text-red-400'
                   "
                 >
-                  <template v-if="isSplitListRow(transaction)">
-                    <span class="text-[11px] sm:text-base font-bold tabular-nums">
-                      {{ transaction.type === 'income' ? '+' : '-' }}{{ formatCurrency(splitListPrimaryAmount(transaction)) }}
-                    </span>
-                    <button
-                      type="button"
-                      class="w-full max-w-full rounded-md border border-purple-500/40 bg-purple-900/50 px-2 py-1.5 text-left flex items-center transition hover:bg-purple-900/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60 sm:max-w-[22rem] sm:w-auto"
-                      title="View how this payment was split"
-                      @click.stop="openSplitDetailModal(transaction)"
+                  <button
+                    v-if="isSplitListRow(transaction)"
+                    type="button"
+                    class="flex w-full max-w-full flex-col items-end gap-0.5 text-right leading-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60"
+                    title="View how this payment was split"
+                    @click.stop="openSplitDetailModal(transaction)"
+                  >
+                    <span
+                      v-for="split in splitsSortedForModal(transaction)"
+                      :key="split.id ?? `split-${split.user_id}`"
+                      class="text-[11px] sm:text-base font-bold tabular-nums"
                     >
-                      <span class="text-[9px] sm:text-xs text-purple-200 leading-tight flex flex-wrap items-center gap-x-1 w-full min-w-0">
-                        <span class="shrink-0 font-medium text-purple-100">Split:</span>
-                        <span class="shrink-0">Total {{ formatCurrency(Number(transaction.amount) || 0) }}</span>
-                        <span class="shrink-0 text-purple-300/90">by</span>
-                        <span class="min-w-0 truncate font-medium">{{ transactionPayerDisplayLabel(transaction) }}</span>
-                      </span>
-                    </button>
-                  </template>
+                      {{ transaction.type === 'income' ? '+' : '-' }}{{ formatCurrency(Number(split.amount) || 0) }}
+                    </span>
+                    <span class="text-[9px] sm:text-xs font-medium text-purple-200">
+                      Total: {{ formatCurrency(Number(transaction.amount) || 0) }}
+                    </span>
+                  </button>
                   <span v-else class="text-[11px] sm:text-base font-bold tabular-nums">
                     {{ transaction.type === 'income' ? '+' : '-' }}{{ formatCurrency(Number(transaction.amount) || 0) }}
                   </span>
@@ -1565,14 +1565,6 @@ function formatCurrency(amount) {
   }).format(amount);
 }
 
-function splitListPrimaryAmount(transaction) {
-  const mine = currentUserSplitAmount(transaction);
-  if (mine != null) {
-    return mine;
-  }
-  return Number(transaction.amount) || 0;
-}
-
 function transactionPayerDisplayLabel(transaction) {
   const uid = currentUser.value?.id;
   if (uid != null && Number(transaction.user_id) === Number(uid)) {
@@ -1592,7 +1584,7 @@ function isTransactionOwnedByOther(transaction) {
 
 /**
  * Small attribute pills on each row (debt repayment, advance, non-necessity, borrow, closeout).
- * Split expenses use only the purple “Split: Total…” control beside the amount, not a title-row pill.
+ * Split expenses list each member’s share beside the amount with Total underneath, not a title-row pill.
  * @param {object} tx
  * @returns {{ key: string, label: string, classes: string, title?: string, onClick?: boolean }[]}
  */
