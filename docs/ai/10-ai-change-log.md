@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-20 — Split share labels align as You: / Name: columns
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Split cards label the viewer’s share **You:** and other members **{name}:**, with a gap before the amount. Names share one left edge and amounts share one right-aligned column, including the purple **Total:** row.
+
 ## 2026-08-20 — Split cards show member names and purple total
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

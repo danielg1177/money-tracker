@@ -489,26 +489,27 @@
                   <button
                     v-if="isSplitListRow(transaction)"
                     type="button"
-                    class="flex w-full max-w-full flex-col items-end gap-0.5 text-right leading-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60"
+                    class="grid w-max max-w-full grid-cols-[minmax(0,max-content)_max-content] items-baseline gap-x-2 gap-y-0.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60"
                     title="View how this payment was split"
                     @click.stop="openSplitDetailModal(transaction)"
                   >
-                    <span
+                    <template
                       v-for="split in splitsSortedForModal(transaction)"
                       :key="split.id ?? `split-${split.user_id}`"
-                      class="flex min-w-0 max-w-full items-baseline justify-end gap-1"
-                      :class="transactionAmountColorClass(transaction)"
                     >
+                      <span class="min-w-0 truncate text-[9px] sm:text-xs font-medium text-gray-400">
+                        {{ splitParticipantLabel(split) }}:
+                      </span>
                       <span
-                        v-if="!isSplitRowForCurrentUser(split)"
-                        class="min-w-0 truncate text-[9px] sm:text-xs font-medium text-gray-400"
-                      >{{ splitParticipantName(split) }}</span>
-                      <span class="shrink-0 text-[11px] sm:text-base font-bold tabular-nums">
+                        class="text-right text-[11px] sm:text-base font-bold tabular-nums"
+                        :class="transactionAmountColorClass(transaction)"
+                      >
                         {{ transaction.type === 'income' ? '+' : '-' }}{{ formatCurrency(Number(split.amount) || 0) }}
                       </span>
-                    </span>
-                    <span class="text-[9px] sm:text-xs font-semibold text-purple-400">
-                      Total: {{ formatCurrency(Number(transaction.amount) || 0) }}
+                    </template>
+                    <span class="min-w-0 truncate text-[9px] sm:text-xs font-semibold text-purple-400">Total:</span>
+                    <span class="text-right text-[9px] sm:text-xs font-semibold tabular-nums text-purple-400">
+                      {{ formatCurrency(Number(transaction.amount) || 0) }}
                     </span>
                   </button>
                   <span
@@ -1809,6 +1810,14 @@ function isSplitRowForCurrentUser(split) {
 
 function splitParticipantName(split) {
   return split?.user?.name || 'Member';
+}
+
+function splitParticipantLabel(split) {
+  if (isSplitRowForCurrentUser(split)) {
+    return 'You';
+  }
+
+  return splitParticipantName(split);
 }
 
 function transactionAmountColorClass(transaction) {
