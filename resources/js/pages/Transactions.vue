@@ -347,7 +347,7 @@
               confirmDelete[transaction.id]
                 ? 'bg-red-900/20'
                 : transactionRowBackgroundClass(transaction),
-              transaction.is_repaid ? 'opacity-40' : '',
+              transaction.is_repaid || isExternalReimbursementIncome(transaction) ? 'opacity-40' : '',
               isSelectedMonthLocked ? 'opacity-75' : '',
               !confirmDelete[transaction.id] && !isSelectedMonthLocked && isTransactionEditLocked(transaction) ? 'cursor-default' : '',
               !confirmDelete[transaction.id] && !isSelectedMonthLocked && !isTransactionEditLocked(transaction) ? 'cursor-pointer' : '',
@@ -485,13 +485,6 @@
               <div class="flex shrink-0 items-start gap-1.5 sm:gap-2">
                 <div
                   class="flex min-w-0 max-w-[12.5rem] flex-col items-end gap-1 text-right leading-tight sm:max-w-[22rem]"
-                  :class="
-                    transaction.type === 'income'
-                      ? transaction.is_debt_payment
-                        ? 'text-sky-400'
-                        : 'text-green-400'
-                      : 'text-red-400'
-                  "
                 >
                   <button
                     v-if="isSplitListRow(transaction)"
@@ -503,15 +496,26 @@
                     <span
                       v-for="split in splitsSortedForModal(transaction)"
                       :key="split.id ?? `split-${split.user_id}`"
-                      class="text-[11px] sm:text-base font-bold tabular-nums"
+                      class="flex min-w-0 max-w-full items-baseline justify-end gap-1"
+                      :class="transactionAmountColorClass(transaction)"
                     >
-                      {{ transaction.type === 'income' ? '+' : '-' }}{{ formatCurrency(Number(split.amount) || 0) }}
+                      <span
+                        v-if="!isSplitRowForCurrentUser(split)"
+                        class="min-w-0 truncate text-[9px] sm:text-xs font-medium text-gray-400"
+                      >{{ splitParticipantName(split) }}</span>
+                      <span class="shrink-0 text-[11px] sm:text-base font-bold tabular-nums">
+                        {{ transaction.type === 'income' ? '+' : '-' }}{{ formatCurrency(Number(split.amount) || 0) }}
+                      </span>
                     </span>
-                    <span class="text-[9px] sm:text-xs font-medium text-purple-200">
+                    <span class="text-[9px] sm:text-xs font-semibold text-purple-400">
                       Total: {{ formatCurrency(Number(transaction.amount) || 0) }}
                     </span>
                   </button>
-                  <span v-else class="text-[11px] sm:text-base font-bold tabular-nums">
+                  <span
+                    v-else
+                    class="text-[11px] sm:text-base font-bold tabular-nums"
+                    :class="transactionAmountColorClass(transaction)"
+                  >
                     {{ transaction.type === 'income' ? '+' : '-' }}{{ formatCurrency(Number(transaction.amount) || 0) }}
                   </span>
                 </div>
@@ -1283,7 +1287,13 @@ function transactionRowBackgroundClass(transaction) {
 }
 
 function isExternalReimbursementIncome(transaction) {
-  return Boolean(transaction?.is_repayment && transaction.repayment_links?.[0]?.is_external_repayment);
+  if (!transaction?.is_repayment) {
+    return false;
+  }
+
+  const links = transaction.repayment_links ?? transaction.repaymentLinks ?? [];
+
+  return links.some((link) => Boolean(link?.is_external_repayment));
 }
 
 function dayTransactionGroupRank(transaction) {
@@ -1795,6 +1805,18 @@ function isSplitRowForCurrentUser(split) {
     return false;
   }
   return Number(split.user_id) === Number(uid);
+}
+
+function splitParticipantName(split) {
+  return split?.user?.name || 'Member';
+}
+
+function transactionAmountColorClass(transaction) {
+  if (transaction?.type === 'income') {
+    return transaction.is_debt_payment ? 'text-sky-400' : 'text-green-400';
+  }
+
+  return 'text-red-400';
 }
 
 function formatSplitSharePercent(value) {

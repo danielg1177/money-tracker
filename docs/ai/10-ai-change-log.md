@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-08-20 — Split cards show member names and purple total
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Other family members’ split shares show their name before the amount. **Total:** is purple so it no longer inherits the red/green amount color.
+
+## 2026-08-20 — External reimbursement matches reimbursed-externally fade
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **External reimbursement** income cards now use the same faded gray (`opacity-40`) as **Reimbursed externally** expenses, not the full-opacity gray of a normal income row.
+
 ## 2026-08-20 — Split cards stack each member’s share under Total
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
