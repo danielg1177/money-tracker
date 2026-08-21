@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-20 — Smaller family-solo gap with a centered dot
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: The separator before other members’ non-split rows is tighter and shows a small centered gray dot instead of a large empty gap.
+
 ## 2026-08-20 — Thicker type bars, diagonal split colors, family-solo gap
 
 - Files touched: `resources/js/support/transactionTypeBar.js`, `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`

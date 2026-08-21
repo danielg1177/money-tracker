@@ -338,15 +338,20 @@
 
         <!-- Day's Transactions -->
         <div class="flex flex-col gap-2 px-4 py-1.5">
+          <template v-for="transaction in dayGroup.transactions" :key="transaction.id">
           <div
-            v-for="transaction in dayGroup.transactions"
-            :key="transaction.id"
+            v-if="isFirstUnassociatedFamilySoloOfDay(dayGroup, transaction)"
+            class="flex items-center justify-center py-0.5"
+            aria-hidden="true"
+          >
+            <span class="block h-1.5 w-1.5 rounded-full bg-gray-500"></span>
+          </div>
+          <div
             :class="[
               'overflow-hidden rounded-lg sm:rounded-xl transition-colors',
               confirmDelete[transaction.id]
                 ? 'bg-red-900/20'
                 : transactionRowBackgroundClass(transaction),
-              isFirstUnassociatedFamilySoloOfDay(dayGroup, transaction) ? 'mt-8' : '',
               transaction.is_repaid ? 'opacity-40' : '',
               isSelectedMonthLocked ? 'opacity-75' : '',
               !confirmDelete[transaction.id] && !isSelectedMonthLocked && isTransactionEditLocked(transaction) ? 'cursor-default' : '',
@@ -554,6 +559,7 @@
               :style="transactionTypeBarStyle(transaction, { confirmDelete: Boolean(confirmDelete[transaction.id]) })"
             ></div>
           </div>
+          </template>
         </div>
       </div>
     </div>
