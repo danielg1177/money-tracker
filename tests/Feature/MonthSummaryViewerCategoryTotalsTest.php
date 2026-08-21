@@ -7,7 +7,9 @@ use App\Models\Debt;
 use App\Models\Family;
 use App\Models\Fund;
 use App\Models\FundRule;
+use App\Models\MonthHardClose;
 use App\Models\Transaction;
+use App\Models\TransactionRepaymentLink;
 use App\Models\TransactionSplit;
 use App\Models\User;
 use Carbon\Carbon;
@@ -750,5 +752,197 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
         $this->assertSame($bob->id, $balances[0]['user_id']);
         $this->assertSame('they_owe_you', $balances[0]['direction']);
         $this->assertEqualsWithDelta(70.0, (float) $balances[0]['net_amount'], 0.02);
+    }
+
+    public function test_month_summary_category_totals_exclude_external_reimbursements_after_hard_close(): void
+    {
+        $family = Family::factory()->create();
+        $alice = User::factory()->create([
+            'family_id' => $family->id,
+            'view_family_expenses' => true,
+        ]);
+
+        $incomeCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Reimbursements',
+            'is_income' => true,
+            'is_expense' => false,
+        ]);
+        $expenseCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Travel',
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $reimbursedExpense = Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => $expenseCat->id,
+            'type' => 'expense',
+            'amount' => 80,
+            'description' => 'Client dinner',
+            'transaction_date' => '2026-06-10',
+            'is_split' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => $expenseCat->id,
+            'type' => 'expense',
+            'amount' => 20,
+            'description' => 'Personal lunch',
+            'transaction_date' => '2026-06-12',
+            'is_split' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => $incomeCat->id,
+            'type' => 'income',
+            'amount' => 500,
+            'description' => 'Paycheck',
+            'transaction_date' => '2026-06-01',
+            'is_split' => false,
+        ]);
+
+        $this->actingAs($alice)->postJson('/transactions', [
+            'type' => 'income',
+            'amount' => 80,
+            'category_id' => $incomeCat->id,
+            'transaction_date' => '2026-06-15',
+            'is_split' => false,
+            'is_external_repayment_mode' => true,
+            'repayment_links' => [
+                ['transaction_id' => $reimbursedExpense->id, 'amount' => 80],
+            ],
+        ])->assertCreated();
+
+        MonthHardClose::query()->create([
+            'family_id' => $family->id,
+            'year' => 2026,
+            'month' => 6,
+            'closed_by_user_id' => $alice->id,
+            'closed_at' => now(),
+        ]);
+
+        $summary = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=6')->assertOk();
+
+        $this->assertEqualsWithDelta(
+            20.0,
+            (float) collect($summary->json('category_totals'))->where('type', 'expense')->sum('total'),
+            0.001,
+        );
+        $this->assertEqualsWithDelta(
+            500.0,
+            (float) collect($summary->json('category_totals'))->where('type', 'income')->sum('total'),
+            0.001,
+        );
+        $this->assertEqualsWithDelta(
+            20.0,
+            (float) collect($summary->json('family_category_totals'))->where('type', 'expense')->sum('total'),
+            0.001,
+        );
+        $this->assertEqualsWithDelta(
+            500.0,
+            (float) collect($summary->json('family_category_totals'))->where('type', 'income')->sum('total'),
+            0.001,
+        );
+
+        $travelRows = collect($summary->json('category_transactions.expense_'.$expenseCat->id));
+        $this->assertCount(1, $travelRows);
+        $this->assertSame('Personal lunch', $travelRows->first()['description']);
+
+        $familyTravelRows = collect($summary->json('family_category_transactions.expense_'.$expenseCat->id));
+        $this->assertCount(1, $familyTravelRows);
+        $this->assertSame('Personal lunch', $familyTravelRows->first()['description']);
+    }
+
+    public function test_month_summary_category_totals_exclude_external_reimbursements_when_only_links_exist(): void
+    {
+        $family = Family::factory()->create();
+        $alice = User::factory()->create([
+            'family_id' => $family->id,
+            'view_family_expenses' => true,
+        ]);
+
+        $incomeCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Reimbursements',
+            'is_income' => true,
+            'is_expense' => false,
+        ]);
+        $expenseCat = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Travel',
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $expense = Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => $expenseCat->id,
+            'type' => 'expense',
+            'amount' => 80,
+            'description' => 'Client dinner',
+            'transaction_date' => '2026-05-10',
+            'is_split' => false,
+            'is_repaid' => false,
+        ]);
+
+        $income = Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => $incomeCat->id,
+            'type' => 'income',
+            'amount' => 80,
+            'description' => 'Client paid me back',
+            'transaction_date' => '2026-05-15',
+            'is_split' => false,
+            'is_repayment' => false,
+        ]);
+
+        TransactionRepaymentLink::query()->create([
+            'repayment_transaction_id' => $income->id,
+            'repaid_transaction_id' => $expense->id,
+            'mirror_transaction_id' => null,
+            'repaid_user_id' => $alice->id,
+            'amount' => 80,
+            'is_external_repayment' => true,
+        ]);
+
+        MonthHardClose::query()->create([
+            'family_id' => $family->id,
+            'year' => 2026,
+            'month' => 5,
+            'closed_by_user_id' => $alice->id,
+            'closed_at' => now(),
+        ]);
+
+        $summary = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=5')->assertOk();
+
+        $this->assertEqualsWithDelta(
+            0.0,
+            (float) collect($summary->json('category_totals'))->where('type', 'expense')->sum('total'),
+            0.001,
+        );
+        $this->assertEqualsWithDelta(
+            0.0,
+            (float) collect($summary->json('category_totals'))->where('type', 'income')->sum('total'),
+            0.001,
+        );
+        $this->assertEqualsWithDelta(
+            0.0,
+            (float) collect($summary->json('family_category_totals'))->where('type', 'expense')->sum('total'),
+            0.001,
+        );
+        $this->assertEqualsWithDelta(
+            0.0,
+            (float) collect($summary->json('family_category_totals'))->where('type', 'income')->sum('total'),
+            0.001,
+        );
     }
 }

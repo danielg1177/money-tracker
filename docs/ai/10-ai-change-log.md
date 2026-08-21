@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-08-21 — Keep reimbursement card fills on locked months
+
+- Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: On hard-closed or viewer-soft-closed months, regular transaction cards still dim (`opacity-75`). Reimbursement rows keep their usual fills: faded gray for repaid expenses and external reimbursement income, cyan for family repayment income, amber for repayment mirrors.
+
+## 2026-08-21 — View month category totals exclude reimbursement links, not only flags
+
+- Files touched: `app/Models/Transaction.php`, `app/Http/Controllers/MonthSummaryController.php`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Month Summary You/Family **category totals and drill-down lists** skip reimbursement income and reimbursed expenses when **either** `is_repayment`/`is_repaid` is set **or** a `transaction_repayment_links` row exists. That covers older hard-closed months (June 2026 and earlier) where a link was saved without the flags. Hard close itself does not freeze these totals; they are computed live. Debt-payment category merge also skips reimbursed rows. Unlinked plain income+expense pairs still count (they were never marked as external reimbursements).
+
 ## 2026-08-21 — Family totals omit inter-member debt payments
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/FamilyExpenseViewTest.php`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -142,5 +143,31 @@ class Transaction extends Model
     public function fundMovements(): HasMany
     {
         return $this->hasMany(FundMovement::class);
+    }
+
+    /**
+     * Exclude reimbursement income (family or external). Uses the `is_repayment` flag and
+     * repayment links so older rows still drop out if only the link was saved.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeWhereNotRepaymentIncome(Builder $query): Builder
+    {
+        return $query->where('is_repayment', false)
+            ->whereDoesntHave('repaymentLinks');
+    }
+
+    /**
+     * Exclude expenses reimbursed via repayment linking. Uses `is_repaid` and the
+     * repaid-by link so older rows still drop out if only the link was saved.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeWhereNotRepaidExpense(Builder $query): Builder
+    {
+        return $query->where('is_repaid', false)
+            ->whereDoesntHave('repaidByLink');
     }
 }

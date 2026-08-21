@@ -344,7 +344,7 @@
                 ? 'bg-red-900/20'
                 : transactionRowBackgroundClass(transaction),
               transaction.is_repaid || isExternalReimbursementIncome(transaction) ? 'opacity-40' : '',
-              isSelectedMonthLocked ? 'opacity-75' : '',
+              isSelectedMonthLocked && !usesReimbursementCardStyle(transaction) ? 'opacity-75' : '',
               !confirmDelete[transaction.id] && !isSelectedMonthLocked && isTransactionEditLocked(transaction) ? 'cursor-default' : '',
               !confirmDelete[transaction.id] && !isSelectedMonthLocked && !isTransactionEditLocked(transaction) ? 'cursor-pointer' : '',
             ]"
@@ -1232,6 +1232,14 @@ function applyCustomRange() {
 
 function isSplitListRow(transaction) {
   return Boolean(transaction?.splits?.length);
+}
+
+function usesReimbursementCardStyle(transaction) {
+  return Boolean(
+    transaction?.is_repaid
+    || transaction?.is_repayment
+    || transaction?.is_repayment_mirror
+  );
 }
 
 function transactionRowBackgroundClass(transaction) {
