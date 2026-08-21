@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\Debt;
 use App\Models\Family;
 use App\Models\Transaction;
 use App\Models\User;
@@ -67,7 +68,8 @@ class FamilyExpenseViewTest extends TestCase
         $this->actingAs($user)->getJson('/month-summary?year=2026&month=7')
             ->assertOk()
             ->assertJsonMissingPath('family_category_totals')
-            ->assertJsonMissingPath('family_category_transactions');
+            ->assertJsonMissingPath('family_category_transactions')
+            ->assertJsonMissingPath('debt_repayments.family_debt_paid');
     }
 
     public function test_month_summary_family_category_totals_count_splits_once_and_keep_viewer_totals(): void
@@ -160,5 +162,67 @@ class FamilyExpenseViewTest extends TestCase
         $this->assertNotNull($splitRow);
         $this->assertEqualsWithDelta(100.0, (float) $splitRow['amount'], 0.001);
         $this->assertSame($alice->id, $splitRow['user_id']);
+    }
+
+    public function test_month_summary_family_debt_paid_shows_viewer_and_household_contributions(): void
+    {
+        $family = Family::factory()->create();
+        $alice = User::factory()->create([
+            'family_id' => $family->id,
+            'view_family_expenses' => true,
+        ]);
+        $bob = User::factory()->create([
+            'family_id' => $family->id,
+            'view_family_expenses' => true,
+        ]);
+
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $alice->id,
+            'creditor_id' => null,
+            'creditor_name' => 'Shared Car Loan',
+            'is_family_debt' => true,
+            'amount' => 500,
+            'balance' => 500,
+            'is_pending_closeout' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => null,
+            'type' => 'expense',
+            'amount' => 40,
+            'description' => 'Alice family debt pay',
+            'transaction_date' => '2026-07-08',
+            'is_split' => false,
+            'is_debt_payment' => true,
+            'debt_id' => $debt->id,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $bob->id,
+            'category_id' => null,
+            'type' => 'expense',
+            'amount' => 75,
+            'description' => 'Bob family debt pay',
+            'transaction_date' => '2026-07-12',
+            'is_split' => false,
+            'is_debt_payment' => true,
+            'debt_id' => $debt->id,
+        ]);
+
+        $summary = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=7')->assertOk();
+
+        $familyDebtPaid = $summary->json('debt_repayments.family_debt_paid');
+        $this->assertCount(1, $familyDebtPaid);
+        $this->assertSame($debt->id, $familyDebtPaid[0]['debt_id']);
+        $this->assertSame('Shared Car Loan', $familyDebtPaid[0]['counterparty_label']);
+        $this->assertEqualsWithDelta(40.0, (float) $familyDebtPaid[0]['you_amount'], 0.001);
+        $this->assertEqualsWithDelta(115.0, (float) $familyDebtPaid[0]['family_amount'], 0.001);
+
+        $paid = collect($summary->json('debt_repayments.paid'));
+        $this->assertTrue($paid->contains(fn (array $row) => (int) $row['debt_id'] === $debt->id && $row['is_family_debt'] === true));
     }
 }

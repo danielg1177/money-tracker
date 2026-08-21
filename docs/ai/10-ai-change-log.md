@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-20 — Family view orange rows, stacked date totals, and family-debt repayments
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `app/Http/Controllers/MonthSummaryController.php`, `tests/Feature/FamilyExpenseViewTest.php`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: With **View all family expenses** on, other members’ Transactions (and category-modal) rows use orange tint plus a **Family member** pill. Date headers show stacked You/Family income then expense totals. View month category rows put **You** large/colored with **Family** smaller underneath. Family-shared debt repayments show You vs Family contribution totals (`debt_repayments.family_debt_paid`).
+
 ## 2026-08-20 — Settings page, password change, and family expense view
 
 - Files touched: `database/migrations/2026_08_20_235002_add_view_family_expenses_to_users_table.php`, `app/Models/User.php`, `database/factories/UserFactory.php`, `app/Http/Controllers/UserSettingsController.php`, `app/Http/Requests/UpdateUserSettingsRequest.php`, `app/Http/Controllers/TransactionController.php`, `app/Http/Controllers/MonthSummaryController.php`, `routes/web.php`, `resources/js/pages/Settings.vue`, `resources/js/pages/Transactions.vue`, `resources/js/pages/MonthSummary.vue`, `resources/js/router/index.js`, `resources/js/components/AppNav.vue`, `tests/Feature/UserSettingsTest.php`, `tests/Feature/FamilyExpenseViewTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`

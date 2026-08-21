@@ -73,6 +73,7 @@ class MonthSummaryController extends Controller
         if ($user->view_family_expenses) {
             $payload['family_category_totals'] = $this->getFamilyCategoryTotals($user, $year, $month);
             $payload['family_category_transactions'] = $this->getFamilyCategoryTransactions($user, $year, $month);
+            $payload['debt_repayments']['family_debt_paid'] = $this->getFamilyDebtPaidSummary($user, $year, $month);
         }
 
         return response()->json($payload);
@@ -91,6 +92,7 @@ class MonthSummaryController extends Controller
      *         description: string|null,
      *         counterparty_label: string|null,
      *         debt_id: int,
+     *         is_family_debt: bool,
      *     }>,
      *     received: array<int, array<string, mixed>>
      * }
@@ -201,6 +203,7 @@ class MonthSummaryController extends Controller
             'description' => $tx->description,
             'counterparty_label' => $counterpartyLabel ? (string) $counterpartyLabel : null,
             'debt_id' => (int) $tx->debt_id,
+            'is_family_debt' => (bool) ($debt?->is_family_debt),
             'role' => $tx->type === 'expense' ? 'paid' : 'received',
         ];
     }
@@ -221,6 +224,57 @@ class MonthSummaryController extends Controller
         }
 
         return 0.0;
+    }
+
+    /**
+     * Household payments toward family-shared debts (`is_family_debt`) this month.
+     * Split payments count once at the full transaction amount for the family total.
+     *
+     * @return array<int, array{debt_id: int, counterparty_label: string|null, you_amount: float, family_amount: float}>
+     */
+    private function getFamilyDebtPaidSummary(User $viewer, int $year, int $month): array
+    {
+        $payments = Transaction::query()
+            ->where('family_id', $viewer->family_id)
+            ->where('type', 'expense')
+            ->where('is_debt_payment', true)
+            ->whereNotNull('debt_id')
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->whereHas('debt', fn ($q) => $q->where('is_family_debt', true))
+            ->with(['debt.creditor', 'debt.debtor', 'debt.fund', 'splits'])
+            ->orderBy('transaction_date')
+            ->orderBy('id')
+            ->get();
+
+        $grouped = [];
+
+        foreach ($payments as $tx) {
+            $debtId = (int) $tx->debt_id;
+            $debt = $tx->debt;
+            $grouped[$debtId] ??= [
+                'debt_id' => $debtId,
+                'counterparty_label' => $debt
+                    ? (string) ($debt->creditor_name ?? $debt->creditor?->name ?? $debt->fund?->name ?? $debt->description ?? '')
+                    : null,
+                'you_amount' => 0.0,
+                'family_amount' => 0.0,
+            ];
+
+            $grouped[$debtId]['family_amount'] += (float) $tx->amount;
+            $grouped[$debtId]['you_amount'] += $this->viewerDebtExpenseAmount($tx, $viewer);
+        }
+
+        return collect($grouped)
+            ->map(fn (array $row) => [
+                'debt_id' => $row['debt_id'],
+                'counterparty_label' => $row['counterparty_label'] !== '' ? $row['counterparty_label'] : null,
+                'you_amount' => round($row['you_amount'], 2),
+                'family_amount' => round($row['family_amount'], 2),
+            ])
+            ->filter(fn (array $row) => abs((float) $row['family_amount']) >= 0.005)
+            ->values()
+            ->all();
     }
 
     /**

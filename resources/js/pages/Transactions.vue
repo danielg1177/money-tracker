@@ -260,14 +260,34 @@
           <span class="text-[10px] sm:text-sm font-semibold text-gray-400">
             {{ formatDate(dayGroup.date) }}
           </span>
-          <div class="flex items-center gap-4">
-            <span v-if="dayGroup.totalIncome > 0" class="text-[10px] sm:text-xs font-medium text-green-400">
-              +{{ formatCurrency(dayGroup.totalIncome) }}
-            </span>
-            <span v-if="dayGroup.totalExpenses > 0" class="text-[10px] sm:text-xs font-medium text-red-400">
-              −{{ formatCurrency(dayGroup.totalExpenses) }}
-            </span>
-          </div>
+            <div class="flex flex-col items-end gap-0.5 text-right leading-tight">
+              <template v-if="isFamilyExpenseView">
+                <template v-if="dayGroup.youTotalIncome > 0.005 || dayGroup.familyTotalIncome > 0.005">
+                  <span class="text-[10px] sm:text-xs font-medium text-green-400">
+                    You +{{ formatCurrency(dayGroup.youTotalIncome) }}
+                  </span>
+                  <span class="text-[10px] sm:text-xs font-medium text-green-400/80">
+                    Family +{{ formatCurrency(dayGroup.familyTotalIncome) }}
+                  </span>
+                </template>
+                <template v-if="dayGroup.youTotalExpenses > 0.005 || dayGroup.familyTotalExpenses > 0.005">
+                  <span class="text-[10px] sm:text-xs font-medium text-red-400">
+                    You −{{ formatCurrency(dayGroup.youTotalExpenses) }}
+                  </span>
+                  <span class="text-[10px] sm:text-xs font-medium text-red-400/80">
+                    Family −{{ formatCurrency(dayGroup.familyTotalExpenses) }}
+                  </span>
+                </template>
+              </template>
+              <template v-else>
+                <span v-if="dayGroup.youTotalIncome > 0.005" class="text-[10px] sm:text-xs font-medium text-green-400">
+                  +{{ formatCurrency(dayGroup.youTotalIncome) }}
+                </span>
+                <span v-if="dayGroup.youTotalExpenses > 0.005" class="text-[10px] sm:text-xs font-medium text-red-400">
+                  −{{ formatCurrency(dayGroup.youTotalExpenses) }}
+                </span>
+              </template>
+            </div>
         </div>
 
         <!-- Day's Transactions -->
@@ -285,8 +305,8 @@
                     ? 'border-cyan-700/30 bg-cyan-950/10'
                     : transaction.is_repayment_mirror
                       ? 'border-amber-700/30 bg-amber-950/10'
-                      : isFamilyExpenseView && isTransactionOwnedByOther(transaction) && !isSplitListRow(transaction)
-                      ? 'border-teal-700/40 bg-teal-950/20'
+                      : isFamilyExpenseView && isTransactionOwnedByOther(transaction)
+                      ? 'border-orange-600/40 bg-orange-950/20'
                       : isTransactionOwnedByOther(transaction)
                         ? 'border-violet-700/35 bg-violet-950/25'
                         : 'border-gray-700 bg-gray-800',
@@ -1228,23 +1248,27 @@ const transactionsByDay = computed(() => {
   transactions.value.forEach(tx => {
     const date = tx.transaction_date;
     if (!grouped[date]) {
-      grouped[date] = {
-        date,
-        transactions: [],
-        totalIncome: 0,
-        totalExpenses: 0,
-      };
-    }
-    grouped[date].transactions.push(tx);
-    if (tx.type === 'income') {
-      if (!tx.is_debt_payment && !tx.is_repayment) {
-        grouped[date].totalIncome += Number(tx.amount) || 0;
+        grouped[date] = {
+          date,
+          transactions: [],
+          youTotalIncome: 0,
+          youTotalExpenses: 0,
+          familyTotalIncome: 0,
+          familyTotalExpenses: 0,
+        };
       }
-    } else if (!tx.is_repaid) {
-      grouped[date].totalExpenses += isFamilyExpenseView.value
-        ? (Number(tx.amount) || 0)
-        : expenseAmountForViewerTotals(tx);
-    }
+      grouped[date].transactions.push(tx);
+      if (tx.type === 'income') {
+        if (!tx.is_debt_payment && !tx.is_repayment) {
+          grouped[date].familyTotalIncome += Number(tx.amount) || 0;
+          if (!isTransactionOwnedByOther(tx)) {
+            grouped[date].youTotalIncome += Number(tx.amount) || 0;
+          }
+        }
+      } else if (!tx.is_repaid) {
+        grouped[date].familyTotalExpenses += Number(tx.amount) || 0;
+        grouped[date].youTotalExpenses += expenseAmountForViewerTotals(tx);
+      }
   });
 
   return Object.values(grouped)
@@ -1421,6 +1445,15 @@ function transactionKindPills(tx) {
 
   /** @type {{ key: string, label: string, classes: string, title?: string, onClick?: boolean }[]} */
   const pills = [];
+
+  if (isFamilyExpenseView.value && isTransactionOwnedByOther(tx)) {
+    pills.push({
+      key: 'family-member',
+      label: 'Family member',
+      classes: 'bg-orange-900/55 text-orange-200',
+      title: tx.user?.name ? `Recorded by ${tx.user.name}` : 'Recorded by a family member',
+    });
+  }
 
   if (tx.type === 'income' && tx.is_borrow) {
     pills.push({

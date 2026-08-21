@@ -108,6 +108,15 @@ const formatCurrency = (amount) => {
   }).format(amount);
 };
 
+function isCategoryRowOwnedByOther(row) {
+  const uid = currentUser.value?.id;
+  if (uid == null || row?.user_id == null) {
+    return false;
+  }
+
+  return Number(row.user_id) !== Number(uid);
+}
+
 // Lock icon states
 const isHardClosed = computed(() => summary.value?.is_hard_closed === true);
 const allSoftClosed = computed(() => summary.value?.close_status?.all_soft_closed === true);
@@ -411,7 +420,24 @@ const fundMovementGroups = computed(() => {
 
 const debtRepaymentsReceived = computed(() => summary.value?.debt_repayments?.received ?? []);
 
-const debtRepaymentsPaid = computed(() => summary.value?.debt_repayments?.paid ?? []);
+const debtRepaymentsPaid = computed(() => {
+  const paid = summary.value?.debt_repayments?.paid ?? [];
+  if (!isFamilyExpenseView.value) {
+    return paid;
+  }
+
+  return paid.filter((row) => !row.is_family_debt);
+});
+
+const familyDebtPaid = computed(() =>
+  isFamilyExpenseView.value ? (summary.value?.debt_repayments?.family_debt_paid ?? []) : [],
+);
+
+const hasDebtRepayments = computed(() =>
+  debtRepaymentsReceived.value.length > 0
+  || debtRepaymentsPaid.value.length > 0
+  || familyDebtPaid.value.length > 0,
+);
 
 const titleSavings = computed(() => summary.value?.title_savings ?? []);
 
@@ -746,8 +772,8 @@ function movementTypeLabel(type) {
               <span class="text-sm text-gray-300 truncate">{{ cat.category_name }}</span>
             </div>
             <span v-if="isFamilyExpenseView" class="text-right shrink-0">
-              <span class="block text-[10px] text-gray-500 tabular-nums">You −{{ formatCurrency(cat.you_total) }}</span>
-              <span class="block text-sm font-medium text-red-400 tabular-nums">Family −{{ formatCurrency(cat.family_total) }}</span>
+              <span class="block text-sm font-medium text-red-400 tabular-nums">You −{{ formatCurrency(cat.you_total) }}</span>
+              <span class="block text-[10px] text-gray-500 tabular-nums">Family −{{ formatCurrency(cat.family_total) }}</span>
             </span>
             <span v-else class="text-sm font-medium shrink-0 text-red-400">
               −{{ formatCurrency(cat.total) }}
@@ -768,8 +794,8 @@ function movementTypeLabel(type) {
           >
             <span class="text-sm font-semibold text-gray-200">Total expenses</span>
             <span v-if="isFamilyExpenseView" class="text-right shrink-0">
-              <span class="block text-[10px] text-gray-400 tabular-nums">You −{{ formatCurrency(expenseCategoriesYouTotal) }}</span>
-              <span class="block text-sm font-semibold text-red-400 tabular-nums">Family −{{ formatCurrency(expenseCategoriesFamilyTotal) }}</span>
+              <span class="block text-sm font-semibold text-red-400 tabular-nums">You −{{ formatCurrency(expenseCategoriesYouTotal) }}</span>
+              <span class="block text-[10px] text-gray-400 tabular-nums">Family −{{ formatCurrency(expenseCategoriesFamilyTotal) }}</span>
             </span>
             <span v-else class="text-sm font-semibold shrink-0 text-red-400 tabular-nums">
               −{{ formatCurrency(expenseCategoriesTotal) }}
@@ -820,8 +846,8 @@ function movementTypeLabel(type) {
               <span class="text-sm text-gray-300 truncate">{{ cat.category_name }}</span>
             </div>
             <span v-if="isFamilyExpenseView" class="text-right shrink-0">
-              <span class="block text-[10px] text-gray-500 tabular-nums">You +{{ formatCurrency(cat.you_total) }}</span>
-              <span class="block text-sm font-medium text-green-400 tabular-nums">Family +{{ formatCurrency(cat.family_total) }}</span>
+              <span class="block text-sm font-medium text-green-400 tabular-nums">You +{{ formatCurrency(cat.you_total) }}</span>
+              <span class="block text-[10px] text-gray-500 tabular-nums">Family +{{ formatCurrency(cat.family_total) }}</span>
             </span>
             <span v-else class="text-sm font-medium shrink-0 text-green-400">
               +{{ formatCurrency(cat.total) }}
@@ -842,8 +868,8 @@ function movementTypeLabel(type) {
           >
             <span class="text-sm font-semibold text-gray-200">Total income</span>
             <span v-if="isFamilyExpenseView" class="text-right shrink-0">
-              <span class="block text-[10px] text-gray-400 tabular-nums">You +{{ formatCurrency(incomeCategoriesYouTotal) }}</span>
-              <span class="block text-sm font-semibold text-green-400 tabular-nums">Family +{{ formatCurrency(incomeCategoriesFamilyTotal) }}</span>
+              <span class="block text-sm font-semibold text-green-400 tabular-nums">You +{{ formatCurrency(incomeCategoriesYouTotal) }}</span>
+              <span class="block text-[10px] text-gray-400 tabular-nums">Family +{{ formatCurrency(incomeCategoriesFamilyTotal) }}</span>
             </span>
             <span v-else class="text-sm font-semibold shrink-0 text-green-400 tabular-nums">
               +{{ formatCurrency(incomeCategoriesTotal) }}
@@ -935,7 +961,7 @@ function movementTypeLabel(type) {
         </p>
 
         <div
-          v-if="debtRepaymentsReceived.length === 0 && debtRepaymentsPaid.length === 0"
+          v-if="!hasDebtRepayments"
           class="text-sm text-gray-500"
         >
           No debt repayments this month
@@ -958,6 +984,27 @@ function movementTypeLabel(type) {
                   <p v-if="row.description" class="text-xs text-gray-400 truncate mt-0.5">{{ row.description }}</p>
                 </div>
                 <span class="text-sm font-semibold text-sky-400 shrink-0 tabular-nums">+{{ formatCurrency(row.amount) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="familyDebtPaid.length">
+            <h3 class="text-xs font-medium text-amber-300/90 mb-2">Paid (toward family debts)</h3>
+            <div class="space-y-2">
+              <div
+                v-for="row in familyDebtPaid"
+                :key="'dr-fd-' + row.debt_id"
+                class="flex items-center justify-between gap-2 rounded-lg border border-amber-900/45 bg-gray-800 px-3 py-2"
+              >
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm text-gray-200 truncate">
+                    Toward {{ row.counterparty_label || 'creditor' }}
+                  </p>
+                </div>
+                <span class="text-right shrink-0">
+                  <span class="block text-sm font-semibold text-amber-300 tabular-nums">You −{{ formatCurrency(row.you_amount) }}</span>
+                  <span class="block text-[10px] text-gray-400 tabular-nums">Family −{{ formatCurrency(row.family_amount) }}</span>
+                </span>
               </div>
             </div>
           </div>
@@ -1328,11 +1375,17 @@ function movementTypeLabel(type) {
                 v-else
                 v-for="row in selectedCategoryTransactions"
                 :key="`cat-row-${row.id}-${row.transaction_date}-${row.amount}`"
-                class="flex items-center justify-between gap-3 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5"
+                class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5"
+                :class="isFamilyExpenseView && isCategoryRowOwnedByOther(row)
+                  ? 'border-orange-600/40 bg-orange-950/20'
+                  : 'border-gray-700 bg-gray-800'"
               >
                 <div class="min-w-0">
                   <p class="text-xs text-gray-500">{{ row.transaction_date }}</p>
-                  <p v-if="row.user_name" class="text-[11px] text-gray-400 truncate">{{ row.user_name }}</p>
+                  <p v-if="isFamilyExpenseView && isCategoryRowOwnedByOther(row)" class="text-[11px] text-orange-300 truncate">
+                    Family member{{ row.user_name ? ` · ${row.user_name}` : '' }}
+                  </p>
+                  <p v-else-if="row.user_name" class="text-[11px] text-gray-400 truncate">{{ row.user_name }}</p>
                   <p class="text-sm text-gray-200 truncate">
                     {{ row.description || selectedCategory?.category_name || 'No description' }}
                   </p>
