@@ -423,7 +423,7 @@
                     Needs Review — repaid{{ transaction.mirror_repayment_link?.repayment_transaction?.user?.name ? ' on behalf of ' + transaction.mirror_repayment_link.repayment_transaction.user.name : '' }}
                   </span>
                   <button
-                    v-if="transaction.is_debt_payment_benefit && !isFamilyExpenseView"
+                    v-if="transaction.is_debt_payment_benefit && !isTransactionOwnedByOther(transaction)"
                     type="button"
                     class="inline-flex shrink-0 items-center rounded-md border border-emerald-700/30 bg-emerald-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-300 cursor-pointer hover:bg-emerald-800/50"
                     @click.stop="openBenefitFormFromBenefit(transaction)"
@@ -437,7 +437,7 @@
                     From debt repayment
                   </span>
                   <button
-                    v-else-if="transaction.is_debt_payment && transaction.type === 'income' && transaction.debt_payment_benefit_expense && !isFamilyExpenseView"
+                    v-else-if="transaction.is_debt_payment && transaction.type === 'income' && transaction.debt_payment_benefit_expense && !isTransactionOwnedByOther(transaction)"
                     type="button"
                     class="inline-flex shrink-0 items-center rounded-md border border-emerald-700/30 bg-emerald-900/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-300 cursor-pointer hover:bg-emerald-800/50"
                     @click.stop="openBenefitForm(transaction)"
@@ -539,7 +539,7 @@
                   </svg>
 
                   <!-- Action Buttons -->
-                  <div v-if="!isFamilyExpenseView && !confirmDelete[transaction.id]" class="flex gap-1">
+                  <div v-if="!isFamilyViewOtherMemberRow(transaction) && !confirmDelete[transaction.id]" class="flex gap-1">
                     <button
                       @click.stop="confirmDelete[transaction.id] = true"
                       :disabled="isSelectedMonthLocked || transaction.is_closeout_initiated || transaction.is_debt_payment_benefit"
@@ -553,7 +553,7 @@
                   </div>
 
                   <!-- Delete Confirmation -->
-                  <div v-else-if="!isFamilyExpenseView" class="flex gap-1">
+                  <div v-else-if="!isFamilyViewOtherMemberRow(transaction)" class="flex gap-1">
                     <button
                       @click.stop="handleDeleteConfirm(transaction.id)"
                       class="px-2 py-0.5 text-[10px] sm:text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
@@ -748,7 +748,7 @@
                 </span>
               </div>
               <div
-                v-if="pillModal.transaction.type === 'income' && pillModal.transaction.is_debt_payment"
+                v-if="pillModal.transaction.type === 'income' && pillModal.transaction.is_debt_payment && !isTransactionOwnedByOther(pillModal.transaction)"
                 class="rounded-lg border border-emerald-700/30 bg-emerald-950/20 p-3 space-y-2"
               >
                 <template v-if="pillModal.transaction.debt_payment_benefit_expense">
@@ -1581,6 +1581,10 @@ function isTransactionOwnedByOther(transaction) {
   return Number(transaction.user_id) !== Number(uid);
 }
 
+function isFamilyViewOtherMemberRow(transaction) {
+  return isFamilyExpenseView.value && isTransactionOwnedByOther(transaction);
+}
+
 /**
  * Small attribute pills on each row (debt repayment, advance, non-necessity, borrow, closeout).
  * Split expenses list each member’s share beside the amount with Total underneath, not a title-row pill.
@@ -1681,8 +1685,7 @@ function closePillModal() {
 
 function canRecordDebtPaymentBenefit(transaction) {
   return Boolean(
-    !isFamilyExpenseView.value
-    && transaction?.is_debt_payment
+    transaction?.is_debt_payment
     && transaction?.type === 'income'
     && !transaction?.debt_payment_benefit_expense
     && !isSelectedMonthLocked.value
@@ -1692,7 +1695,7 @@ function canRecordDebtPaymentBenefit(transaction) {
 }
 
 function openBenefitForm(incomeTransaction) {
-  if (!incomeTransaction || isSelectedMonthLocked.value) {
+  if (!incomeTransaction || isSelectedMonthLocked.value || isTransactionOwnedByOther(incomeTransaction)) {
     return;
   }
   benefitFormIncome.value = incomeTransaction;
@@ -1841,7 +1844,7 @@ function isSystemCloseoutEntry(transaction) {
 }
 
 function isTransactionEditLocked(transaction) {
-  if (isFamilyExpenseView.value) {
+  if (isFamilyViewOtherMemberRow(transaction)) {
     return true;
   }
 
@@ -1917,7 +1920,8 @@ async function reloadCurrentFilterData() {
 }
 
 async function handleDeleteConfirm(transactionId) {
-  if (isSelectedMonthLocked.value) {
+  const tx = getTransactionById(transactionId);
+  if (isSelectedMonthLocked.value || isFamilyViewOtherMemberRow(tx)) {
     confirmDelete.value[transactionId] = false;
     return;
   }

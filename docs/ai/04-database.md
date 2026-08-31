@@ -80,7 +80,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `bank_balance_enabled` | boolean | default false; opt-in flag — user must enable bank balance tracking |
 | `bank_balance` | decimal(15,2) nullable | user-set anchor balance (the manually reconciled amount) |
 | `bank_balance_set_at` | date nullable | date when anchor was last set; transactions on/after this date form the running delta |
-| `view_family_expenses` | boolean | default false; when true, Transactions/Month Summary show a read-only household overlay |
+| `view_family_expenses` | boolean | default false; when true, Transactions/Month Summary show a household overlay (Transactions still lets the viewer edit/delete their own rows) |
 | `two_factor_*` | various | Fortify 2FA columns |
 | `timestamps` | | |
 

@@ -69,7 +69,7 @@
       <section v-if="user?.family_id" class="rounded-xl border border-gray-700 bg-gray-800 p-4">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-400">Family expenses</h2>
         <p class="mt-2 text-xs text-gray-500 leading-snug">
-          When this is on, Transactions and View month show everyone’s household activity as a read-only overlay. Your own totals stay visible next to the family combined figures. Split expenses you already see are not listed twice.
+          When this is on, Transactions and View month show everyone’s household activity. You can still edit and delete your own transactions; other members’ rows stay browse-only. Your own totals stay visible next to the family combined figures. Split expenses you already see are not listed twice.
         </p>
         <label class="mt-4 flex items-center justify-between gap-3 min-h-11">
           <span class="text-sm text-gray-200">View all family expenses</span>

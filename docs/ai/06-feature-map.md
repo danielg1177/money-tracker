@@ -18,7 +18,7 @@ This document maps each user-visible feature to the backend and frontend files t
 
 ## 1b. Settings
 
-**What it does:** Every authenticated user can view their email, change their password, and toggle a persisted **View all family expenses** preference. Family view is a read-only overlay on Transactions and Month Summary (Dashboard stays personal).
+**What it does:** Every authenticated user can view their email, change their password, and toggle a persisted **View all family expenses** preference. Family view is a household overlay on Transactions and Month Summary (Dashboard stays personal). On Transactions the viewer can still edit/delete their own rows; other members’ rows stay browse-only.
 
 | Layer | Files |
 |---|---|
@@ -44,7 +44,7 @@ This document maps each user-visible feature to the backend and frontend files t
 
 ## 3. Transactions
 
-**What it does:** Record income and expense transactions for a family. Support date filtering, category assignment, split between members, edit, and delete. The index list is **scoped to the signed-in user** by default: their own transactions plus any family transaction where they appear in `transaction_splits` (shared splits created by someone else). When **View all family expenses** is on, the Transactions page requests `?view=family` (read-only overlay). **Dashboard still uses the default viewer-scoped list.** **All transactions are included**, including debt payment rows (`is_debt_payment=true`), except the mirrored **expense** leg for a **creditor** who is also on that expense’s splits (same payment as their `debt_id` income row). The month picker is stored in **`useSelectedMonth`** (shared with Month Summary) and also synced to the route query as `month=YYYY-MM`. A valid query wins; a missing query restores the shared month instead of the current calendar month. Refresh/back-forward still follow the query.
+**What it does:** Record income and expense transactions for a family. Support date filtering, category assignment, split between members, edit, and delete. The index list is **scoped to the signed-in user** by default: their own transactions plus any family transaction where they appear in `transaction_splits` (shared splits created by someone else). When **View all family expenses** is on, the Transactions page requests `?view=family` (household overlay; viewer can still edit/delete their own rows; other members’ rows stay browse-only). **Dashboard still uses the default viewer-scoped list.** **All transactions are included**, including debt payment rows (`is_debt_payment=true`), except the mirrored **expense** leg for a **creditor** who is also on that expense’s splits (same payment as their `debt_id` income row). The month picker is stored in **`useSelectedMonth`** (shared with Month Summary) and also synced to the route query as `month=YYYY-MM`. A valid query wins; a missing query restores the shared month instead of the current calendar month. Refresh/back-forward still follow the query.
 
 | Layer | Files |
 |---|---|

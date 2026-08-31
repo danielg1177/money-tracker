@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-08-31 — Family view still allows editing own transactions
+
+- Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/Settings.vue`, `docs/ai/00-repo-overview.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: With **View all family expenses** on, the viewer can tap to edit and delete **their own** Transactions rows (same closeout / repaid / benefit locks as before). Other members’ rows stay browse-only. Settings copy no longer calls the overlay fully read-only. Creditor benefit-expense actions remain available on the viewer’s own debt-payment income.
+
 ## 2026-08-21 — Keep reimbursement card fills on locked months
 
 - Files touched: `resources/js/pages/Transactions.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
