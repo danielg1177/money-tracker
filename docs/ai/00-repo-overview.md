@@ -4,7 +4,7 @@
 
 **Money Tracker** is a family-oriented personal finance web application. It allows household members to:
 
-- Record income and expense transactions shared across a family group (optional **Plaid** under Bank connections: sync creates `plaid_pending_imports` and may auto-create ledger transactions when merchant rules qualify)
+- Record income and expense transactions shared across a family group (optional **Plaid** under Bank connections: sync creates `plaid_pending_imports` from **posted** Plaid transactions only and may auto-create ledger transactions when merchant rules qualify)
 - Split costs between family members (auto-generating inter-member debt records)
 - Manage personal savings "funds" with closeout-driven allocation rules and optional starting balances
 - Borrow from personal funds and track repayment
@@ -37,13 +37,13 @@ money-tracker/
 │   ├── Http/
 │   │   ├── Controllers/       # Admin, BankBalance, Category, Dashboard, Debt, Fund, MonthCloseout, MonthSummary, Plaid (+ webhook), Transaction, UserSettings + base Controller
 │   │   └── Requests/          # Form Request classes (incl. ExchangePlaidTokenRequest)
-│   ├── Models/                # 16 Eloquent models
+│   ├── Models/                # 17 Eloquent models
 │   ├── Policies/              # FundPolicy, DebtPolicy
 │   ├── Providers/             # AppServiceProvider (Gates, Plaid client singleton), FortifyServiceProvider
 │   └── Services/              # DebtService, FundService, MonthCloseoutService, PlaidCalibrationService, PlaidClient, PlaidMatchingService, PlaidTransactionSyncService, SplitCalculator, TransactionRepaymentService, TransactionService
 ├── database/
 │   ├── factories/             # 7 factories
-│   ├── migrations/            # 31+ migrations (initial set 2026-04-30; ongoing additions)
+│   ├── migrations/            # 57 migrations (initial set 2026-04-30; ongoing additions)
 │   └── seeders/               # DatabaseSeeder (creates one admin user + family, no factories)
 ├── resources/
 │   ├── css/app.css            # Tailwind v4 entry
@@ -62,7 +62,7 @@ money-tracker/
 │   ├── web.php                # All application routes (SPA views + JSON endpoints)
 │   └── console.php            # Artisan `inspire`; optional commented `Schedule` for `plaid:daily-sync` when enabled
 ├── tests/
-│   ├── Feature/               # 20+ PHPUnit feature classes (see `tests/Feature/`; includes `PlaidIntegrationTest`, `PlaidImportTest`, `PlaidMatchingServiceTest`, `PlaidCalibrationServiceTest`, `PlaidSweepMatchTest`)
+│   ├── Feature/               # 29 PHPUnit feature classes (see `tests/Feature/`; includes `PlaidIntegrationTest`, `PlaidImportTest`, `PlaidMatchingServiceTest`, `PlaidCalibrationServiceTest`, `PlaidSweepMatchTest`)
 │   └── Unit/                  # ExampleTest stub
 ├── config/                    # Standard Laravel config files + fortify.php + plaid.php
 ├── Caddyfile                  # FrankenPHP/Caddy runtime config (binds to `$PORT`, serves `/app/public`)

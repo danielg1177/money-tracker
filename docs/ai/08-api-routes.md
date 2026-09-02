@@ -74,7 +74,7 @@ These routes exist purely so Laravel doesn't 404 when the Vue router navigates d
 
 ### Plaid (bank connections)
 
-Requires `PLAID_CLIENT_ID` + `PLAID_SECRET` in the environment. Link tokens use product `transactions` and `country_codes` `US`. Sync writes `plaid_pending_imports` (and may auto-create `transactions` when merchant rules qualify); see `docs/ai/02-backend-laravel.md` (`PlaidTransactionSyncService`).
+Requires `PLAID_CLIENT_ID` + `PLAID_SECRET` in the environment. Link tokens use product `transactions` and `country_codes` `US`. Sync writes `plaid_pending_imports` for **posted** Plaid rows only (`pending: true` is skipped until the bank settles) and may auto-create `transactions` when merchant rules qualify; see `docs/ai/02-backend-laravel.md` (`PlaidTransactionSyncService`). Deduping is by exact Plaid `transaction_id`; leftover confirms of still-pending charges can still re-queue when they post (see `docs/ai/09-known-decisions.md`).
 
 | Method | Path | Controller | Notes |
 |---|---|---|---|

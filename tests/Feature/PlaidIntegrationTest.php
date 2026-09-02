@@ -485,6 +485,90 @@ class PlaidIntegrationTest extends TestCase
                 'auto_created' => 0,
             ]);
 
+        $this->assertDatabaseHas('plaid_pending_imports', [
+            'plaid_transaction_id' => 'txn-item-last-month',
+            'status' => 'pending',
+        ]);
+
         Carbon::setTestNow();
+    }
+
+    public function test_ingest_skips_plaid_rows_that_are_still_pending(): void
+    {
+        $user = $this->familyUser();
+        $item = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-skip-pending',
+            'access_token' => 'access-skip-pending',
+        ]);
+
+        $sync = app(PlaidTransactionSyncService::class);
+        $counts = $sync->ingestPlaidRowsAsPending($item, [
+            [
+                'transaction_id' => 'txn-still-pending',
+                'amount' => 11.11,
+                'date' => '2026-05-10',
+                'pending' => true,
+                'merchant_name' => 'Pending Store',
+            ],
+            [
+                'transaction_id' => 'txn-posted',
+                'amount' => 22.22,
+                'date' => '2026-05-10',
+                'pending' => false,
+                'merchant_name' => 'Posted Store',
+            ],
+        ]);
+
+        $this->assertSame(1, $counts['pending_created']);
+        $this->assertSame(0, $counts['auto_created']);
+        $this->assertDatabaseMissing('plaid_pending_imports', [
+            'plaid_transaction_id' => 'txn-still-pending',
+        ]);
+        $this->assertDatabaseHas('plaid_pending_imports', [
+            'plaid_transaction_id' => 'txn-posted',
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_modified_posted_row_is_ingested_when_pending_was_skipped(): void
+    {
+        $user = $this->familyUser();
+        $item = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-pending-then-posted',
+            'access_token' => 'access-pending-then-posted',
+        ]);
+
+        $sync = app(PlaidTransactionSyncService::class);
+
+        $sync->processSyncedTransactions($item, [
+            [
+                'transaction_id' => 'txn-same-id',
+                'amount' => 15,
+                'date' => '2026-05-10',
+                'pending' => true,
+                'merchant_name' => 'Same Id Store',
+            ],
+        ], [], []);
+
+        $this->assertDatabaseMissing('plaid_pending_imports', [
+            'plaid_transaction_id' => 'txn-same-id',
+        ]);
+
+        $sync->processSyncedTransactions($item, [], [
+            [
+                'transaction_id' => 'txn-same-id',
+                'amount' => 15,
+                'date' => '2026-05-11',
+                'pending' => false,
+                'merchant_name' => 'Same Id Store',
+            ],
+        ], []);
+
+        $this->assertDatabaseHas('plaid_pending_imports', [
+            'plaid_transaction_id' => 'txn-same-id',
+            'status' => 'pending',
+        ]);
     }
 }

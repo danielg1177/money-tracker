@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-09-02 — Skip unsettled Plaid transactions until they post
+
+- Files touched: `app/Services/PlaidTransactionSyncService.php`, `app/Services/PlaidCalibrationService.php`, `resources/js/pages/BankConnections.vue`, `tests/Feature/PlaidIntegrationTest.php`, `tests/Feature/PlaidCalibrationServiceTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Sync, month ingest, and calibration ignore Plaid rows with `pending: true`. Posted `modified` rows with the same id that were never ingested are created then. Bank connections copy notes the wait. Leftover confirms of still-pending charges (before this change) can still duplicate when Plaid issues a new posted id.
+
+## 2026-09-02 — Docs: confirmed Plaid imports can reappear after pending→posted id change
+
+- Files touched: `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **Docs only.** Investigated duplicate Review items after a later bank pull: sync/ingest dedupe by exact `plaid_transaction_id`; Plaid `pending_transaction_id` is unused; `processRemovedRow` only deletes still-pending imports; ledger match skips already-linked rows. Documented as a known bug with dismiss-not-confirm workaround. Also corrected model/migration/test counts, PlaidMatchingService “unused by routes”, missing `transactions` Plaid/`is_loan_receipt` columns, unique pending-import Plaid id, and factory coverage.
+
 ## 2026-08-31 — Family view still allows editing own transactions
 
 - Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/Settings.vue`, `docs/ai/00-repo-overview.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`

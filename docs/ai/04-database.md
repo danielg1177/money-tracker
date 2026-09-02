@@ -173,6 +173,10 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `is_repayment` | boolean | default false; income transaction that repays another member's expense |
 | `is_repaid` | boolean | default false; expense transaction that has been repaid via expense-repayment linking |
 | `is_repayment_mirror` | boolean | default false; mirror income for the repaid user when payer ≠ repaid user |
+| `is_loan_receipt` | boolean | default false; income tagged as bank proof of loan receipt (`income_debt_mode=receipt`) |
+| `plaid_transaction_id` | varchar nullable | Plaid `transaction_id` when imported/linked; unique with `family_id` when set (`transactions_family_plaid_unique`) |
+| `import_source` | varchar(32) nullable | `'plaid'` when created or linked from a pending import |
+| `plaid_pending_import_id` | bigint FK nullable | → `plaid_pending_imports.id`; set on confirm / auto-link / split-confirm lines |
 | `timestamps` | | |
 
 ### `transaction_repayment_links`
@@ -269,7 +273,7 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `id` | bigint PK | |
 | `user_id` | bigint FK | → `users.id` |
 | `plaid_item_id` | bigint FK | → `plaid_items.id` |
-| `plaid_transaction_id` | varchar | Plaid transaction identifier |
+| `plaid_transaction_id` | varchar unique | Plaid `transaction_id` only (not `pending_transaction_id`). Exact-string unique; a pending id and later posted id are two rows |
 | `plaid_account_id` | varchar nullable | |
 | `amount` | decimal(15,2) | Absolute value of transaction amount |
 | `date` | date | Transaction date from Plaid |
@@ -340,7 +344,7 @@ debts: debtor_id → users, creditor_id → users (nullable)
 
 ## Factories
 
-All models have factories in `database/factories/`:
+Seven factories exist in `database/factories/` (not every model):
 - `UserFactory` — sets role to `member` by default; password is `password`
 - `FamilyFactory`
 - `CategoryFactory`
@@ -349,7 +353,7 @@ All models have factories in `database/factories/`:
 - `TransactionFactory`
 - `DebtFactory`
 
-No `FundMovementFactory` or `TransactionSplitFactory` exist.
+No factories for `FundMovement`, `TransactionSplit`, Plaid models, `CategoryUserDefault`, closeout/month-close models, or `TransactionRepaymentLink`. Tests that need those rows create them manually.
 
 ## Seeder
 

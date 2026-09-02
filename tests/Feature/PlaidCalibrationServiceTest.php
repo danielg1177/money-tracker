@@ -90,6 +90,54 @@ class PlaidCalibrationServiceTest extends TestCase
         $this->assertCount(0, $result['unmatched_ledger']);
     }
 
+    public function test_build_calibration_matches_skips_pending_plaid_rows(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-11 12:00:00'));
+
+        $this->plaidHttpConfig();
+
+        Http::fake([
+            'https://sandbox.plaid.com/transactions/get' => Http::response([
+                'transactions' => [
+                    [
+                        'transaction_id' => 'pl-pending',
+                        'account_id' => 'acc',
+                        'amount' => 40,
+                        'date' => '2026-03-20',
+                        'pending' => true,
+                        'name' => 'Pending Cafe',
+                        'merchant_name' => 'Pending Cafe',
+                    ],
+                    [
+                        'transaction_id' => 'pl-posted',
+                        'account_id' => 'acc',
+                        'amount' => 12,
+                        'date' => '2026-03-21',
+                        'pending' => false,
+                        'name' => 'Posted Cafe',
+                        'merchant_name' => 'Posted Cafe',
+                    ],
+                ],
+                'total_transactions' => 2,
+            ], 200),
+        ]);
+
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+
+        $item = PlaidItem::query()->create([
+            'user_id' => $user->id,
+            'item_id' => 'item-cal-pending',
+            'access_token' => 'tok',
+        ]);
+
+        $result = app(PlaidCalibrationService::class)->buildCalibrationMatches($item);
+
+        $this->assertCount(0, $result['matched']);
+        $this->assertCount(1, $result['unmatched_plaid']);
+        $this->assertSame('pl-posted', $result['unmatched_plaid'][0]['plaid']['transaction_id']);
+    }
+
     public function test_build_calibration_puts_extra_ledger_rows_in_unmatched_ledger(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-05-11'));

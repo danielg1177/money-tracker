@@ -51,6 +51,9 @@
     >
       {{ connecting ? 'Opening…' : 'Connect a Bank' }}
     </button>
+    <p class="mb-3 text-xs leading-relaxed text-gray-500">
+      Bank charges that are still pending at your institution are skipped until they post.
+    </p>
     <p class="mb-6 text-xs leading-relaxed text-gray-500">
       <span class="font-medium text-gray-400">Apple Card:</span>
       Plaid only lists it when your Plaid account supports FinanceKit / Apple Card and you complete the flow on a compatible

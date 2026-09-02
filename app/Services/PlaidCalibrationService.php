@@ -52,7 +52,7 @@ class PlaidCalibrationService
         if ($familyId === null) {
             $unmatchedPlaid = [];
             foreach ($plaidRows as $row) {
-                if (! is_array($row)) {
+                if (! is_array($row) || $this->syncService->isPlaidTransactionPending($row)) {
                     continue;
                 }
                 $unmatchedPlaid[] = [
@@ -82,7 +82,7 @@ class PlaidCalibrationService
         $matchedLedgerIds = [];
 
         foreach ($plaidRows as $row) {
-            if (! is_array($row)) {
+            if (! is_array($row) || $this->syncService->isPlaidTransactionPending($row)) {
                 continue;
             }
 
@@ -200,6 +200,10 @@ class PlaidCalibrationService
                     continue;
                 }
 
+                if ($this->syncService->isPlaidTransactionPending($plaid)) {
+                    continue;
+                }
+
                 $ledger = $ledgerRef instanceof Transaction
                     ? $ledgerRef
                     : Transaction::query()->find($ledgerRef);
@@ -286,7 +290,7 @@ class PlaidCalibrationService
         }
 
         $plaidRow = $plaidMap[$plaidTransactionId] ?? null;
-        if (! is_array($plaidRow)) {
+        if (! is_array($plaidRow) || $this->syncService->isPlaidTransactionPending($plaidRow)) {
             return false;
         }
 
@@ -352,6 +356,10 @@ class PlaidCalibrationService
     {
         $plaidTransactionId = $this->extractPlaidTransactionId($row);
         if ($plaidTransactionId === null) {
+            return;
+        }
+
+        if ($this->syncService->isPlaidTransactionPending($row)) {
             return;
         }
 

@@ -346,3 +346,17 @@ Known limitations:
 
 - If a confirmed split debt was partially paid down by a user after closeout, undoing the closeout reduces the debt balance but cannot restore it below zero. Balance is clamped at `max(0, balance - contribution_amount)`.
 - The system does not guard against undoing a month when a subsequent month is already hard-closed; this can introduce inconsistencies in multi-month interest calculations or fund balances.
+
+---
+
+## Workflow 11: Plaid sync, confirm, and pending → posted id change
+
+1. User links a bank or taps **Sync** (`POST /plaid/items/{id}/sync` or webhook) → `PlaidTransactionSyncService::syncItem` (`/transactions/sync` + cursor). **Sync this month / last month** uses `/transactions/get` + `ingestPlaidRowsAsPending` (same **added** path, **no** `modified`/`removed`).
+2. For each new Plaid payload, `processAddedRow` **returns immediately when `pending` is `true`** (wait until the bank posts). Otherwise it extracts `transaction_id` and skips only if that **exact string** already exists on `plaid_pending_imports` or `transactions.plaid_transaction_id` for the family.
+3. Otherwise a `plaid_pending_imports` row is created (`status=pending`, or dismissed/auto-created/auto-linked per merchant rule / ledger score).
+4. User confirms on Import Review (`POST …/confirm`): `TransactionService::createTransaction`, then copies `pendingImport.plaid_transaction_id` onto the ledger row and sets import `status=confirmed`. Description edits live on the ledger row only.
+5. **Same Plaid id later:** `modified` updates amount/date on leftover still-pending imports and on ledger rows keyed by that id. If a **posted** `modified` arrives and nothing was ingested yet (pending was skipped), `processAddedRow` runs. `removed` deletes only still-`pending` imports.
+6. **Pending → posted (most US institutions):** Plaid **removes** the pending `transaction_id` and **adds** a new posted id. Because pending `added` rows are no longer stored, the posted `added` row is the first Review item. **Leftover** confirms from before this skip can still duplicate: `pending_transaction_id` is unused, ledger auto-match ignores already-linked rows, and confirming the new Review item creates a second ledger transaction.
+7. Institutions that keep the same id and send `modified` with `pending: false` ingest at modification time.
+
+See `docs/ai/09-known-decisions.md` (known bug) and `PlaidTransactionSyncService` / `PlaidMatchingService`.

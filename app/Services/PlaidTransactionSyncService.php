@@ -134,7 +134,7 @@ class PlaidTransactionSyncService
             if (! is_array($row)) {
                 continue;
             }
-            $this->processModifiedRow($user, $familyId, $row);
+            $this->processModifiedRow($item, $user, $familyId, $row);
         }
 
         foreach ($removed as $row) {
@@ -228,10 +228,24 @@ class PlaidTransactionSyncService
     }
 
     /**
+     * Unsettled bank authorizations (`pending: true`). Missing `pending` is treated as posted.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public function isPlaidTransactionPending(array $row): bool
+    {
+        return data_get($row, 'pending') === true;
+    }
+
+    /**
      * @param  array<string, mixed>  $row
      */
     private function processAddedRow(PlaidItem $item, User $user, ?int $familyId, array $row): void
     {
+        if ($this->isPlaidTransactionPending($row)) {
+            return;
+        }
+
         $plaidTransactionId = $this->extractPlaidTransactionId($row);
         if ($plaidTransactionId === null) {
             return;
@@ -633,7 +647,7 @@ class PlaidTransactionSyncService
     /**
      * @param  array<string, mixed>  $row
      */
-    private function processModifiedRow(User $user, ?int $familyId, array $row): void
+    private function processModifiedRow(PlaidItem $item, User $user, ?int $familyId, array $row): void
     {
         $plaidTransactionId = $this->extractPlaidTransactionId($row);
         if ($plaidTransactionId === null) {
@@ -649,6 +663,24 @@ class PlaidTransactionSyncService
         $pending = PlaidPendingImport::query()
             ->where('plaid_transaction_id', $plaidTransactionId)
             ->first();
+
+        $transaction = null;
+        if ($familyId !== null) {
+            $transaction = Transaction::query()
+                ->where('family_id', $familyId)
+                ->where('plaid_transaction_id', $plaidTransactionId)
+                ->first();
+        }
+
+        if ($this->isPlaidTransactionPending($row) && $pending === null && $transaction === null) {
+            return;
+        }
+
+        if ($pending === null && $transaction === null) {
+            $this->processAddedRow($item, $user, $familyId, $row);
+
+            return;
+        }
 
         if ($pending !== null && $pending->status === 'pending') {
             $pending->forceFill([
@@ -668,18 +700,11 @@ class PlaidTransactionSyncService
             }
         }
 
-        if ($familyId !== null) {
-            $transaction = Transaction::query()
-                ->where('family_id', $familyId)
-                ->where('plaid_transaction_id', $plaidTransactionId)
-                ->first();
-
-            if ($transaction !== null) {
-                $transaction->forceFill([
-                    'amount' => abs($plaidAmount),
-                    'transaction_date' => $dateStr,
-                ])->save();
-            }
+        if ($transaction !== null) {
+            $transaction->forceFill([
+                'amount' => abs($plaidAmount),
+                'transaction_date' => $dateStr,
+            ])->save();
         }
     }
 

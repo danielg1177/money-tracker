@@ -102,6 +102,20 @@ Fortify provides session authentication. This means the app cannot be used as a 
 
 ## Known Bugs
 
+### Confirmed Plaid imports can reappear in Review after a later pull
+**Mostly addressed going forward** by skipping Plaid `pending: true` rows on ingest (posted charges only). The remaining risk is **leftover** imports that were confirmed **while still pending** before that skip, plus rare Plaid payloads that omit `pending_transaction_id` when posting.
+
+**What the user sees (legacy / leftover pending confirms):** Confirm a still-pending bank row. On a later **Sync** / **Sync this month**, the posted charge can show up again in **To Review**. The original ledger row is still there with the bank pill. Confirming the new review item creates a **second** ledger transaction.
+
+**Why leftover rows still duplicate** (`PlaidTransactionSyncService`):
+1. Confirm copied the **pending** Plaid id onto `transactions.plaid_transaction_id`.
+2. When the bank **posts**, Plaid typically sends the pending id in **`removed`** and a **new** posted id in **`added`**. `pending_transaction_id` is still unused, so the posted id is ingested as new.
+3. `processRemovedRow` does not delete confirmed imports. Ledger auto-match / **Link to existing** skip rows that already have a `plaid_transaction_id`.
+
+**Workaround for leftover duplicates:** **Dismiss** the reappeared Review row. Do **not** confirm it.
+
+**New ingest:** `processAddedRow` / calibration ignore `pending: true`. Institutions that keep the same id and send **`modified`** with `pending: false` are ingested at that point. New confirms should only happen after the bank posts.
+
 ### Debts page naming inversion
 In `resources/js/pages/Debts.vue`, the "You Owe" section uses `debts.owing` and the "Owed to You" section uses `debts.owed`. But in `DebtController::index`:
 - `owed` = debts where auth user is the **debtor** (they owe money)
