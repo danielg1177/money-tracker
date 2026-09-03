@@ -21,6 +21,9 @@ Each page fetches its own data on mount. There is no Vuex/Pinia store. Cross-pag
 ### Funds: personal vs family-scoped
 **Personal** funds belong to one user (`funds.user_id`, `family_id` null) and are private to that user. **Family** funds set `funds.family_id` (creator still has `user_id`); all members of that family see them via `GET /funds`. The index lists personal rows only when `family_id` is null so a family fund is not returned twice (once as “personal” and once as family).
 
+### Manual fund override is fund-history only
+`POST /funds/{id}/override` sets `fund.balance` and writes a `manual_override` `FundMovement` (signed delta). It does **not** create a `Transaction`, is not closed-month guarded, and is excluded from Month Summary **Fund In/Out** (same exclusion list as `savings_sweep`). The only UI surface for the movement is the fund History sheet (**Manual Override**).
+
 ### Debt `balance` field is never auto-zeroed
 Paid debts (balance = 0) remain in the database permanently. There is no "paid" boolean or deletion on full payment. The UI is expected to filter or display them accordingly.
 
@@ -123,6 +126,22 @@ In `resources/js/pages/Debts.vue`, the "You Owe" section uses `debts.owing` and 
 
 The Vue page has these **reversed**. This is a confirmed bug.
 
+### Deleting a fund 500s when transactions advance against it
+**What the user sees:** On **Funds**, confirm delete. The card stays. The server returns 500.
+
+**Why:** `FundController::destroy` (line 155) calls `$fund->delete()` with no detach of related rows. Production Railway MySQL constraint `transactions_advance_fund_id_foreign` is **restrict** (no `ON DELETE SET NULL`). Any expense with `advance_fund_id` still set to that fund blocks the delete (`SQLSTATE[23000]` / 1451).
+
+**Migration vs production:** `2026_05_05_201653_add_advance_fund_id_to_transactions_table` chains `nullOnDelete()` **before** `constrained('funds')`. The intended SET NULL did not land on Railway. Other fund FKs (`transactions.fund_id`, `debts.fund_id`, `category_user_defaults.advance_fund_id`) use `constrained()->nullOnDelete()` in the correct order; `fund_movements` / `fund_rules` cascade.
+
+**UI:** `Funds.vue` `deleteFund` only `console.error`s — no toast or inline message.
+
+**Workaround:** Clear or retarget **Advance against fund** on those expenses (or delete the expenses) before deleting the fund.
+
+**No test** covers `DELETE /funds/{id}`.
+
+### Funds page Edit Rule posts to a removed route
+`resources/js/pages/Funds.vue` `updateRule` sends `PUT /fund-rules/{id}`. That path is not in `web.php`. Working rule writes are `PUT /closeout-rules/{fundRule}` on **Closeout Rules**.
+
 ### `POST /admin/categories` route does not exist
 `resources/js/pages/admin/Categories.vue` attempts to `POST /admin/categories` but this route is not defined in `web.php`. The admin categories page is non-functional for writes.
 
@@ -134,7 +153,7 @@ The Vue page has these **reversed**. This is a confirmed bug.
 ## Known Authorization Gaps
 
 ### `CategoryController` has no policy
-Any authenticated user can `PUT /categories/{category}` or `DELETE /categories/{category}` with any category ID, even one belonging to a different family. There is no `CategoryPolicy` and no ownership check.
+There is no `CategoryPolicy`. `update`/`destroy` require `$category->family_id === auth user family_id` (cross-family IDs 403). Any member of that family can still edit or delete any of that family’s categories.
 
 ### `DebtPolicy` is unused
 `app/Policies/DebtPolicy.php` exists and checks family membership + debtor/creditor, but `DebtController` never calls `$this->authorize()`. Anyone in a family can view any debt in that family via the index endpoint.

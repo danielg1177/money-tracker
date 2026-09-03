@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-09-03 — Manual fund balance override
+
+- Files touched: `app/Services/FundService.php`, `app/Http/Controllers/FundController.php`, `app/Http/Controllers/MonthSummaryController.php`, `app/Http/Requests/OverrideFundRequest.php`, `routes/web.php`, `resources/js/pages/Funds.vue`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/FundOverrideTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Funds page **Override** sets `fund.balance` to an explicit value. Writes a `manual_override` history row titled **Manual Override** (signed delta, `Set to $X.XX`). No transaction. Not shown in Month Summary Fund In/Out or Transactions. Same authorization as sweep; no closed-month guard.
+
+## 2026-09-03 — Docs: fund delete 500 and other stale `/docs/ai/` facts
+
+- Files touched: `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/05-auth-permissions.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: **Docs only.** Production `DELETE /funds/{id}` 500s when `transactions.advance_fund_id` still references the fund (`transactions_advance_fund_id_foreign` is restrict on Railway; `FundController::destroy` does not detach children). Documented as a known bug with workaround. Also corrected: `Fund`/`FundPolicy` family-scope (docs had owner-only); `CategoryController` same-family check (docs claimed any family); missing `income_additions`, month close tables, `ClosedMonthGuard`, used Form Requests; `Funds.vue` Edit Rule still `PUT`s removed `/fund-rules/{id}`.
+
 ## 2026-09-03 — Add category totals to split history modal
 
 - Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`

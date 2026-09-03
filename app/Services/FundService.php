@@ -209,4 +209,39 @@ class FundService
             ]);
         });
     }
+
+    /**
+     * Set a fund balance to an explicit value without creating a transaction.
+     *
+     * Writes a `manual_override` FundMovement with a signed delta (positive =
+     * increase). The movement is fund-history only — Month Summary Fund In/Out
+     * excludes this type, matching savings sweeps.
+     *
+     * @throws InvalidArgumentException When the new balance matches the current balance.
+     */
+    public function overrideBalance(Fund $fund, float $newBalance, string $description, User $user): FundMovement
+    {
+        $currentBalance = round((float) $fund->balance, 2);
+        $targetBalance = round($newBalance, 2);
+        $delta = round($targetBalance - $currentBalance, 2);
+
+        if (abs($delta) < 0.01) {
+            throw new InvalidArgumentException('New balance must differ from the current fund balance.');
+        }
+
+        return DB::transaction(function () use ($fund, $targetBalance, $delta, $description, $user) {
+            $fund->update(['balance' => $targetBalance]);
+
+            $note = trim($description);
+            $setTo = 'Set to $'.number_format($targetBalance, 2, '.', ',');
+
+            return FundMovement::query()->create([
+                'fund_id' => $fund->id,
+                'user_id' => $user->id,
+                'type' => 'manual_override',
+                'amount' => $delta,
+                'description' => $note !== '' ? $setTo.' — '.$note : $setTo,
+            ]);
+        });
+    }
 }

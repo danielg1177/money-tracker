@@ -124,11 +124,11 @@ Categories with `advance_fund_id` (expense only) can set `is_non_necessity_defau
 
 | Layer | Files |
 |---|---|
-| Backend | `FundController` (index, store, update, destroy, showRules, storeRule, updateRule, borrow, repayFund) |
+| Backend | `FundController` (index, store, update, destroy, showRules, storeRule, updateRule, borrow, sweep, overrideBalance, repayFund) |
 | Service | `app/Services/FundService.php` |
 | Models | `app/Models/Fund.php`, `app/Models/FundRule.php`, `app/Models/FundMovement.php` |
-| Requests | `app/Http/Requests/StoreFundRequest.php` (unused), `app/Http/Requests/StoreFundRuleRequest.php` (unused) |
-| Frontend | `resources/js/pages/Funds.vue` (fund History modal shows **By {name}** per movement; `GET /funds` eager-loads `movements.user`) |
+| Requests | `SweepFundRequest`, `OverrideFundRequest` (used); `StoreFundRequest` / `StoreFundRuleRequest` / `UpdateFundRuleRequest` unused (inline validation) |
+| Frontend | `resources/js/pages/Funds.vue` (personal + family cards; delete control; **Override** sheet; fund History modal shows **By {name}** per movement including **Manual Override**; `GET /funds` eager-loads `movements.user`). **Edit Rule** on this page `PUT`s the removed `/fund-rules/{id}` path — use **Closeout Rules** instead. |
 | Policy | `app/Policies/FundPolicy.php` |
 
 **Fund Rules:** Define how income is automatically allocated. Each rule has:
@@ -140,6 +140,10 @@ Categories with `advance_fund_id` (expense only) can set `is_non_necessity_defau
 **Starting Balance:** Funds can be created with an optional `starting_balance`. If provided and > 0, a `FundMovement` of type `'initial_value'` is created to track the initial funding, and the fund balance is set to that value.
 
 **Advance Fund Settlement:** Funds can be targeted by expense transactions via the `advance_fund_id` field. During month hard-close, `MonthCloseoutService::applyFundAdvances()` sums all advances and decrements the fund balance with an `'advance_settlement'` movement. This happens independently of normal fund rules.
+
+**Manual Override:** `POST /funds/{id}/override` sets `fund.balance` to an explicit value. Creates a `FundMovement` (`type=manual_override`, signed delta, description `Set to $X.XX`) and **no** `Transaction`. No closed-month guard. Month Summary **Fund In/Out** excludes this type (same as `savings_sweep`). History on Funds labels the row **Manual Override**. Tests: `tests/Feature/FundOverrideTest.php`.
+
+**Delete:** `DELETE /funds/{id}` is authorized (`FundPolicy::delete`) then `$fund->delete()` with no detach of `transactions.advance_fund_id`. On Railway MySQL this 500s with SQLSTATE 23000 / 1451 when any transaction still advances against the fund. `Funds.vue` only logs the error. See `docs/ai/09-known-decisions.md`.
 
 ---
 

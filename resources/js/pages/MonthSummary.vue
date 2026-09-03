@@ -607,6 +607,7 @@ function movementTypeLabel(type) {
     repayment: 'Repayment',
     initial_value: 'Initial Value Set At',
     advance_settlement: 'Advance Settlement',
+    manual_override: 'Manual Override',
   };
   return labels[type] || type;
 }

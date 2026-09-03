@@ -118,7 +118,7 @@ Use case: B owes A money; B covers A's rent and marks the bank charge as paying 
    ```json
    { "amount": 200.00, "description": "Emergency" }
    ```
-3. `FundController::borrow` authorizes via `FundPolicy::update` (must own the fund)
+3. `FundController::borrow` authorizes via `FundPolicy::update` (owner, or any same-family member for a family-scoped fund)
 4. Calls `ClosedMonthGuard`; the borrow is rejected if the current month is hard-closed or soft-closed for the user
 5. Calls `FundService::borrowFromFund`
 6. Validates fund balance ≥ amount
@@ -151,6 +151,25 @@ Use case: B owes A money; B covers A's rent and marks the bank charge as paying 
    c. Creates `FundMovement` (type=`repayment`)
    d. Decrements `debt.balance` by amount
 8. Returns HTTP 200
+
+---
+
+## Workflow 4b: Manual Fund Balance Override
+
+1. User is on `Funds.vue`, expands a fund, taps **Override**
+2. Bottom sheet shows current balance and a **New Balance** field (pre-filled with the current amount)
+3. Vue submits `POST /funds/{fund}/override` with:
+   ```json
+   { "balance": 250.00, "description": "optional note" }
+   ```
+4. `FundController::overrideBalance` authorizes via `FundPolicy::update` (owner, or any same-family member for a family-scoped fund)
+5. **No** `ClosedMonthGuard` (same as sweep — no transaction is created)
+6. `FundService::overrideBalance` rejects when the new balance matches the current balance (`422`)
+7. `DB::transaction` begins:
+   a. Sets `fund.balance` to the new value
+   b. Creates `FundMovement` (`type=manual_override`, `amount` = signed delta, description `Set to $X.XX` plus optional note)
+8. Returns the movement (HTTP 201)
+9. Funds page history shows the row as **Manual Override**. Month Summary Fund In/Out and Transactions do not include it.
 
 ---
 
@@ -360,3 +379,17 @@ Known limitations:
 7. Institutions that keep the same id and send `modified` with `pending: false` ingest at modification time.
 
 See `docs/ai/09-known-decisions.md` (known bug) and `PlaidTransactionSyncService` / `PlaidMatchingService`.
+
+---
+
+## Workflow 12: Deleting a fund (current behavior)
+
+1. User is on `Funds.vue`, taps the trash icon on a fund card, then taps **Confirm?**
+2. Vue sends `DELETE /funds/{id}`
+3. `FundController::destroy` authorizes via `FundPolicy::delete` (owner, or family-scoped + `can_manage_family`)
+4. Controller calls `$fund->delete()` with **no** detach of related rows
+5. **Success path:** fund row is removed. `fund_movements.fund_id` and `fund_rules.fund_id` are `cascadeOnDelete`. `debts.fund_id`, `transactions.fund_id`, and `category_user_defaults.advance_fund_id` are `nullOnDelete`.
+6. **Failure path (production Railway):** if any `transactions.advance_fund_id` still points at the fund, MySQL raises SQLSTATE 23000 / 1451 on `transactions_advance_fund_id_foreign`. Laravel returns **500**. `Funds.vue` only `console.error`s; the card stays.
+7. Workaround today: retarget or clear **Advance against fund** on those expenses (or delete those transactions) before deleting the fund.
+
+See `docs/ai/09-known-decisions.md`.

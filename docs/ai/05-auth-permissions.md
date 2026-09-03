@@ -72,11 +72,11 @@ The frontend normalizes these into `isAdmin` via `normalizeAuthUser()`.
 ## Policies
 
 ### FundPolicy (`app/Policies/FundPolicy.php`)
-- `view(User, Fund)` → `$user->id === $fund->user_id`
-- `update(User, Fund)` → `$user->id === $fund->user_id`
-- `delete(User, Fund)` → `$user->id === $fund->user_id`
+- `view(User, Fund)` → owner (`$user->id === $fund->user_id`) **or** same-family member when `$fund->family_id` is set
+- `update(User, Fund)` → same as `view`
+- `delete(User, Fund)` → owner, **or** same-family + `can_manage_family` when the fund is family-scoped
 
-Used by `FundController` via `$this->authorize('view'|'update'|'delete', $fund)`.
+Used by `FundController` via `$this->authorize('view'|'update'|'delete', $fund)`. Delete still 500s when child FKs block (see `docs/ai/09-known-decisions.md`).
 
 ### DebtPolicy (`app/Policies/DebtPolicy.php`)
 - `view(User, Debt)` → user is debtor or creditor AND same family
@@ -99,7 +99,7 @@ Fortify 2FA columns exist in the `users` table migration. `FortifyServiceProvide
 
 ## Known permission gaps
 
-1. **`CategoryController`** — no authorization policy or ownership check. Any authenticated member of any family can edit/delete any category (if they know the ID).
+1. **`CategoryController`** — no `CategoryPolicy`. `update`/`destroy` require `$category->family_id === auth user family_id` (cross-family IDs 403). Any member of that family can still edit/delete any of that family’s categories.
 2. **`DebtController`** — `DebtPolicy` is not applied. Any authenticated user can access debt records as long as they match `family_id` (index) or have no guard at all (store has family membership check; payDebt checks debtor_id).
 3. **`TransactionController::update/destroy`** — checks `user_id === auth()->id()` OR `family_id === auth()->family_id`. Family members can delete each other's transactions.
 4. **`AdminController::createFamily`** — requires `can:admin` gate. But `updateFamily`, `deleteFamily`, `addFamilyMember`, `removeFamilyMember` use `can:manage_family`, which includes `head_of_household`. The logic inside manually re-checks role for head_of_household scope.

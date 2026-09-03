@@ -159,23 +159,30 @@
           </div>
 
           <!-- Action Buttons -->
-          <div class="flex gap-2 pt-2">
+          <div class="grid grid-cols-2 gap-2 pt-2">
             <button
               @click="openBorrowModal(fund)"
-              class="flex-1 py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
+              class="py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               Borrow
             </button>
             <button
               v-if="(fund.balance ?? 0) > 0"
               @click="openSweepModal(fund)"
-              class="flex-1 py-2 px-3 bg-teal-700 hover:bg-teal-600 text-white text-sm font-medium rounded-lg transition-colors"
+              class="py-2.5 px-3 bg-teal-700 hover:bg-teal-600 text-white text-sm font-medium rounded-lg transition-colors"
             >
               Sweep
             </button>
             <button
+              @click="openOverrideModal(fund)"
+              class="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Override
+            </button>
+            <button
               @click="openFundHistoryModal(fund)"
-              class="flex-1 py-2 px-3 bg-gray-600 hover:bg-gray-500 text-white text-sm font-medium rounded-lg transition-colors"
+              :class="(fund.balance ?? 0) > 0 ? '' : 'col-span-2'"
+              class="py-2.5 px-3 bg-gray-600 hover:bg-gray-500 text-white text-sm font-medium rounded-lg transition-colors"
             >
               History
             </button>
@@ -558,6 +565,92 @@
       </div>
     </Transition>
 
+    <!-- Override Balance Modal -->
+    <Transition
+      enter-active-class="transition duration-300"
+      enter-from-class="translate-y-full opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition duration-300"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-full opacity-0"
+    >
+      <div v-if="showOverrideModal && selectedFund" class="fixed inset-0 z-50">
+        <div class="absolute inset-0 bg-black/50" @click="showOverrideModal = false" />
+        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+          <div class="sticky top-0 border-b border-gray-800 px-4 py-4 bg-gray-900 flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-bold text-white">Override Balance</h2>
+              <p class="text-gray-400 text-sm">{{ selectedFund.name }}</p>
+            </div>
+            <button @click="showOverrideModal = false" class="text-gray-400 hover:text-white">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="p-4 space-y-4">
+            <p class="text-sm text-gray-400">
+              Sets this fund’s balance only. No transaction is created, and it will not appear in Month Summary or Transactions.
+            </p>
+            <div class="bg-gray-800 rounded-lg p-3 flex items-center justify-between">
+              <span class="text-sm text-gray-400">Current Balance</span>
+              <span class="text-lg font-bold" :class="fundBalanceClass(selectedFund.balance ?? 0)">{{ formatCurrency(selectedFund.balance ?? 0) }}</span>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-2">New Balance</label>
+              <div class="relative">
+                <span class="absolute left-4 top-2 text-gray-400">$</span>
+                <input
+                  v-model.number="overrideForm.balance"
+                  v-bind="mobileDecimalNumberAttrs"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  class="w-full pl-8 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+            <div
+              v-if="overrideDelta !== null"
+              class="bg-gray-800 rounded-lg p-3 flex items-center justify-between"
+            >
+              <span class="text-sm text-gray-400">Change</span>
+              <span
+                class="text-sm font-semibold"
+                :class="overrideDelta > 0 ? 'text-green-400' : overrideDelta < 0 ? 'text-red-400' : 'text-gray-400'"
+              >
+                {{ overrideDelta > 0 ? '+' : '' }}{{ formatCurrency(overrideDelta) }}
+              </span>
+            </div>
+            <textarea
+              v-model="overrideForm.description"
+              placeholder="Note (optional)"
+              class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500 resize-none"
+              rows="2"
+            />
+            <div v-if="overrideError" class="p-3 bg-red-900/20 border border-red-700/50 rounded-lg">
+              <p class="text-red-400 text-sm">{{ overrideError }}</p>
+            </div>
+            <div class="flex gap-2">
+              <button
+                @click="showOverrideModal = false"
+                class="flex-1 py-2.5 bg-gray-800 text-gray-300 font-medium rounded-lg hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                @click="submitOverride"
+                :disabled="submitLoading || overrideDelta === null || overrideDelta === 0"
+                class="flex-1 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 disabled:bg-gray-700"
+              >
+                {{ submitLoading ? 'Saving…' : 'Set Balance' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Fund History Modal -->
     <Transition
       enter-active-class="transition duration-300"
@@ -607,6 +700,7 @@
                           'bg-green-900/30 text-green-400 border border-green-700/50': movement.type === 'allocation' || movement.type === 'closeout_allocation' || movement.type === 'repayment' || movement.type === 'initial_value',
                           'bg-amber-900/30 text-amber-400 border border-amber-700/50': movement.type === 'borrow' || movement.type === 'advance_settlement',
                           'bg-teal-900/30 text-teal-400 border border-teal-700/50': movement.type === 'savings_sweep',
+                          'bg-indigo-900/30 text-indigo-300 border border-indigo-700/50': movement.type === 'manual_override',
                         }"
                       >
                         {{ movementTypeLabel(movement.type) }}
@@ -622,13 +716,9 @@
                   </div>
                   <p
                     class="text-sm font-bold ml-3"
-                    :class="{
-                      'text-amber-400': movement.type === 'borrow' || movement.type === 'advance_settlement',
-                      'text-teal-400': movement.type === 'savings_sweep',
-                      'text-green-400': movement.type !== 'borrow' && movement.type !== 'advance_settlement' && movement.type !== 'savings_sweep',
-                    }"
+                    :class="movementAmountClass(movement)"
                   >
-                    {{ (movement.type === 'borrow' || movement.type === 'advance_settlement' || movement.type === 'savings_sweep') ? '-' : '+' }}{{ formatCurrency(movement.amount) }}
+                    {{ movementAmountPrefix(movement) }}{{ formatCurrency(movementAmountAbs(movement)) }}
                   </p>
                 </div>
               </div>
@@ -641,7 +731,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useAuth } from '../composables/useAuth';
 import { useApi } from '../composables/useApi';
 import { mobileDecimalNumberAttrs, mobileIntegerNumberAttrs } from '../support/mobileNumericInputAttrs.js';
@@ -656,6 +746,7 @@ const showEditFundModal = ref(false);
 const showEditRuleModal = ref(false);
 const showBorrowModal = ref(false);
 const showSweepModal = ref(false);
+const showOverrideModal = ref(false);
 const showFundHistoryModal = ref(false);
 const selectedFund = ref(null);
 const selectedFundForHistory = ref(null);
@@ -664,6 +755,7 @@ const editingRule = ref(null);
 const submitLoading = ref(false);
 const borrowError = ref(null);
 const sweepError = ref(null);
+const overrideError = ref(null);
 const deleteConfirmFund = ref(null);
 
 const newFund = ref({
@@ -680,6 +772,17 @@ const borrowForm = ref({
 const sweepForm = ref({
   amount: null,
   description: '',
+});
+const overrideForm = ref({
+  balance: null,
+  description: '',
+});
+const overrideDelta = computed(() => {
+  if (selectedFund.value == null || overrideForm.value.balance === null || overrideForm.value.balance === '' || Number.isNaN(Number(overrideForm.value.balance))) {
+    return null;
+  }
+
+  return Math.round((Number(overrideForm.value.balance) - Number(selectedFund.value.balance ?? 0)) * 100) / 100;
 });
 
 onMounted(() => {
@@ -747,6 +850,13 @@ function openSweepModal(fund) {
   showSweepModal.value = true;
 }
 
+function openOverrideModal(fund) {
+  selectedFund.value = fund;
+  overrideForm.value = { balance: Number(fund.balance ?? 0), description: '' };
+  overrideError.value = null;
+  showOverrideModal.value = true;
+}
+
 function openFundHistoryModal(fund) {
   selectedFundForHistory.value = fund;
   showFundHistoryModal.value = true;
@@ -761,8 +871,41 @@ function movementTypeLabel(type) {
     initial_value: 'Initial Value Set At',
     advance_settlement: 'Advance Settlement',
     savings_sweep: 'Savings Sweep',
+    manual_override: 'Manual Override',
   };
   return labels[type] || type;
+}
+
+function movementIsOutflow(movement) {
+  if (movement.type === 'manual_override') {
+    return Number(movement.amount) < 0;
+  }
+
+  return movement.type === 'borrow' || movement.type === 'advance_settlement' || movement.type === 'savings_sweep';
+}
+
+function movementAmountAbs(movement) {
+  return Math.abs(Number(movement.amount ?? 0));
+}
+
+function movementAmountPrefix(movement) {
+  return movementIsOutflow(movement) ? '-' : '+';
+}
+
+function movementAmountClass(movement) {
+  if (movement.type === 'manual_override') {
+    return Number(movement.amount) < 0 ? 'text-red-400' : 'text-green-400';
+  }
+
+  if (movement.type === 'borrow' || movement.type === 'advance_settlement') {
+    return 'text-amber-400';
+  }
+
+  if (movement.type === 'savings_sweep') {
+    return 'text-teal-400';
+  }
+
+  return 'text-green-400';
 }
 
 function movementActorName(movement) {
@@ -896,6 +1039,23 @@ async function submitSweep() {
     await fetchFunds();
   } catch (err) {
     sweepError.value = err.response?.data?.message || 'Failed to sweep fund';
+  } finally {
+    submitLoading.value = false;
+  }
+}
+
+async function submitOverride() {
+  overrideError.value = null;
+  submitLoading.value = true;
+  try {
+    await post(`/funds/${selectedFund.value.id}/override`, {
+      balance: overrideForm.value.balance,
+      description: overrideForm.value.description,
+    });
+    showOverrideModal.value = false;
+    await fetchFunds();
+  } catch (err) {
+    overrideError.value = err.response?.data?.message || 'Failed to override fund balance';
   } finally {
     submitLoading.value = false;
   }

@@ -283,6 +283,7 @@ class MonthSummaryController extends Controller
      *
      * Includes non-rule movements (borrow, repayment, initial value) and closeout-linked
      * movements by matching either transaction date, movement creation month, or closeout tag.
+     * Excludes `savings_sweep` and `manual_override` (fund-page history only).
      *
      * @return array{
      *     totals: array{in: float, out: float, net: float},
@@ -317,7 +318,7 @@ class MonthSummaryController extends Controller
                     })->orWhere('family_id', $user->family_id);
                 });
             })
-            ->where('type', '!=', 'savings_sweep')
+            ->whereNotIn('type', ['savings_sweep', 'manual_override'])
             ->with('fund')
             ->where(function ($q) use ($year, $month, $monthTagPadded, $monthTagUnpadded, $closeoutMovementTypes): void {
                 $q->whereHas('transaction', fn ($txQuery) => $txQuery

@@ -105,6 +105,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::post('/funds/{fund}/borrow', [FundController::class, 'borrow']);
     Route::post('/funds/{fund}/sweep', [FundController::class, 'sweep']);
+    Route::post('/funds/{fund}/override', [FundController::class, 'overrideBalance']);
 
     Route::get('/debts', function (Request $request) {
         return $request->expectsJson()

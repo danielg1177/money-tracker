@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\OverrideFundRequest;
 use App\Http\Requests\SweepFundRequest;
 use App\Models\Debt;
 use App\Models\Fund;
@@ -211,6 +212,24 @@ class FundController extends Controller
             $movement = $this->fundService->sweepToSavings(
                 $fund,
                 (float) $request->validated('amount'),
+                (string) ($request->validated('description') ?? ''),
+                auth()->user()
+            );
+
+            return response()->json($movement->load('user'), 201);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function overrideBalance(Fund $fund, OverrideFundRequest $request): JsonResponse
+    {
+        $this->authorize('update', $fund);
+
+        try {
+            $movement = $this->fundService->overrideBalance(
+                $fund,
+                (float) $request->validated('balance'),
                 (string) ($request->validated('description') ?? ''),
                 auth()->user()
             );

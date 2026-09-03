@@ -6,7 +6,7 @@
 
 - Record income and expense transactions shared across a family group (optional **Plaid** under Bank connections: sync creates `plaid_pending_imports` from **posted** Plaid transactions only and may auto-create ledger transactions when merchant rules qualify)
 - Split costs between family members (auto-generating inter-member debt records)
-- Manage personal savings "funds" with closeout-driven allocation rules and optional starting balances
+- Manage personal savings "funds" with closeout-driven allocation rules, optional starting balances, and a fund-only **manual balance override** (history row only; no transaction)
 - Borrow from personal funds and track repayment
 - Mark expense transactions as advancing against (settling at month close against) a specific fund
 - Track debts owed between family members and record payments, including the initial value of the debt in history
@@ -40,7 +40,7 @@ money-tracker/
 │   ├── Models/                # 17 Eloquent models
 │   ├── Policies/              # FundPolicy, DebtPolicy
 │   ├── Providers/             # AppServiceProvider (Gates, Plaid client singleton), FortifyServiceProvider
-│   └── Services/              # DebtService, FundService, MonthCloseoutService, PlaidCalibrationService, PlaidClient, PlaidMatchingService, PlaidTransactionSyncService, SplitCalculator, TransactionRepaymentService, TransactionService
+│   └── Services/              # ClosedMonthGuard, DebtService, FundService, MonthCloseoutService, PlaidCalibrationService, PlaidClient, PlaidMatchingService, PlaidTransactionSyncService, SplitCalculator, TransactionRepaymentService, TransactionService
 ├── database/
 │   ├── factories/             # 7 factories
 │   ├── migrations/            # 57 migrations (initial set 2026-04-30; ongoing additions)
@@ -62,7 +62,7 @@ money-tracker/
 │   ├── web.php                # All application routes (SPA views + JSON endpoints)
 │   └── console.php            # Artisan `inspire`; optional commented `Schedule` for `plaid:daily-sync` when enabled
 ├── tests/
-│   ├── Feature/               # 29 PHPUnit feature classes (see `tests/Feature/`; includes `PlaidIntegrationTest`, `PlaidImportTest`, `PlaidMatchingServiceTest`, `PlaidCalibrationServiceTest`, `PlaidSweepMatchTest`)
+│   ├── Feature/               # 30 PHPUnit feature classes (see `tests/Feature/`; includes `FundOverrideTest`, `PlaidIntegrationTest`, `PlaidImportTest`, `PlaidMatchingServiceTest`, `PlaidCalibrationServiceTest`, `PlaidSweepMatchTest`)
 │   └── Unit/                  # ExampleTest stub
 ├── config/                    # Standard Laravel config files + fortify.php + plaid.php
 ├── Caddyfile                  # FrankenPHP/Caddy runtime config (binds to `$PORT`, serves `/app/public`)
@@ -79,5 +79,5 @@ money-tracker/
 - No Enums exist yet. Roles and allocation types are plain strings.
 - No API versioning — routes are in `web.php`, not `api.php`.
 - No Eloquent API Resources — controllers return models/collections directly.
-- Funds: **personal** funds are per-user (`user_id`, `family_id` null). **Family** funds share `family_id` with the household but still store `user_id` as the creator; **`GET /funds`** lists personal funds and family funds separately so each fund row appears once (family rows are not duplicated under the creator’s personal list). Categories and transactions are **per-family** (stored); **`GET /transactions` defaults to rows relevant to the signed-in user** (their own plus split co-participations). Pass **`?view=family`** for the household overlay used by the Transactions page when Settings **View all family expenses** is on (viewer can still edit/delete their own rows). Dashboard keeps the default viewer-scoped list. See `docs/ai/01-architecture.md` (data scoping).
+- Funds: **personal** funds are per-user (`user_id`, `family_id` null). **Family** funds share `family_id` with the household but still store `user_id` as the creator; **`GET /funds`** lists personal funds and family funds separately so each fund row appears once (family rows are not duplicated under the creator’s personal list). **`DELETE /funds/{id}` 500s on Railway** when any transaction still has `advance_fund_id` on that fund (see `docs/ai/09-known-decisions.md`). Categories and transactions are **per-family** (stored); **`GET /transactions` defaults to rows relevant to the signed-in user** (their own plus split co-participations). Pass **`?view=family`** for the household overlay used by the Transactions page when Settings **View all family expenses** is on (viewer can still edit/delete their own rows). Dashboard keeps the default viewer-scoped list. See `docs/ai/01-architecture.md` (data scoping).
 - A user without a `family_id` is essentially unusable (most endpoints 403 or return empty).

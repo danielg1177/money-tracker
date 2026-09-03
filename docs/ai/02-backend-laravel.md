@@ -15,11 +15,11 @@
 - System admin: Boolean `is_admin` column; when true, grants admin permissions independent of family role
 - Appended computed attributes (serialized in JSON): `is_admin`, `is_head_of_household`, `can_manage_family`
 - Uses PHP 8 attribute annotations `#[Fillable]`, `#[Hidden]`
-- Relations: `belongsTo(Family)`, `hasMany(Transaction)`, `hasMany(Fund)`, `hasMany(FundMovement)` as `fundMovements`, `hasMany(Debt, 'debtor_id')` as `debtsOwed`, `hasMany(Debt, 'creditor_id')` as `debtsOwedTo`, `hasMany(MonthSoftClose)` as `monthSoftCloses`, `hasMany(PlaidItem)` as `plaidItems`
+- Relations: `belongsTo(Family)`, `hasMany(Transaction)`, `hasMany(Fund)`, `hasMany(FundMovement)` as `fundMovements`, `hasMany(Debt, 'debtor_id')` as `debtsOwed`, `hasMany(Debt, 'creditor_id')` as `debtsOwedTo`, `hasMany(MonthSoftClose)` as `monthSoftCloses`, `hasMany(PlaidItem)` as `plaidItems`, `hasMany(CategoryUserDefault)` as `categoryDefaults`
 
 ### Family (`app/Models/Family.php`)
 - Fields: `name`, `description`
-- Relations: `hasMany(User)`, `hasMany(Category)`, `hasMany(Transaction)`, `hasMany(Debt)`
+- Relations: `hasMany(User)`, `hasMany(Category)`, `hasMany(Transaction)`, `hasMany(Debt)`, `hasMany(Fund)`, `hasMany(MonthSoftClose)`, `hasMany(MonthHardClose)`
 
 ### Category (`app/Models/Category.php`)
 - Fields: `family_id`, `name`, `icon`, `is_income` (bool), `is_expense` (bool), `is_split_default` (bool), `split_default` (JSON array)
@@ -78,9 +78,10 @@
 - Relations: `belongsTo(Transaction)`, `belongsTo(User)`
 
 ### Fund (`app/Models/Fund.php`)
-- Fields: `user_id`, `name`, `description`, `balance` (decimal:2, starts at 0)
-- Personal savings bucket; scoped to one user
-- Relations: `belongsTo(User)`, `hasMany(FundRule)`, `hasMany(FundMovement)`, `hasMany(Debt)`
+- Fields: `user_id`, `family_id` (nullable — null = personal), `name`, `description`, `balance` (decimal:2, starts at 0)
+- Personal savings bucket (`family_id` null) or family-shared bucket (`family_id` set; `user_id` is the creator)
+- Relations: `belongsTo(User)`, `belongsTo(Family)`, `hasMany(FundRule)`, `hasMany(FundMovement)`, `hasMany(Debt)`
+- **Delete:** `FundController::destroy` authorizes via `FundPolicy` then calls `$fund->delete()` with no detach of child rows. Transactions that still point at the fund via `advance_fund_id` cause a MySQL 1451 on Railway (see `docs/ai/09-known-decisions.md`).
 
 ### FundRule (`app/Models/FundRule.php`)
 - Fields: `user_id`, `fund_id`, `name`, `order` (int), `allocation_type` (`percentage`|`fixed`), `amount` (decimal:2), `allocation_base` (`gross_income`|`net_income`|`remaining`), `is_active` (bool), `destination_type` (`fund`|`debt`|`title`), `destination_id` (nullable), `destination_title` (nullable), `closeout_expense_category_id` (nullable expense-category FK)
@@ -89,7 +90,7 @@
 - Relations: `belongsTo(User)`, `belongsTo(Fund)`
 
 ### FundMovement (`app/Models/FundMovement.php`)
-- Fields: `fund_id`, `user_id`, `type` (`allocation`|`borrow`|`repayment`|`initial_value`|`closeout_allocation`|`advance_settlement`|`savings_sweep`), `amount`, `transaction_id` (nullable), `plaid_pending_import_id` (nullable), `plaid_transaction_id` (nullable), `description` (nullable)
+- Fields: `fund_id`, `user_id`, `type` (`allocation`|`borrow`|`repayment`|`initial_value`|`closeout_allocation`|`advance_settlement`|`savings_sweep`|`manual_override`), `amount`, `transaction_id` (nullable), `plaid_pending_import_id` (nullable), `plaid_transaction_id` (nullable), `description` (nullable)
 - Audit ledger for every fund balance change
 - Relations: `belongsTo(Fund)`, `belongsTo(User)`, `belongsTo(Transaction)`, `belongsTo(PlaidPendingImport)` as `plaidPendingImport`
 
@@ -102,9 +103,10 @@
 | `closeout_allocation` | Fund balance incremented | Yes (closeout expense) | Month hard-close rule payout |
 | `advance_settlement` | Fund balance decremented | No | Month close settles `advance_fund_id` expenses |
 | `savings_sweep` | Fund balance decremented | No | User sweeps fund balance to external savings account |
+| `manual_override` | Fund balance set to an explicit value | No | Signed `amount` is the delta (positive = increase). Fund history only; Month Summary Fund In/Out excludes this type |
 
 ### Debt (`app/Models/Debt.php`)
-- Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable FK → transactions, `cascadeOnDelete` for split-linked rows), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `is_pending_closeout` (bool — true during month hard-close split processing; pending debts are excluded from `GET /debts` and cannot be manually paid), `creditor_name` (nullable string for external creditors), `contributions` (JSON array nullable), `interest_enabled` (bool), `interest_rate` (APR decimal), `interest_last_applied_at` (date nullable), `loan_received_date` (date nullable), `interest_accruals` (JSON array nullable)
+- Fields: `family_id`, `debtor_id` (FK → users), `creditor_id` (nullable FK → users), `fund_id` (nullable FK → funds), `transaction_id` (nullable FK → transactions, `cascadeOnDelete` for split-linked rows), `amount` (original amount), `balance` (remaining), `description`, `is_family_debt` (bool), `is_pending_closeout` (bool — true during month hard-close split processing; pending debts are excluded from `GET /debts` and cannot be manually paid), `creditor_name` (nullable string for external creditors), `contributions` (JSON array nullable), `income_additions` (JSON array nullable — income attached to an existing debt via `income_debt_mode=existing`), `interest_enabled` (bool), `interest_rate` (APR decimal), `interest_last_applied_at` (date nullable), `loan_received_date` (date nullable), `interest_accruals` (JSON array nullable), `reversed_from_debt_id` (nullable self-FK), `direction_reversals` (JSON array nullable)
 - `creditor_id` is null when the debt is to a fund (borrow scenario) or to an external party
 - `creditor_name` stores plain text creditor names (e.g., "Bank of America") when `creditor_id` is null and `is_family_debt=false`
 - `is_family_debt` controls visibility: false = personal debt (debtor + creditor only); true = visible to all family members
@@ -113,12 +115,22 @@
 - Interest accrues only during month hard-close when `interest_enabled=true`, `interest_rate` is set, and `balance > 0`
 - Interest accrual uses a daily-rate model (`APR / 365`) over the closed month window, reducing accrual after any in-month payment (`transactions.type='expense'`, `is_debt_payment=true`) and respecting `loan_received_date`
 - Interest increases `balance` only (principal `amount` remains the original loan value) and appends a ledger entry to `interest_accruals`
-- Relations: `belongsTo(Family)`, `belongsTo(User, 'debtor_id')`, `belongsTo(User, 'creditor_id')`, `belongsTo(Fund)`, `belongsTo(Transaction)`
+- Relations: `belongsTo(Family)`, `belongsTo(User, 'debtor_id')` as `debtor`, `belongsTo(User, 'creditor_id')` as `creditor`, `belongsTo(Fund)`, `belongsTo(Transaction)`, `belongsTo(self, 'reversed_from_debt_id')` as `reversedFrom`
 
 ### CloseoutTitleSaving (`app/Models/CloseoutTitleSaving.php`)
 - Fields: `family_id`, `user_id`, `year`, `month`, `title`, `amount`, `rule_id`, `is_completed`, `completed_at`, `completion_transaction_id`
 - Casts: `amount` decimal:2, `year` integer, `month` integer, `is_completed` bool, `completed_at` datetime
 - Relations: `belongsTo(Family)`, `belongsTo(User)`
+
+### MonthSoftClose (`app/Models/MonthSoftClose.php`)
+- Fields: `family_id`, `user_id`, `year`, `month`, `closed_at`
+- Unique: (`family_id`, `user_id`, `year`, `month`)
+- Relations: `belongsTo(Family)`, `belongsTo(User)`
+
+### MonthHardClose (`app/Models/MonthHardClose.php`)
+- Fields: `family_id`, `year`, `month`, `closed_at`, `closed_by_user_id` (nullable)
+- Unique: (`family_id`, `year`, `month`)
+- Relations: `belongsTo(Family)`, `belongsTo(User, 'closed_by_user_id')` as `closedBy`
 
 ## Controllers
 
@@ -139,9 +151,10 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 - `showRules()` — returns all `FundRule` rows for the auth user ordered by `order`; takes no parameters and performs no policy check; also mounted at `GET /funds/{fund}/rules` for backward compatibility (the `{fund}` parameter is ignored)
 - `storeRule(Request)` — inline validation (+ duplicate check), creates `FundRule` for `auth()->id()`. For **`destination_type='title'`** rules that are **active**, **`destination_title`** must be **unique** among that user’s other **`destination_type='title'`** + **`is_active=true`** rows (avoids ambiguous **`CloseoutTitleSaving.rule_id`** when completing a title)
 - `updateRule(FundRule, Request)` — `403` if `fundRule.user_id !== auth()->id()`; same validation as `storeRule`, ignoring the current rule when checking title uniqueness
-- `destroy(Fund)` — authorizes via `FundPolicy`
+- `destroy(Fund)` — authorizes via `FundPolicy`, then `$fund->delete()` with no child-row cleanup. Returns `{message: 'Fund deleted'}` on success. **500** on Railway when any `transactions.advance_fund_id` still points at the fund (FK `transactions_advance_fund_id_foreign` is restrict in production; see `docs/ai/09-known-decisions.md`)
 - `borrow(Fund, Request)` — authorizes via `FundPolicy`, rejects if the current month is closed for the user via `ClosedMonthGuard`, then delegates to `FundService::borrowFromFund`
 - `sweep(Fund, SweepFundRequest)` — authorizes via `FundPolicy`; **no** `ClosedMonthGuard`; delegates to `FundService::sweepToSavings`; returns `201` with the `FundMovement` (includes `user`)
+- `overrideBalance(Fund, OverrideFundRequest)` — authorizes via `FundPolicy`; **no** `ClosedMonthGuard`; delegates to `FundService::overrideBalance`; returns `201` with the `FundMovement` (includes `user`); `422` when the new balance matches the current balance
 - `repayFund(Debt, Request)` — checks `debtor_id === auth()->id()`, rejects if the current month is closed for the user via `ClosedMonthGuard`, then delegates to `FundService::repayFund`
 
 ### DebtController
@@ -163,8 +176,8 @@ All controllers extend `app/Http/Controllers/Controller.php` (uses `AuthorizesRe
 ### CategoryController
 - `index()` — returns family categories with `advance_fund_id` + `is_non_necessity_default` hydrated from the authenticated user's `category_user_defaults` row for each category
 - `store(StoreCategoryRequest)` — creates shared category for auth user's family, then stores auth-user defaults (`advance_fund_id`, `is_non_necessity_default`) in `category_user_defaults`
-- `update(StoreCategoryRequest, Category)` — updates shared family category fields; updates only the authenticated user's `category_user_defaults` row for per-user defaults
-- `destroy(Category)` — deletes (no explicit authorization policy — Needs verification)
+- `update(StoreCategoryRequest, Category)` — same-family check then updates shared family category fields; updates only the authenticated user's `category_user_defaults` row for per-user defaults
+- `destroy(Category)` — same-family check (`$category->family_id === auth user family_id`); no `CategoryPolicy`. Any member of that family can delete.
 
 ### AdminController
 - `users()` — all users with `family`
@@ -322,6 +335,7 @@ When **no** ledger match is found (`findLedgerMatchWithScore` returns null), `pr
 - `borrowFromFund(Fund, float, string, User): Transaction` — validates balance; decrements fund, creates `is_borrow=true` income transaction, creates `FundMovement` (type=`borrow`), creates `Debt` (creditor_id=null, fund_id set)
 - `repayFund(Debt, float, User): void` — validates fund association, debtor match, amount; increments fund balance, creates `FundMovement` (type=`repayment`), creates expense transaction with `is_debt_payment=true`, decrements debt balance
 - `sweepToSavings(Fund, float, string, User): FundMovement` — validates amount ≤ fund balance; decrements fund, creates `FundMovement` (type=`savings_sweep`, optional `description`); **no** `Transaction`; does not affect closeout math
+- `overrideBalance(Fund, float, string, User): FundMovement` — sets `fund.balance` to the given value; writes `FundMovement` (`type=manual_override`, signed delta, description `Set to $X.XX` plus optional note); **no** `Transaction`; excluded from Month Summary Fund In/Out; `422` when the value is unchanged
 
 ### DebtService (`app/Services/DebtService.php`)
 - `applyInterFamilyPairNet(int $familyId, int $debtorId, int $creditorId, float $amount, ?string $description = null, ?array $closeoutContribution = null, ?int $reversedFromDebtId = null, ?string $occurredOn = null): void` — applies a net “debtor owes creditor” amount against confirmed running in-family debts for that pair: reduces opposite-direction balances first, then increases/creates same-direction debt. Optional closeout contribution metadata writes undoable `contributions` entries (negative when reducing opposite debts). When `$reversedFromDebtId` is set (in-family overpayment), a **new** reverse debt stores `reversed_from_debt_id`; merging into an **existing** reverse debt appends `direction_reversals` on both the source and target (dated with `$occurredOn`).
@@ -359,12 +373,23 @@ Located in `app/Http/Requests/`. Several exist but not all are used uniformly:
 | Request | Used by |
 |---|---|
 | `StoreTransactionRequest` | `TransactionController::store` + `update` |
+| `StoreDebtPaymentBenefitRequest` | `TransactionController` benefit create/update |
 | `StoreCategoryRequest` | `CategoryController::store` + `update` |
+| `SweepFundRequest` | `FundController::sweep` |
+| `OverrideFundRequest` | `FundController::overrideBalance` |
 | `StoreFundRequest` | NOT used — `FundController` validates inline |
 | `StoreFundRuleRequest` | NOT used — `FundController` validates inline |
 | `UpdateFundRuleRequest` | NOT used — `FundController` validates inline |
 | `PayDebtRequest` | `DebtController::payDebt` |
 | `UpdateBankBalanceRequest` | `BankBalanceController::update` |
+| `UpdateUserSettingsRequest` | `UserSettingsController::update` |
+| `ExchangePlaidTokenRequest` | `PlaidController::exchange` |
+| `StoreImportConfirmRequest` | `PlaidImportController::confirm` |
+| `ConfirmSplitImportRequest` | `PlaidImportController::confirmSplit` |
+| `LinkPlaidPendingImportRequest` | `PlaidImportController::linkToLedger` |
+| `ApplyPlaidCalibrationRequest` | `PlaidImportController::applyCalibration` |
+| `CorrectAutoCreatedImportRequest` | `PlaidImportController::correctAutoCreated` |
+| `RestoreDismissedImportRequest` | `PlaidImportController::restoreFromDismiss` |
 | `CreateFamilyRequest` | NOT used — `AdminController` validates inline |
 | `CreateUserRequest` | NOT used — `AdminController` validates inline |
 
@@ -374,7 +399,7 @@ Located in `app/Http/Requests/`. Several exist but not all are used uniformly:
 
 ## Policies
 
-- `FundPolicy` — `view`, `update`, `delete` all check `$user->id === $fund->user_id`
+- `FundPolicy` — `view` / `update`: owner **or** same-family member when `funds.family_id` is set. `delete`: owner, **or** same-family + `can_manage_family` for family-scoped funds. Used by `FundController` via `$this->authorize()`.
 - `DebtPolicy` — `view` checks same family and user is debtor or creditor; **not actively invoked by `DebtController`** (Needs verification)
 
 Auto-discovery by Laravel maps `Fund` → `FundPolicy`, `Debt` → `DebtPolicy`.
@@ -387,7 +412,8 @@ Auto-discovery by Laravel maps `Fund` → `FundPolicy`, `Debt` → `DebtPolicy`.
 
 ## Known backend gaps
 
-1. `CategoryController` has no authorization policy — any authenticated family member can edit/delete any family category
+1. `CategoryController` has no `CategoryPolicy`; `update`/`destroy` do check same `family_id`. Any member of that family can edit/delete any family category
 2. `TransactionController::update` does not re-run fund allocation (income amount changes are not re-allocated)
 3. `DebtPolicy` exists but `DebtController` does not call `$this->authorize()`
 4. `net_income` allocation base currently behaves identically to `gross_income` (no separate net calculation)
+5. `FundController::destroy` does not detach `transactions.advance_fund_id` (or other children) before delete — production MySQL 1451 when the fund is used as an advance fund
