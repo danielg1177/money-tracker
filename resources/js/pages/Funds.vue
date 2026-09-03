@@ -845,7 +845,7 @@ function openBorrowModal(fund) {
 
 function openSweepModal(fund) {
   selectedFund.value = fund;
-  sweepForm.value = { amount: null, description: '' };
+  sweepForm.value = { amount: Number(fund.balance ?? 0), description: '' };
   sweepError.value = null;
   showSweepModal.value = true;
 }

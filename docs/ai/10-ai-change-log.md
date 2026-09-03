@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-09-03 — Sweep amount defaults to available fund balance
+
+- Files touched: `resources/js/pages/Funds.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: Opening **Sweep** pre-fills Amount to Sweep with the fund’s current balance. The user can still lower it (or tap **Sweep All** after editing). Confirm Sweep is enabled immediately for a full sweep.
+
 ## 2026-09-03 — Manual fund balance override
 
 - Files touched: `app/Services/FundService.php`, `app/Http/Controllers/FundController.php`, `app/Http/Controllers/MonthSummaryController.php`, `app/Http/Requests/OverrideFundRequest.php`, `routes/web.php`, `resources/js/pages/Funds.vue`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/FundOverrideTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/01-architecture.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
