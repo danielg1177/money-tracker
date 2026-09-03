@@ -11,6 +11,13 @@ Format:
 
 ---
 
+## 2026-09-03 — Add category totals to split history modal
+
+- Files touched: `resources/js/pages/MonthSummary.vue`, `docs/ai/06-feature-map.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: The split history modal (opened from Month Summary's "Split Expenses Between Users" section) now shows a signed category total on the right side of each category header row, color-coded green/red like individual amounts.
+
+---
+
 ## 2026-09-02 — Skip unsettled Plaid transactions until they post
 
 - Files touched: `app/Services/PlaidTransactionSyncService.php`, `app/Services/PlaidCalibrationService.php`, `resources/js/pages/BankConnections.vue`, `tests/Feature/PlaidIntegrationTest.php`, `tests/Feature/PlaidCalibrationServiceTest.php`, `docs/ai/00-repo-overview.md`, `docs/ai/02-backend-laravel.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/06-feature-map.md`, `docs/ai/07-workflows.md`, `docs/ai/08-api-routes.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`

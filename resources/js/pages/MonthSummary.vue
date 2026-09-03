@@ -560,11 +560,17 @@ const splitHistoryGroups = computed(() => {
     grouped.get(key).rows.push(row);
   });
 
+  const sign = splitSourceSign(splitHistoryModalSource.value);
+
   return [...grouped.values()]
-    .map(group => ({
-      ...group,
-      rows: [...group.rows].sort((a, b) => String(a.transaction_date).localeCompare(String(b.transaction_date))),
-    }))
+    .map(group => {
+      const total = group.rows.reduce((sum, row) => sum + sign * Number(row?.balance_amount || 0), 0);
+      return {
+        ...group,
+        total,
+        rows: [...group.rows].sort((a, b) => String(a.transaction_date).localeCompare(String(b.transaction_date))),
+      };
+    })
     .sort((a, b) => String(a.category_name).localeCompare(String(b.category_name), undefined, { sensitivity: 'base' }));
 });
 
@@ -1449,11 +1455,19 @@ function movementTypeLabel(type) {
                 :key="`split-hist-group-${group.category_name}-${group.category_icon || 'none'}`"
                 class="space-y-2"
               >
-                <div class="flex items-center gap-2 px-1">
-                  <span v-if="group.category_icon" class="text-sm shrink-0">{{ group.category_icon }}</span>
-                  <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-300 truncate">
-                    {{ group.category_name }}
-                  </h4>
+                <div class="flex items-center justify-between gap-2 px-1">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span v-if="group.category_icon" class="text-sm shrink-0">{{ group.category_icon }}</span>
+                    <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-300 truncate">
+                      {{ group.category_name }}
+                    </h4>
+                  </div>
+                  <span
+                    :class="group.total > 0.005 ? 'text-green-400' : group.total < -0.005 ? 'text-red-400' : 'text-gray-200'"
+                    class="text-xs font-semibold shrink-0 tabular-nums"
+                  >
+                    {{ group.total > 0.005 ? '+' : '' }}{{ formatCurrency(group.total) }}
+                  </span>
                 </div>
 
                 <div
