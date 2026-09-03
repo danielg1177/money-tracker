@@ -71,14 +71,17 @@ class StoreTransactionRequest extends FormRequest
             ]);
         }
 
-        // Force is_non_necessity off if the transaction cannot qualify
         if (
             $this->input('type') !== 'expense'
             || ! $this->filled('advance_fund_id')
             || $this->boolean('is_split')
             || $this->filled('debt_id')
         ) {
-            $this->merge(['is_non_necessity' => false]);
+            $this->merge(['exclude_from_expense_basis' => false]);
+        }
+
+        if ($this->input('type') !== 'expense') {
+            $this->merge(['is_necessity' => true]);
         }
 
         if (in_array($this->input('income_debt_mode'), ['existing', 'receipt'], true)) {

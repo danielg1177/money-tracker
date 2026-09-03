@@ -64,6 +64,14 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_06_02_021010_add_is_external_repayment_to_transaction_repayment_links_table` | Adds `is_external_repayment` boolean (default false) to `transaction_repayment_links` |
 | `2026_06_04_170306_add_ledger_match_columns_to_plaid_pending_imports` | Adds `suggested_ledger_match_id` (nullable FK → `transactions.id`, null on delete) and `ledger_match_score` decimal(5,4) nullable after `transaction_id` |
 | `2026_06_04_175148_add_sweep_match_columns_to_fund_movements_and_plaid_pending_imports` | Adds sweep-match columns on `fund_movements` (`plaid_pending_import_id`, `plaid_transaction_id`) and `plaid_pending_imports` (`suggested_sweep_match_id`, `sweep_match_score`, `fund_movement_id`) |
+| `2026_08_24_120000_add_closeout_snapshots_to_month_hard_closes_table` | Adds `closeout_mode`, `settings_snapshot`, `results_snapshot` to `month_hard_closes` |
+| `2026_08_24_120001_add_closeout_mode_to_families_table` | Adds `closeout_mode` (`classic` default) to `families` |
+| `2026_08_24_120002_create_family_closeout_rules_table` | `family_closeout_rules` |
+| `2026_08_24_182044_add_family_id_order_index_to_family_closeout_rules_table` | Adds `(family_id, order)` index on `family_closeout_rules` |
+| `2026_08_24_120003_add_closeout_scope_to_transactions_table` | Adds nullable `closeout_scope` (`user` \| `family`) to `transactions` |
+| `2026_08_24_154237_backfill_legacy_closeout_snapshots_and_scopes` | Backfills `closeout_scope=user` on existing closeout-initiated transactions and reconstructed `results_snapshot` on pre-snapshot hard closes |
+| `2026_08_24_165852_split_necessity_and_expense_basis_flags` | Renames `is_non_necessity` → `exclude_from_expense_basis` (transactions, category defaults, Plaid rules/suggestions); adds `is_necessity` / `is_necessity_default` / `suggested_is_necessity` (default true). Existing remaining-exclusion rows get `is_necessity=false` so charity math stays the same until edited. |
+| `2026_09_03_172548_move_is_necessity_default_to_categories_table` | Moves `is_necessity_default` from `category_user_defaults` onto shared `categories` (backfill: HoH user default, else first defaults row, else true). |
 
 ## Table schemas
 
@@ -92,6 +100,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `id` | bigint PK | |
 | `name` | varchar | |
 | `description` | text nullable | |
+| `closeout_mode` | varchar(32) | `classic` (default) \| `family_pooled`; applies to open months only |
 | `timestamps` | | |
 
 ### `categories`
@@ -105,6 +114,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `is_expense` | boolean | default false; **must be the logical opposite of `is_income`** |
 | `is_split_default` | boolean | default false |
 | `split_default` | json nullable | default split percentages `[{user_id, share_percentage}]` |
+| `is_necessity_default` | boolean | default true; family-shared default for whether new expenses count as a necessity in family-pooled charity |
 | `timestamps` | | |
 ### `category_user_defaults`
 | Column | Type | Notes |
@@ -113,7 +123,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `category_id` | bigint FK | → `categories.id` (`cascadeOnDelete`) |
 | `user_id` | bigint FK | → `users.id` (`cascadeOnDelete`) |
 | `advance_fund_id` | bigint FK nullable | → `funds.id` (`nullOnDelete`) |
-| `is_non_necessity_default` | boolean | default false; user-specific non-necessity default for this category |
+| `exclude_from_expense_basis_default` | boolean | default false; user-specific “exclude from remaining” default (advance + remaining-% rule only) |
 | `timestamps` | | |
 
 Unique key: `category_id` + `user_id` (one default row per user/category pair).
@@ -148,6 +158,24 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `closeout_expense_category_id` | bigint FK nullable | → `categories.id` with `nullOnDelete`; optional default expense category for closeout-generated movement transactions |
 | `timestamps` | | |
 
+### `family_closeout_rules`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint PK | |
+| `family_id` | bigint FK | → `families.id` (`cascadeOnDelete`) |
+| `name` | varchar | |
+| `order` | unsigned integer | default 1 |
+| `is_active` | boolean | default true |
+| `stage` | varchar(32) | `surplus` \| `remaining_after_charity` |
+| `allocation_type` | varchar(16) | `percentage` \| `fixed` |
+| `amount` | decimal(14,2) | |
+| `destination_type` | varchar(16) | `fund` \| `debt` \| `title` |
+| `destination_id` | bigint nullable | target fund or debt id |
+| `destination_title` | varchar nullable | when `destination_type = title` |
+| `closeout_expense_category_id` | bigint FK nullable | → `categories.id` (`nullOnDelete`) |
+| `timestamps` | | |
+| indexes | | `(family_id, order)` plus the `family_id` FK index |
+
 ### `transactions`
 | Column | Type | Notes |
 |---|---|---|
@@ -168,8 +196,10 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `debt_id` | bigint FK nullable | → `debts.id` with `nullOnDelete`; links a payment transaction to the debt it settles |
 | `paid_by_user_id` | bigint FK nullable | → `users.id` with `nullOnDelete`; tracks who initiated the payment (for multi-user families) |
 | `is_closeout_initiated` | boolean | default false; true when the payment was generated by a month closeout rule |
+| `closeout_scope` | varchar(16) nullable | `user` \| `family`; tags closeout-initiated rows so family-pooled family-rule allocations can be grouped separately from personal leftover rules |
 | `advance_fund_id` | bigint FK nullable | → `funds.id`. Marks an expense as advancing against a fund (settled at month hard-close). Migration *intends* `nullOnDelete`, but production Railway MySQL keeps restrict (`transactions_advance_fund_id_foreign`). Deleting that fund while rows still reference it raises SQLSTATE 23000 / 1451 |
-| `is_non_necessity` | boolean | default false; marks an expense as a non-necessity advance — excluded from the expense basis used in closeout remaining-pool math; advance settlement still runs so the net is settled against the advance fund |
+| `exclude_from_expense_basis` | boolean | default false; classic remaining-exclusion only — do not subtract this advance from remaining closeout expenses; advance settlement still runs against the fund |
+| `is_necessity` | boolean | default true; family-pooled charity uses income minus expenses where this is true |
 | `mirror_transaction_id` | bigint FK nullable | → `transactions.id` with `nullOnDelete`; paired leg for unsplit debtor expense ↔ creditor **income** when repaying an in-member debt (`is_debt_payment`) |
 | `debt_payment_income_id` | bigint FK nullable | → `transactions.id` with `nullOnDelete`; on benefit expenses, points at the creditor's debt-payment income |
 | `is_repayment` | boolean | default false; income transaction that repays another member's expense |
@@ -201,6 +231,20 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 | `user_id` | bigint FK | → `users.id` |
 | `share_percentage` | decimal(5,2) | |
 | `amount` | decimal(15,2) | computed dollar amount |
+| `timestamps` | | |
+
+### `month_hard_closes`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint PK | |
+| `family_id` | bigint FK | → `families.id` |
+| `year` | integer | |
+| `month` | integer | |
+| `closed_at` | timestamp | |
+| `closed_by_user_id` | bigint FK nullable | → `users.id` |
+| `closeout_mode` | varchar(32) nullable | `classic` \| `family_pooled` as of the hard close |
+| `settings_snapshot` | json nullable | `version` (currently 1), family mode, family rules, each user’s personal rules as they were |
+| `results_snapshot` | json nullable | bases, per-rule actuals, member weights/shares/pools |
 | `timestamps` | | |
 
 ### `debts`
@@ -312,7 +356,8 @@ Unique: (`family_id`, `year`, `month`).
 | `suggested_type` | varchar nullable | `income` or `expense` |
 | `suggested_fund_id` | bigint FK nullable | → `funds.id` |
 | `suggested_advance_fund_id` | bigint FK nullable | → `funds.id` |
-| `suggested_is_non_necessity` | boolean | default false |
+| `suggested_exclude_from_expense_basis` | boolean | default false |
+| `suggested_is_necessity` | boolean | default true |
 | `suggested_description` | varchar nullable | Suggested transaction description from merchant rule |
 | `suggested_is_debt_payment` | boolean | default false; suggested debt-payment flag from merchant rule |
 | `suggested_debt_id` | bigint unsigned nullable | Advisory debt reference from merchant rule (no FK constraint) |
@@ -343,7 +388,8 @@ Unique: (`family_id`, `year`, `month`).
 | `type` | varchar nullable | `income` or `expense` |
 | `fund_id` | bigint FK nullable | → `funds.id` |
 | `advance_fund_id` | bigint FK nullable | → `funds.id` |
-| `is_non_necessity` | boolean | default false |
+| `exclude_from_expense_basis` | boolean | default false |
+| `is_necessity` | boolean | default true |
 | `is_split` | boolean | default false |
 | `description` | varchar nullable | Learned transaction description to apply on import |
 | `is_debt_payment` | boolean | default false; learned debt-payment flag |
@@ -358,14 +404,16 @@ Unique: (`family_id`, `year`, `month`).
 
 ```
 families ──< users ──< funds ──< fund_rules
-                │             └──< fund_movements
-                │             └──< debts (fund_id)
-                ├──< categories
-                ├──< transactions ──< transaction_splits
-                │                 └──< debts (transaction_id)
-                │                 └──< plaid_pending_imports (transaction_id)
-                │                 └──< plaid_pending_imports (fund_movement_id / suggested_sweep_match_id → fund_movements)
-                └──< plaid_items ──< plaid_pending_imports
+    │        │             └──< fund_movements
+    │        │             └──< debts (fund_id)
+    ├──< family_closeout_rules
+    ├──< month_hard_closes
+    ├──< categories
+    ├──< transactions ──< transaction_splits
+    │                 └──< debts (transaction_id)
+    │                 └──< plaid_pending_imports (transaction_id)
+    │                 └──< plaid_pending_imports (fund_movement_id / suggested_sweep_match_id → fund_movements)
+    └──< plaid_items ──< plaid_pending_imports
 fund_movements.plaid_pending_import_id → plaid_pending_imports (sweep link)
 users ──< plaid_merchant_rules
 debts: debtor_id → users, creditor_id → users (nullable)
@@ -379,6 +427,7 @@ Seven factories exist in `database/factories/` (not every model):
 - `CategoryFactory`
 - `FundFactory` — balance defaults to 0
 - `FundRuleFactory` — sets `is_active = true`
+- `FamilyCloseoutRuleFactory`
 - `TransactionFactory`
 - `DebtFactory`
 
@@ -387,3 +436,5 @@ No factories for `FundMovement`, `TransactionSplit`, Plaid models, `CategoryUser
 ## Seeder
 
 `database/seeders/DatabaseSeeder.php` creates one default family (`Household`) and one admin user (`admin@example.com`) without factories/fake data.
+
+`database/seeders/CloseoutDemoSeeder.php` is optional and **not** called from `DatabaseSeeder`. Run `php artisan db:seed --class=CloseoutDemoSeeder` for a local UI household (`Closeout Demo`): Alex/Jordan (`alex@demo.test` / `jordan@demo.test`, password `password`; Alex is head of household **and** `is_admin`), family-pooled mode, two prior hard-closed months (classic snapshot then family-pooled snapshot), and a busy open current month. Re-running replaces that demo family.

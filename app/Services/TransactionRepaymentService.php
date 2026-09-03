@@ -53,7 +53,7 @@ class TransactionRepaymentService
                     'is_split' => false,
                     'split_data' => null,
                     'advance_fund_id' => null,
-                    'is_non_necessity' => false,
+                    'exclude_from_expense_basis' => false,
                     'is_repayment_mirror' => true,
                 ]);
 

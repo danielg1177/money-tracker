@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Closeout\CloseoutMode;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,6 +14,7 @@ class Family extends Model
     protected $fillable = [
         'name',
         'description',
+        'closeout_mode',
     ];
 
     public function users(): HasMany
@@ -40,6 +42,11 @@ class Family extends Model
         return $this->hasMany(Fund::class);
     }
 
+    public function familyCloseoutRules(): HasMany
+    {
+        return $this->hasMany(FamilyCloseoutRule::class);
+    }
+
     public function monthSoftCloses(): HasMany
     {
         return $this->hasMany(MonthSoftClose::class);
@@ -48,5 +55,10 @@ class Family extends Model
     public function monthHardCloses(): HasMany
     {
         return $this->hasMany(MonthHardClose::class);
+    }
+
+    public function usesFamilyPooledCloseout(): bool
+    {
+        return CloseoutMode::isFamilyPooled($this->closeout_mode);
     }
 }

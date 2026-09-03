@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Services\Closeout\CloseoutMode;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -29,6 +30,7 @@ class User extends Authenticatable
         'is_admin',
         'is_head_of_household',
         'can_manage_family',
+        'closeout_mode',
     ];
 
     /**
@@ -98,7 +100,7 @@ class User extends Authenticatable
     protected function isAdmin(): Attribute
     {
         return Attribute::make(
-            get: fn () => (bool) $this->attributes['is_admin'],
+            get: fn () => (bool) ($this->attributes['is_admin'] ?? false),
         );
     }
 
@@ -115,6 +117,26 @@ class User extends Authenticatable
     {
         return Attribute::make(
             get: fn () => $this->role === 'head_of_household' || (bool) ($this->attributes['is_admin'] ?? false),
+        );
+    }
+
+    #[Attribute]
+    protected function closeoutMode(): Attribute
+    {
+        return Attribute::make(
+            get: function (): string {
+                if ($this->relationLoaded('family')) {
+                    return CloseoutMode::normalize($this->getRelation('family')?->closeout_mode);
+                }
+
+                if (! $this->family_id) {
+                    return CloseoutMode::Classic;
+                }
+
+                return CloseoutMode::normalize(
+                    Family::query()->whereKey($this->family_id)->value('closeout_mode')
+                );
+            },
         );
     }
 }

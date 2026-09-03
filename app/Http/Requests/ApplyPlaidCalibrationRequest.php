@@ -59,7 +59,8 @@ class ApplyPlaidCalibrationRequest extends FormRequest
                         ->orWhere('family_id', $user->family_id);
                 }),
             ],
-            'confirmed_pairs.*.is_non_necessity' => ['sometimes', 'boolean'],
+            'confirmed_pairs.*.exclude_from_expense_basis' => ['sometimes', 'boolean'],
+            'confirmed_pairs.*.is_necessity' => ['sometimes', 'boolean'],
             'import_as_new' => ['present', 'array'],
             'import_as_new.*' => ['required', 'string'],
         ];
@@ -103,7 +104,8 @@ class ApplyPlaidCalibrationRequest extends FormRequest
             }
             if (($pair['type'] ?? null) === 'income') {
                 $pair['advance_fund_id'] = null;
-                $pair['is_non_necessity'] = false;
+                $pair['exclude_from_expense_basis'] = false;
+                $pair['is_necessity'] = true;
             }
             $merged[] = $pair;
         }

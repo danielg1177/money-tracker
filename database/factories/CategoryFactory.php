@@ -29,6 +29,7 @@ class CategoryFactory extends Factory
             'is_expense' => $isExpense,
             'is_split_default' => false,
             'split_default' => null,
+            'is_necessity_default' => true,
         ];
     }
 }

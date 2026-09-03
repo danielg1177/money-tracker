@@ -5,6 +5,7 @@ import { useApi } from '../composables/useApi';
 import { useSelectedMonth } from '../composables/useSelectedMonth';
 import { categoryRowTypeBarStyle } from '../support/transactionTypeBar.js';
 import { buildQuickSelectMonths, monthNames, parseYearMonth } from '../support/yearMonth.js';
+import { isFamilyPooledCloseout as closeoutModeIsFamilyPooled } from '../support/closeoutMode.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -153,21 +154,19 @@ function rulePreviewNetClass(amount) {
 }
 
 const formatAllocation = (rule) => {
+  const remainingLabel = isFamilyPooledCloseout.value ? 'your leftover share' : 'Remaining After Expenses';
+  const baseLabel = {
+    gross_income: 'Gross Income',
+    remaining: remainingLabel,
+    surplus: 'Income minus necessary expenses',
+    remaining_after_charity: 'Remaining after charity',
+  }[rule.allocation_base] || 'Income';
+
   if (rule.allocation_type === 'percentage') {
-    const base = rule.allocation_base === 'gross_income'
-      ? 'Gross Income'
-      : rule.allocation_base === 'remaining'
-        ? 'Remaining After Expenses'
-        : 'Income';
-    return `${rule.amount.toFixed(0)}% of ${base}`;
-  } else {
-    const base = rule.allocation_base === 'gross_income'
-      ? 'Gross Income'
-      : rule.allocation_base === 'remaining'
-        ? 'Remaining After Expenses'
-        : 'Income';
-    return `${formatCurrency(rule.amount)} of ${base}`;
+    return `${Number(rule.amount).toFixed(0)}% of ${baseLabel}`;
   }
+
+  return `${formatCurrency(rule.amount)} of ${baseLabel}`;
 };
 
 // Get destination badge styling
@@ -196,11 +195,11 @@ const canUndoSoftClose = computed(() => {
 });
 
 const canHardClose = computed(() => {
-  return !isHardClosed.value && allSoftClosed.value && currentUser.value?.can_manage_family;
+  return !isHardClosed.value && allSoftClosed.value && Boolean(currentUser.value?.can_manage_family || currentUser.value?.canManageFamily);
 });
 
 const canUndoHardClose = computed(() => {
-  return isHardClosed.value && currentUser.value?.can_manage_family;
+  return isHardClosed.value && Boolean(currentUser.value?.can_manage_family || currentUser.value?.canManageFamily);
 });
 
 // Closeout functions
@@ -443,14 +442,26 @@ const isNegativeRemainingAfterExpenses = computed(() => {
 });
 
 const grossAllocationsTotal = computed(() => Number(rulePreviewBasis.value?.gross_allocations_total ?? 0));
-
-const nonNecessityExpenses = computed(() => Number(rulePreviewBasis.value?.non_necessity_expenses ?? 0));
-
-const hasNonNecessityTransactions = computed(() => nonNecessityExpenses.value > 0.005);
-
 const showGrossAllocationsInPreview = computed(() => grossAllocationsTotal.value > 0.005);
-
 const expenseCloseoutBasisLines = computed(() => summary.value?.rule_preview?.expense_closeout_basis?.lines ?? []);
+const closeoutPreview = computed(() => summary.value?.closeout_preview ?? null);
+
+const isFamilyPooledCloseout = computed(() => closeoutModeIsFamilyPooled(closeoutPreview.value?.mode));
+const familyCloseout = computed(() => closeoutPreview.value?.family ?? null);
+const familyCharityNonNecessities = computed(() => Number(familyCloseout.value?.basis?.non_necessity_expenses ?? 0));
+const hasFamilyCharityNonNecessities = computed(() => familyCharityNonNecessities.value > 0.005);
+const leftoverSplitMembers = computed(() => familyCloseout.value?.leftover_split?.members ?? []);
+const isReconstructedCloseout = computed(() => closeoutPreview.value?.source === 'reconstructed');
+const hasViewerIncome = computed(() => Number(summary.value?.rule_preview?.basis?.gross_income ?? 0) > 0);
+const hasFamilyCloseoutIncome = computed(() => Number(familyCloseout.value?.basis?.earned_income ?? 0) > 0);
+const showClassicNoIncome = computed(() => !isFamilyPooledCloseout.value && !hasViewerIncome.value);
+
+const expenseBasisExclusions = computed(() => Number(
+  rulePreviewBasis.value?.expense_basis_exclusions ?? rulePreviewBasis.value?.non_necessity_expenses ?? 0,
+));
+const hasExpenseBasisExclusions = computed(
+  () => !isFamilyPooledCloseout.value && expenseBasisExclusions.value > 0.005,
+);
 
 function categoryTransactionsKey(category) {
   const categoryIdKey = category?.category_id === null || category?.category_id === undefined
@@ -745,8 +756,10 @@ function movementTypeLabel(type) {
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Your Expenses</h2>
         <p class="text-xs text-gray-500 mb-3">
           Debt repayments you pay use the transaction’s category when set; otherwise they appear under
-          <span class="text-gray-300">Uncategorized Debt Payments</span>
-          (same amounts feed <span class="text-gray-300">Projected closeout → Expenses</span>). Hard-close-generated ledger entries (fund transfers, debt payments) are excluded here; they appear in Fund In/Out and Debt Repayments below.
+          <span class="text-gray-300">Uncategorized Debt Payments</span>.
+          <span v-if="!isFamilyPooledCloseout"> In classic closeout, these totals include remaining-exclusion advances; the breakdown below matches <span class="text-gray-300">Projected closeout → Remaining expenses</span>.</span>
+          <span v-else> Family pooled closeout uses household income and expenses in the section below — not this personal category total. Exclude-from-remaining does not apply.</span>
+          Hard-close-generated ledger entries (fund transfers, debt payments) are excluded here; they appear in Fund In/Out and Debt Repayments below.
           <span v-if="isFamilyExpenseView" class="block mt-1">Family amounts are the household combined total for each category (splits counted once at the full amount). Payments from one family member to another are not counted as family expenses.</span>
         </p>
 
@@ -798,17 +811,17 @@ function movementTypeLabel(type) {
               −{{ formatCurrency(expenseCategoriesTotal) }}
             </span>
           </div>
-          <template v-if="hasNonNecessityTransactions">
+          <template v-if="hasExpenseBasisExclusions">
             <div class="flex items-center justify-between gap-3 px-3 py-2 bg-gray-900/50 rounded-lg border border-gray-700">
-              <span class="text-sm text-gray-300">Total Necessities</span>
+              <span class="text-sm text-gray-300">Remaining expenses</span>
               <span class="text-sm font-medium shrink-0 text-red-400 tabular-nums">
-                −{{ formatCurrency(expenseCategoriesTotal - nonNecessityExpenses) }}
+                −{{ formatCurrency(expenseCategoriesYouTotal - expenseBasisExclusions) }}
               </span>
             </div>
             <div class="flex items-center justify-between gap-3 px-3 py-2 bg-gray-900/50 rounded-lg border border-gray-700">
-              <span class="text-sm text-gray-300">Total Non-Necessities</span>
-              <span class="text-sm font-medium shrink-0 text-violet-400 tabular-nums">
-                −{{ formatCurrency(nonNecessityExpenses) }}
+              <span class="text-sm text-gray-300">Excluded from remaining</span>
+              <span class="text-sm font-medium shrink-0 text-amber-400 tabular-nums">
+                −{{ formatCurrency(expenseBasisExclusions) }}
               </span>
             </div>
           </template>
@@ -1088,13 +1101,111 @@ function movementTypeLabel(type) {
           {{ isHardClosed ? 'Closeout Results' : 'Projected Closeout' }}
         </h2>
 
-        <div v-if="summary.rule_preview.basis.gross_income <= 0" class="text-sm text-gray-500 mb-4">
+        <p
+          v-if="isReconstructedCloseout"
+          class="mb-4 rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-2 text-xs text-gray-400 leading-relaxed"
+        >
+          This month was closed before settings were snapshotted. Amounts below come from saved fund
+          movements, debt payments, and title savings — not from today’s rules.
+        </p>
+
+        <div v-if="showClassicNoIncome" class="text-sm text-gray-500 mb-4">
           No income recorded — closeout rules will not run.
         </div>
 
-        <template v-else>
+        <div
+          v-else-if="isFamilyPooledCloseout && !hasFamilyCloseoutIncome && leftoverSplitMembers.length === 0 && (familyCloseout?.surplus_rules?.length ?? 0) === 0"
+          class="text-sm text-gray-500 mb-4"
+        >
+          No family income recorded — family closeout rules will not run.
+        </div>
+
+        <template v-if="isFamilyPooledCloseout && familyCloseout">
+          <div class="px-3 py-2 mb-4 text-xs text-gray-400 bg-gray-800 rounded-lg space-y-1.5">
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Family pooled</p>
+            <div>Family income: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.earned_income) }}</span></div>
+            <div>Necessary expenses: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.necessary_expenses) }}</span></div>
+            <div v-if="hasFamilyCharityNonNecessities">
+              Not necessities: <span class="text-violet-300 tabular-nums">{{ formatCurrency(familyCharityNonNecessities) }}</span>
+            </div>
+            <div>All expenses: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.all_expenses) }}</span></div>
+            <div>Charity base: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.charity_base) }}</span> <span class="text-gray-600">(income − necessities)</span></div>
+            <div>Surplus allocated: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.surplus_allocations_total) }}</span></div>
+            <div>Remaining after charity: <span class="tabular-nums font-medium" :class="familyCloseout.basis.remaining_after_charity < 0 ? 'text-amber-300' : 'text-gray-200'">{{ formatCurrency(familyCloseout.basis.remaining_after_charity) }}</span> <span class="text-gray-600">(income − all expenses − surplus)</span></div>
+            <div>After-charity allocated: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.remaining_allocations_total) }}</span></div>
+            <div>Leftover to split: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.leftover) }}</span></div>
+          </div>
+
+          <div v-if="familyCloseout.surplus_rules?.length" class="mb-4 space-y-2">
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Family surplus rules</p>
+            <div
+              v-for="rule in familyCloseout.surplus_rules"
+              :key="'surplus-' + rule.rule_id"
+              class="bg-gray-800 rounded-xl p-3 border border-gray-700"
+            >
+              <div class="flex items-start gap-2 mb-2">
+                <span class="inline-flex items-center justify-center w-6 h-6 bg-gray-700 text-gray-300 text-xs font-semibold rounded">{{ rule.order }}</span>
+                <span class="text-sm font-medium text-gray-200">{{ rule.rule_name }}</span>
+              </div>
+              <div class="flex items-center justify-between px-2 gap-3">
+                <span class="text-xs text-gray-400">{{ formatAllocation(rule) }}</span>
+                <span class="text-sm font-medium tabular-nums text-green-400">{{ formatCurrency(rule.net_after_advances) }}</span>
+              </div>
+              <div class="flex items-center gap-2 px-2 mt-2">
+                <span class="text-xs text-gray-600">→</span>
+                <span :class="getDestinationColor(rule.destination_type)" class="text-xs px-2 py-1 rounded-full font-medium">{{ rule.destination_name }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="familyCloseout.remaining_rules?.length" class="mb-4 space-y-2">
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">After charity</p>
+            <div
+              v-for="rule in familyCloseout.remaining_rules"
+              :key="'remaining-' + rule.rule_id"
+              class="bg-gray-800 rounded-xl p-3 border border-gray-700"
+            >
+              <div class="flex items-start gap-2 mb-2">
+                <span class="inline-flex items-center justify-center w-6 h-6 bg-gray-700 text-gray-300 text-xs font-semibold rounded">{{ rule.order }}</span>
+                <span class="text-sm font-medium text-gray-200">{{ rule.rule_name }}</span>
+              </div>
+              <div class="flex items-center justify-between px-2 gap-3">
+                <span class="text-xs text-gray-400">{{ formatAllocation(rule) }}</span>
+                <span class="text-sm font-medium tabular-nums text-green-400">{{ formatCurrency(rule.net_after_advances) }}</span>
+              </div>
+              <div class="flex items-center gap-2 px-2 mt-2">
+                <span class="text-xs text-gray-600">→</span>
+                <span :class="getDestinationColor(rule.destination_type)" class="text-xs px-2 py-1 rounded-full font-medium">{{ rule.destination_name }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="leftoverSplitMembers.length" class="mb-4">
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Leftover split</p>
+            <div class="rounded-xl border border-gray-700 overflow-hidden">
+              <div
+                v-for="member in leftoverSplitMembers"
+                :key="'split-' + member.user_id"
+                class="flex items-center justify-between gap-3 px-3 py-2.5 border-b border-gray-800 last:border-b-0 bg-gray-800"
+              >
+                <div class="min-w-0">
+                  <p class="text-sm text-gray-200 truncate">{{ member.user_name }}</p>
+                  <p class="text-[11px] text-gray-500 tabular-nums">
+                    Splits {{ formatCurrency(member.split_spend) }} / income {{ formatCurrency(member.earned_income) }}
+                    · {{ (Number(member.share || 0) * 100).toFixed(2) }}%
+                  </p>
+                </div>
+                <span class="text-sm font-semibold tabular-nums text-gray-100">{{ formatCurrency(member.member_pool) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Your leftover rules</p>
+        </template>
+
+        <template v-if="!showClassicNoIncome">
           <div
-            v-if="isNegativeRemainingAfterExpenses"
+            v-if="!isFamilyPooledCloseout && isNegativeRemainingAfterExpenses"
             class="mb-4 rounded-lg border border-amber-800/70 bg-amber-950/40 px-3 py-3"
             role="status"
           >
@@ -1120,7 +1231,12 @@ function movementTypeLabel(type) {
                 {{ line }}
               </li>
             </ul>
-            <p class="mt-2 text-xs text-gray-500 leading-relaxed">
+            <p v-if="isFamilyPooledCloseout" class="mt-2 text-xs text-gray-500 leading-relaxed">
+              Your leftover rules run on
+              <span class="text-gray-300">your leftover share</span>
+              from the family split above — not on personal income minus these expenses.
+            </p>
+            <p v-else class="mt-2 text-xs text-gray-500 leading-relaxed">
               <span class="text-gray-300">Remaining</span>
               uses gross income, minus the
               <span class="text-gray-300">Gross-base rules</span>
@@ -1134,10 +1250,13 @@ function movementTypeLabel(type) {
 
           <!-- Summary row -->
           <div class="px-3 py-2 mb-4 text-xs text-gray-400 bg-gray-800 rounded-lg space-y-1.5">
-            <div class="flex flex-wrap items-center gap-x-1 gap-y-1">
+            <div v-if="isFamilyPooledCloseout" class="flex flex-wrap items-center gap-x-1 gap-y-1">
+              <span>Your leftover share: <span class="text-gray-200 tabular-nums font-medium">{{ formatCurrency(remainingAfterExpenses) }}</span></span>
+            </div>
+            <div v-else class="flex flex-wrap items-center gap-x-1 gap-y-1">
               <span>Gross Income: <span class="text-gray-200 tabular-nums">{{ formatCurrency(summary.rule_preview.basis.gross_income) }}</span></span>
               <span class="text-gray-600" aria-hidden="true">|</span>
-              <span>{{ hasNonNecessityTransactions ? 'Necessity Expenses:' : 'Expenses:' }} <span class="text-gray-200 tabular-nums">{{ formatCurrency(summary.rule_preview.basis.total_expenses) }}</span></span>
+              <span>{{ hasExpenseBasisExclusions ? 'Remaining expenses:' : 'Expenses:' }} <span class="text-gray-200 tabular-nums">{{ formatCurrency(summary.rule_preview.basis.total_expenses) }}</span></span>
               <template v-if="showGrossAllocationsInPreview">
                 <span class="text-gray-600" aria-hidden="true">|</span>
                 <span>Gross-base rules: <span class="text-gray-200 tabular-nums">−{{ formatCurrency(grossAllocationsTotal) }}</span></span>
@@ -1315,8 +1434,11 @@ function movementTypeLabel(type) {
                         {{ row.description || row.category_name || 'No description' }}
                       </p>
                     </div>
-                    <p v-if="row.is_non_necessity" class="text-[11px] text-violet-300 mt-0.5">
-                      Non-necessity
+                    <p v-if="!isFamilyPooledCloseout && row.exclude_from_expense_basis" class="text-[11px] text-amber-300 mt-0.5">
+                      Excluded from remaining
+                    </p>
+                    <p v-if="row.is_necessity === false" class="text-[11px] text-violet-300 mt-0.5">
+                      Not a necessity
                     </p>
                   </div>
                   <span class="text-sm font-medium shrink-0 tabular-nums text-amber-400">

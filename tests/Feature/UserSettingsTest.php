@@ -32,7 +32,8 @@ class UserSettingsTest extends TestCase
 
         $this->actingAs($user)->getJson('/user')
             ->assertOk()
-            ->assertJsonPath('view_family_expenses', true);
+            ->assertJsonPath('view_family_expenses', true)
+            ->assertJsonPath('closeout_mode', 'classic');
     }
 
     public function test_view_family_expenses_must_be_boolean(): void

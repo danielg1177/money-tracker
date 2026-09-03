@@ -7,6 +7,7 @@ use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use App\Models\TransactionSplit;
 use App\Models\User;
+use App\Services\Closeout\CloseoutMode;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -64,7 +65,7 @@ class TransactionService
                 'is_split' => $data['is_split'],
                 'split_data' => $data['split_data'] ?? null,
                 'advance_fund_id' => $data['advance_fund_id'] ?? null,
-                'is_non_necessity' => ! empty($data['is_non_necessity']) && ($data['type'] ?? null) === 'expense' && empty($data['is_split']) && ! empty($data['advance_fund_id']),
+                ...$this->closeoutExpenseFlags($user, $data, (bool) ($data['is_split'] ?? false), $data['advance_fund_id'] ?? null),
                 'debt_id' => $incomeDebt?->id,
                 'is_loan_receipt' => ($data['income_debt_mode'] ?? 'none') === 'receipt',
             ];
@@ -147,6 +148,7 @@ class TransactionService
                 'is_split' => $hasSplit,
                 'split_data' => $storedSplitData,
                 'advance_fund_id' => null,
+                ...$this->closeoutExpenseFlags($user, $data, $hasSplit, null),
             ]);
 
             if ($hasSplit) {
@@ -370,7 +372,7 @@ class TransactionService
                 'is_split' => $data['is_split'],
                 'split_data' => $data['split_data'] ?? null,
                 'advance_fund_id' => $data['advance_fund_id'] ?? null,
-                'is_non_necessity' => ! empty($data['is_non_necessity']) && ($data['type'] ?? null) === 'expense' && empty($data['is_split']) && ! empty($data['advance_fund_id']),
+                ...$this->closeoutExpenseFlags($transaction->user, $data, (bool) ($data['is_split'] ?? false), $data['advance_fund_id'] ?? null, $transaction),
                 'debt_id' => $incomeDebt?->id,
                 'is_loan_receipt' => ($data['income_debt_mode'] ?? 'none') === 'receipt',
             ];
@@ -582,7 +584,7 @@ class TransactionService
 
             $amount = round((float) $income->amount, 2);
             $advanceFundId = $hasSplit ? null : ($data['advance_fund_id'] ?? null);
-            $isNonNecessity = ! empty($data['is_non_necessity']) && ! $hasSplit && ! empty($advanceFundId);
+            $flags = $this->closeoutExpenseFlags($income->user, $data, $hasSplit, $advanceFundId);
 
             $benefit = Transaction::query()->create([
                 'family_id' => $income->family_id,
@@ -595,7 +597,8 @@ class TransactionService
                 'is_split' => $hasSplit,
                 'split_data' => $hasSplit ? $splitData : null,
                 'advance_fund_id' => $advanceFundId,
-                'is_non_necessity' => $isNonNecessity,
+                'exclude_from_expense_basis' => $flags['exclude_from_expense_basis'],
+                'is_necessity' => $flags['is_necessity'],
                 'is_debt_payment' => false,
                 'is_debt_payment_benefit' => true,
                 'debt_payment_income_id' => $income->id,
@@ -634,7 +637,7 @@ class TransactionService
 
             $amount = round((float) $income->amount, 2);
             $advanceFundId = $hasSplit ? null : ($data['advance_fund_id'] ?? null);
-            $isNonNecessity = ! empty($data['is_non_necessity']) && ! $hasSplit && ! empty($advanceFundId);
+            $flags = $this->closeoutExpenseFlags($income->user, $data, $hasSplit, $advanceFundId, $benefit);
 
             $benefit->update([
                 'category_id' => $data['category_id'],
@@ -644,7 +647,8 @@ class TransactionService
                 'is_split' => $hasSplit,
                 'split_data' => $hasSplit ? $splitData : null,
                 'advance_fund_id' => $advanceFundId,
-                'is_non_necessity' => $isNonNecessity,
+                'exclude_from_expense_basis' => $flags['exclude_from_expense_basis'],
+                'is_necessity' => $flags['is_necessity'],
                 'is_debt_payment_benefit' => true,
                 'debt_payment_income_id' => $income->id,
             ]);
@@ -1087,7 +1091,7 @@ class TransactionService
                 'is_split' => $hasSplit,
                 'split_data' => $hasSplit ? $splitData : null,
                 'advance_fund_id' => $data['advance_fund_id'] ?? null,
-                'is_non_necessity' => ! empty($data['is_non_necessity']) && empty($hasSplit) && ! empty($data['advance_fund_id']),
+                ...$this->closeoutExpenseFlags($transaction->user, $data, $hasSplit, $data['advance_fund_id'] ?? null, $transaction),
                 'debt_id' => null,
                 'is_debt_payment' => false,
                 'is_loan_receipt' => false,
@@ -1125,5 +1129,36 @@ class TransactionService
 
             return $transaction->load(['splits', 'debt.creditor', 'debt.debtor', 'debt.fund']);
         });
+    }
+
+    /**
+     * Remaining-exclusion is classic-closeout only. Family pooled creates store false;
+     * updates keep an existing qualifying flag so switching back to classic can use it.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{exclude_from_expense_basis: bool, is_necessity: bool}
+     */
+    private function closeoutExpenseFlags(User $user, array $data, bool $hasSplit, mixed $advanceFundId, ?Transaction $existing = null): array
+    {
+        $isExpense = ($data['type'] ?? 'expense') === 'expense';
+        $familyPooled = CloseoutMode::isFamilyPooled($user->closeout_mode);
+        $qualifiesForRemainingExclusion = $isExpense && ! $hasSplit && ! empty($advanceFundId);
+
+        $excludeFromExpenseBasis = $qualifiesForRemainingExclusion && ! empty($data['exclude_from_expense_basis']);
+
+        if ($familyPooled) {
+            $excludeFromExpenseBasis = $existing !== null
+                && $qualifiesForRemainingExclusion
+                && (bool) $existing->exclude_from_expense_basis;
+        }
+
+        return [
+            'exclude_from_expense_basis' => $excludeFromExpenseBasis,
+            'is_necessity' => $isExpense
+                ? (array_key_exists('is_necessity', $data)
+                    ? filter_var($data['is_necessity'], FILTER_VALIDATE_BOOLEAN)
+                    : true)
+                : true,
+        ];
     }
 }

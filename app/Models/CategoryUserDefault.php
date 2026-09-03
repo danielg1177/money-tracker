@@ -14,12 +14,12 @@ class CategoryUserDefault extends Model
         'category_id',
         'user_id',
         'advance_fund_id',
-        'is_non_necessity_default',
+        'exclude_from_expense_basis_default',
     ];
 
     protected $casts = [
         'advance_fund_id' => 'integer',
-        'is_non_necessity_default' => 'bool',
+        'exclude_from_expense_basis_default' => 'bool',
     ];
 
     public function category(): BelongsTo

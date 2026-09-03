@@ -1,20 +1,49 @@
 <template>
   <div class="pb-32">
     <!-- Header -->
-    <div class="sticky top-0 pt-safe bg-gray-900 border-b border-gray-800 px-4 py-3 z-10 flex items-center justify-between">
-      <div>
-        <h1 class="text-xl font-bold text-white">Closeout Rules</h1>
-        <p class="text-gray-400 text-sm mt-1">Rules applied when a month is hard-closed</p>
+    <div class="sticky top-0 pt-safe bg-gray-900 border-b border-gray-800 px-4 py-3 z-10">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h1 class="text-xl font-bold text-white">Closeout Rules</h1>
+          <p class="text-gray-400 text-sm mt-1">
+            {{ isFamilyPooled ? 'Family rules run first; your leftover rules split your share.' : 'Rules applied when a month is hard-closed' }}
+          </p>
+        </div>
+        <button
+          @click="openPersonalForm"
+          class="inline-flex items-center gap-2 px-3 py-2 sm:px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors p-2"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          <span class="hidden sm:inline">{{ isFamilyPooled ? 'Add leftover rule' : 'Add Rule' }}</span>
+        </button>
       </div>
-      <button
-        @click="showForm = true"
-        class="inline-flex items-center gap-2 px-3 py-2 sm:px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors p-2"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        <span class="hidden sm:inline">Add Rule</span>
-      </button>
+
+      <div v-if="canManageFamily" class="mt-3">
+        <p class="text-[11px] text-gray-500 mb-2">Applies to open months only. Hard-closed months keep whatever ran at close time.</p>
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            class="min-h-11 rounded-lg border px-3 py-2 text-sm font-medium"
+            :class="closeoutMode === CLOSEOUT_MODE_CLASSIC ? 'border-blue-500 bg-blue-950/40 text-blue-100' : 'border-gray-700 bg-gray-800 text-gray-400'"
+            @click="setCloseoutMode(CLOSEOUT_MODE_CLASSIC)"
+          >
+            Classic
+          </button>
+          <button
+            type="button"
+            class="min-h-11 rounded-lg border px-3 py-2 text-sm font-medium"
+            :class="closeoutMode === CLOSEOUT_MODE_FAMILY_POOLED ? 'border-blue-500 bg-blue-950/40 text-blue-100' : 'border-gray-700 bg-gray-800 text-gray-400'"
+            @click="setCloseoutMode(CLOSEOUT_MODE_FAMILY_POOLED)"
+          >
+            Family pooled
+          </button>
+        </div>
+      </div>
+      <p v-else-if="user?.family_id" class="mt-3 text-[11px] leading-snug text-gray-500">
+        Classic / Family pooled is controlled by the head of household. You still see family rules when that mode is on.
+      </p>
     </div>
 
     <!-- Loading State -->
@@ -37,7 +66,7 @@
     </div>
 
     <!-- Empty State -->
-    <div v-else-if="rules.length === 0" class="flex items-center justify-center py-12">
+    <div v-else-if="rules.length === 0 && familyRules.length === 0" class="flex items-center justify-center py-12">
       <div class="text-center">
         <svg class="w-12 h-12 text-gray-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4v.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -47,10 +76,75 @@
       </div>
     </div>
 
-    <!-- Rules List -->
-    <div v-else class="space-y-3 px-4 py-4">
+    <div v-else class="px-4 py-4 space-y-6">
+      <div v-if="isFamilyPooled">
+        <div class="flex items-center justify-between gap-3 mb-3">
+          <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Family rules</h2>
+          <button
+            v-if="canManageFamily"
+            type="button"
+            class="min-h-11 px-3 py-2 text-sm font-medium text-blue-300"
+            @click="openFamilyForm"
+          >
+            Add family rule
+          </button>
+        </div>
+        <p class="text-xs text-gray-500 mb-3">
+          Surplus rules take a percent of family income minus necessary expenses. Remaining-after-charity rules run on what’s left after all expenses.
+        </p>
+        <div v-if="familyRules.length === 0" class="text-sm text-gray-500">No family rules yet.</div>
+        <div v-else class="space-y-3">
+          <div
+            v-for="rule in familyRules"
+            :key="'family-' + rule.id"
+            class="bg-gray-800 border border-gray-700 rounded-xl p-3"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs font-bold bg-blue-600 text-white px-2 py-1 rounded">{{ rule.order }}</span>
+                  <span class="text-sm font-medium text-gray-300">{{ rule.name }}</span>
+                  <span class="text-[10px] uppercase tracking-wide text-gray-500">{{ rule.stage === 'surplus' ? 'Surplus' : 'After charity' }}</span>
+                  <span :class="['w-2 h-2 rounded-full', rule.is_active ? 'bg-green-400' : 'bg-gray-500']"></span>
+                </div>
+                <div class="text-xs text-gray-400 space-y-1 mt-1">
+                  <div>{{ formatFamilyAllocation(rule) }}</div>
+                  <div>{{ getDestinationLabel(rule) }}</div>
+                </div>
+              </div>
+              <div v-if="canManageFamily" class="flex gap-2 flex-shrink-0">
+                <button @click="editFamilyRule(rule)" class="text-gray-400 hover:text-blue-400 transition-colors min-h-11 min-w-11 inline-flex items-center justify-center">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <button
+                  v-if="deleteFamilyConfirm !== rule.id"
+                  @click="deleteFamilyConfirm = rule.id"
+                  class="text-gray-400 hover:text-red-400 transition-colors min-h-11 min-w-11 inline-flex items-center justify-center"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+                <button v-else @click="deleteFamilyRule(rule.id)" class="text-red-400 animate-pulse text-xs font-bold">
+                  Confirm?
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h2 v-if="isFamilyPooled" class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Your leftover rules</h2>
+        <p v-if="isFamilyPooled" class="text-xs text-gray-500 mb-3">
+          These remaining-base rules run on your leftover share after family rules. Gross/net rules are skipped in family pooled mode.
+        </p>
+        <div v-if="visiblePersonalRules.length === 0" class="text-sm text-gray-500">{{ isFamilyPooled ? 'No leftover rules yet.' : 'No rules yet.' }}</div>
+        <div v-else class="space-y-3">
       <div
-        v-for="rule in rules"
+        v-for="rule in visiblePersonalRules"
         :key="rule.id"
         class="bg-gray-800 border border-gray-700 rounded-xl p-3"
       >
@@ -99,6 +193,8 @@
           </div>
         </div>
       </div>
+      </div>
+    </div>
     </div>
 
     <!-- Add/Edit Rule Modal -->
@@ -175,15 +271,27 @@
               />
             </div>
 
+            <!-- Family stage -->
+            <div v-if="formKind === 'family'">
+              <label class="block text-sm font-medium text-gray-300 mb-1">Stage</label>
+              <select
+                v-model="formData.stage"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option value="surplus">Surplus (income − necessary expenses)</option>
+                <option value="remaining_after_charity">Remaining after charity</option>
+              </select>
+            </div>
+
             <!-- Applied To -->
-            <div v-if="formData.allocation_type === 'percentage'">
+            <div v-if="formKind === 'personal' && formData.allocation_type === 'percentage'">
               <label class="block text-sm font-medium text-gray-300 mb-1">Applied To</label>
               <select
                 v-model="formData.allocation_base"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
               >
-                <option value="gross_income">Gross Income</option>
-                <option value="remaining">Remaining After Expenses</option>
+                <option v-if="!isFamilyPooled" value="gross_income">Gross Income</option>
+                <option value="remaining">{{ isFamilyPooled ? 'Your leftover share' : 'Remaining After Expenses' }}</option>
               </select>
             </div>
 
@@ -208,7 +316,7 @@
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
               >
                 <option :value="null">-- Select a fund --</option>
-                <optgroup label="Personal Funds">
+                <optgroup v-if="formKind !== 'family'" label="Personal Funds">
                   <option v-for="fund in personalFunds" :key="fund.id" :value="fund.id">
                     {{ fund.name }}
                   </option>
@@ -286,17 +394,38 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
+import { useAuth } from '../composables/useAuth';
 import { mobileDecimalNumberAttrs, mobileIntegerNumberAttrs } from '../support/mobileNumericInputAttrs.js';
+import {
+  CLOSEOUT_MODE_CLASSIC,
+  CLOSEOUT_MODE_FAMILY_POOLED,
+  isFamilyPooledCloseout,
+  normalizeCloseoutMode,
+} from '../support/closeoutMode.js';
 
 const { get, post, put, del, loading, error } = useApi();
+const { user } = useAuth();
 
 const rules = ref([]);
+const familyRules = ref([]);
+const closeoutMode = ref(CLOSEOUT_MODE_CLASSIC);
+const canManageFromApi = ref(null);
+const canManageFamily = computed(() => {
+  if (canManageFromApi.value !== null) {
+    return canManageFromApi.value;
+  }
+
+  return Boolean(user.value?.can_manage_family || user.value?.canManageFamily);
+});
+const isFamilyPooled = computed(() => isFamilyPooledCloseout(closeoutMode.value));
 const funds = ref([]);
 const debts = ref({});
 const categories = ref([]);
 const showForm = ref(false);
+const formKind = ref('personal');
 const editingRule = ref(null);
 const deleteConfirm = ref(null);
+const deleteFamilyConfirm = ref(null);
 
 const formData = ref({
   name: '',
@@ -304,11 +433,21 @@ const formData = ref({
   allocation_type: 'percentage',
   amount: 0,
   allocation_base: 'gross_income',
+  stage: 'surplus',
   destination_type: 'fund',
   destination_id: null,
   destination_title: '',
   closeout_expense_category_id: null,
   is_active: true,
+});
+
+const visiblePersonalRules = computed(() => {
+  const sorted = [...rules.value].sort((a, b) => a.order - b.order);
+  if (!isFamilyPooled.value) {
+    return sorted;
+  }
+
+  return sorted.filter((rule) => rule.allocation_base === 'remaining');
 });
 
 const expenseCategories = computed(() => {
@@ -346,7 +485,15 @@ const familyFunds = computed(() => {
 
 function formatAllocation(rule) {
   const amount = rule.allocation_type === 'percentage' ? `${rule.amount}%` : `$${Number(rule.amount).toFixed(2)}`;
-  const base = rule.allocation_base === 'gross_income' ? 'Gross Income' : 'Remaining After Expenses';
+  const base = rule.allocation_base === 'gross_income'
+    ? 'Gross Income'
+    : (isFamilyPooled.value ? 'your leftover share' : 'Remaining After Expenses');
+  return `${amount} of ${base}`;
+}
+
+function formatFamilyAllocation(rule) {
+  const amount = rule.allocation_type === 'percentage' ? `${rule.amount}%` : `$${Number(rule.amount).toFixed(2)}`;
+  const base = rule.stage === 'surplus' ? 'surplus (income − necessary expenses)' : 'remaining after charity';
   return `${amount} of ${base}`;
 }
 
@@ -423,12 +570,81 @@ async function fetchData() {
     funds.value = fundsData;
     debts.value = debtsData;
     categories.value = categoriesData;
+
+    try {
+      const settingsData = await get('/family/closeout-settings');
+      closeoutMode.value = normalizeCloseoutMode(settingsData.closeout_mode);
+      familyRules.value = (settingsData.family_rules || []).sort((a, b) => a.order - b.order);
+      canManageFromApi.value = Boolean(settingsData.can_manage);
+    } catch {
+      error.value = null;
+      closeoutMode.value = CLOSEOUT_MODE_CLASSIC;
+      familyRules.value = [];
+      canManageFromApi.value = false;
+    }
   } catch (err) {
     console.error('Failed to fetch data:', err);
   }
 }
 
+async function setCloseoutMode(mode) {
+  if (!canManageFamily.value || mode === closeoutMode.value) {
+    return;
+  }
+
+  const confirmed = window.confirm(
+    'This applies to open months only. Already hard-closed months stay as they were. Continue?'
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    const settingsData = await put('/family/closeout-settings', { closeout_mode: mode });
+    closeoutMode.value = normalizeCloseoutMode(settingsData.closeout_mode || mode);
+    familyRules.value = (settingsData.family_rules || []).sort((a, b) => a.order - b.order);
+    canManageFromApi.value = Boolean(settingsData.can_manage);
+  } catch (err) {
+    console.error('Failed to update closeout mode:', err);
+  }
+}
+
+function openPersonalForm() {
+  formKind.value = 'personal';
+  editingRule.value = null;
+  formData.value.allocation_base = isFamilyPooled.value ? 'remaining' : 'gross_income';
+  showForm.value = true;
+}
+
+function openFamilyForm() {
+  formKind.value = 'family';
+  editingRule.value = null;
+  formData.value.stage = 'surplus';
+  formData.value.destination_type = 'fund';
+  showForm.value = true;
+}
+
+function editFamilyRule(rule) {
+  formKind.value = 'family';
+  editingRule.value = rule;
+  formData.value = {
+    name: rule.name,
+    order: rule.order,
+    allocation_type: rule.allocation_type,
+    amount: rule.amount,
+    allocation_base: 'remaining',
+    stage: rule.stage,
+    destination_type: rule.destination_type,
+    destination_id: rule.destination_id,
+    destination_title: rule.destination_title,
+    closeout_expense_category_id: rule.closeout_expense_category_id,
+    is_active: rule.is_active,
+  };
+  showForm.value = true;
+}
+
 function editRule(rule) {
+  formKind.value = 'personal';
   editingRule.value = rule;
   formData.value = {
     name: rule.name,
@@ -453,7 +669,13 @@ async function saveRule() {
       amount: parseFloat(formData.value.amount),
     };
 
-    if (editingRule.value) {
+    if (formKind.value === 'family') {
+      if (editingRule.value) {
+        await put(`/family/closeout-rules/${editingRule.value.id}`, payload);
+      } else {
+        await post('/family/closeout-rules', payload);
+      }
+    } else if (editingRule.value) {
       await put(`/closeout-rules/${editingRule.value.id}`, payload);
     } else {
       await post('/closeout-rules', payload);
@@ -480,15 +702,27 @@ async function deleteRule(ruleId) {
   }
 }
 
+async function deleteFamilyRule(ruleId) {
+  try {
+    await del(`/family/closeout-rules/${ruleId}`);
+    deleteFamilyConfirm.value = null;
+    await fetchData();
+  } catch (err) {
+    console.error('Failed to delete family rule:', err);
+  }
+}
+
 function closeForm() {
   showForm.value = false;
   editingRule.value = null;
+  formKind.value = 'personal';
   formData.value = {
     name: '',
     order: 1,
     allocation_type: 'percentage',
     amount: 0,
-    allocation_base: 'gross_income',
+    allocation_base: isFamilyPooled.value ? 'remaining' : 'gross_income',
+    stage: 'surplus',
     destination_type: 'fund',
     destination_id: null,
     destination_title: '',

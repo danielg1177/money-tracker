@@ -61,7 +61,7 @@
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
             </svg>
-            <span class="hidden sm:block text-xs">Account</span>
+            <span class="text-[10px] leading-none sm:text-xs">Account</span>
           </button>
         </div>
       </div>
@@ -133,7 +133,7 @@
     >
       <div v-if="showUserMenu" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/50" @click="showUserMenu = false" />
-        <div class="absolute bottom-0 left-0 right-0 w-full max-w-full min-w-0 bg-gray-900 rounded-t-2xl overflow-hidden">
+        <div class="absolute bottom-0 left-0 right-0 flex max-h-[min(85dvh,100%)] w-full max-w-full min-w-0 flex-col overflow-hidden rounded-t-2xl bg-gray-900 pb-[env(safe-area-inset-bottom,0px)]">
           <!-- Header -->
           <div class="border-b border-gray-800 px-4 py-4 flex min-w-0 items-center justify-between">
             <div>
@@ -147,7 +147,7 @@
             </button>
           </div>
           <!-- Menu Items -->
-          <div class="py-2">
+          <div class="overflow-y-auto overscroll-contain py-2">
             <router-link
               to="/bank-connections"
               @click="showUserMenu = false"

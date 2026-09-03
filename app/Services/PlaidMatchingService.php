@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Category;
 use App\Models\FundMovement;
 use App\Models\PlaidMerchantRule;
 use App\Models\PlaidPendingImport;
@@ -257,7 +258,8 @@ class PlaidMatchingService
      *     type: string,
      *     fund_id: int|null,
      *     advance_fund_id: int|null,
-     *     is_non_necessity: bool,
+     *     exclude_from_expense_basis: bool,
+     *     is_necessity: bool,
      *     confidence_score: float,
      *     is_auto_eligible: bool,
      *     description: string|null,
@@ -285,7 +287,8 @@ class PlaidMatchingService
                 'type' => $typeFromPlaid,
                 'fund_id' => null,
                 'advance_fund_id' => null,
-                'is_non_necessity' => false,
+                'exclude_from_expense_basis' => false,
+                'is_necessity' => true,
                 'confidence_score' => 0.0,
                 'is_auto_eligible' => false,
                 'description' => null,
@@ -300,7 +303,8 @@ class PlaidMatchingService
             'type' => (string) $rule->type,
             'fund_id' => $rule->fund_id,
             'advance_fund_id' => $rule->advance_fund_id,
-            'is_non_necessity' => (bool) $rule->is_non_necessity,
+            'exclude_from_expense_basis' => (bool) $rule->exclude_from_expense_basis,
+            'is_necessity' => $this->necessityFromFamilyCategory($rule),
             'confidence_score' => $rule->confidenceScore(),
             'is_auto_eligible' => $rule->action === 'dismiss' ? false : $rule->isAutoCreateEligible(),
             'description' => $rule->description,
@@ -308,6 +312,21 @@ class PlaidMatchingService
             'debt_id' => $rule->debt_id,
             'split_data' => $rule->split_data,
         ];
+    }
+
+    private function necessityFromFamilyCategory(PlaidMerchantRule $rule): bool
+    {
+        if ($rule->category_id === null) {
+            return (bool) $rule->is_necessity;
+        }
+
+        $rule->loadMissing('category');
+        $category = $rule->category;
+        if ($category instanceof Category && $category->is_expense) {
+            return (bool) $category->is_necessity_default;
+        }
+
+        return (bool) $rule->is_necessity;
     }
 
     public function recordConfirmation(PlaidMerchantRule $rule): void
@@ -333,7 +352,7 @@ class PlaidMatchingService
             'merchant_key' => $key,
         ]);
 
-        $allowed = ['category_id', 'type', 'fund_id', 'advance_fund_id', 'is_non_necessity', 'is_split', 'action', 'description', 'is_debt_payment', 'debt_id', 'split_data'];
+        $allowed = ['category_id', 'type', 'fund_id', 'advance_fund_id', 'exclude_from_expense_basis', 'is_necessity', 'is_split', 'action', 'description', 'is_debt_payment', 'debt_id', 'split_data'];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $confirmedSettings)) {
                 $rule->{$field} = $confirmedSettings[$field];

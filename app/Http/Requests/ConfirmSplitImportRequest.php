@@ -165,7 +165,8 @@ class ConfirmSplitImportRequest extends FormRequest
             $line['is_split'] = false;
             $line['split_data'] = [];
             $line['debt_id'] = null;
-            $line['is_non_necessity'] = false;
+            $line['exclude_from_expense_basis'] = false;
+            $line['is_necessity'] = true;
             $line['income_debt_mode'] = $line['income_debt_mode'] ?? 'none';
         }
 
@@ -199,7 +200,7 @@ class ConfirmSplitImportRequest extends FormRequest
 
         if (! empty($line['debt_id'])) {
             $line['advance_fund_id'] = null;
-            $line['is_non_necessity'] = false;
+            $line['exclude_from_expense_basis'] = false;
         }
 
         if (
@@ -208,7 +209,7 @@ class ConfirmSplitImportRequest extends FormRequest
             || ! empty($line['is_split'])
             || ! empty($line['debt_id'])
         ) {
-            $line['is_non_necessity'] = false;
+            $line['exclude_from_expense_basis'] = false;
         }
 
         if (in_array($line['income_debt_mode'] ?? 'none', ['existing', 'receipt'], true)) {

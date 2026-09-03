@@ -99,7 +99,7 @@ class CategoryTest extends TestCase
             'is_income' => false,
             'is_expense' => true,
             'advance_fund_id' => $headFund->id,
-            'is_non_necessity_default' => false,
+            'exclude_from_expense_basis_default' => false,
         ])->assertStatus(200);
 
         $categoryId = (int) $createResponse->json('id');
@@ -109,7 +109,7 @@ class CategoryTest extends TestCase
             'is_income' => false,
             'is_expense' => true,
             'advance_fund_id' => $memberFund->id,
-            'is_non_necessity_default' => false,
+            'exclude_from_expense_basis_default' => false,
         ])->assertStatus(200);
 
         $this->actingAs($headOfHousehold)->getJson('/categories')
@@ -121,7 +121,7 @@ class CategoryTest extends TestCase
             ->assertJsonPath('0.advance_fund_id', $memberFund->id);
     }
 
-    public function test_non_necessity_default_is_user_specific_per_category(): void
+    public function test_exclude_from_expense_basis_default_is_user_specific_per_category(): void
     {
         $family = Family::factory()->create();
         $headOfHousehold = User::factory()->create([
@@ -168,7 +168,7 @@ class CategoryTest extends TestCase
             'is_income' => false,
             'is_expense' => true,
             'advance_fund_id' => $headFund->id,
-            'is_non_necessity_default' => true,
+            'exclude_from_expense_basis_default' => true,
         ])->assertStatus(200);
 
         $categoryId = (int) $createResponse->json('id');
@@ -178,15 +178,95 @@ class CategoryTest extends TestCase
             'is_income' => false,
             'is_expense' => true,
             'advance_fund_id' => $memberFund->id,
-            'is_non_necessity_default' => false,
+            'exclude_from_expense_basis_default' => false,
         ])->assertStatus(200);
 
         $this->actingAs($headOfHousehold)->getJson('/categories')
             ->assertOk()
-            ->assertJsonPath('0.is_non_necessity_default', true);
+            ->assertJsonPath('0.exclude_from_expense_basis_default', true);
 
         $this->actingAs($member)->getJson('/categories')
             ->assertOk()
-            ->assertJsonPath('0.is_non_necessity_default', false);
+            ->assertJsonPath('0.exclude_from_expense_basis_default', false);
+    }
+
+    public function test_necessity_default_is_shared_for_the_family_category(): void
+    {
+        $family = Family::factory()->create();
+        $headOfHousehold = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'head_of_household',
+        ]);
+        $member = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'member',
+        ]);
+
+        $createResponse = $this->actingAs($headOfHousehold)->postJson('/categories', [
+            'name' => 'Dining',
+            'is_income' => false,
+            'is_expense' => true,
+            'is_necessity_default' => false,
+        ])->assertStatus(200);
+
+        $categoryId = (int) $createResponse->json('id');
+
+        $this->actingAs($member)->getJson('/categories')
+            ->assertOk()
+            ->assertJsonPath('0.is_necessity_default', false);
+
+        $this->actingAs($member)->putJson("/categories/{$categoryId}", [
+            'name' => 'Dining',
+            'is_income' => false,
+            'is_expense' => true,
+            'is_necessity_default' => true,
+        ])->assertStatus(200);
+
+        $this->actingAs($headOfHousehold)->getJson('/categories')
+            ->assertOk()
+            ->assertJsonPath('0.is_necessity_default', true);
+    }
+
+    public function test_updating_category_while_family_pooled_preserves_exclude_from_expense_basis_default(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'head_of_household',
+        ]);
+        $fund = Fund::factory()->create([
+            'user_id' => $user->id,
+            'family_id' => $family->id,
+        ]);
+        FundRule::factory()->create([
+            'user_id' => $user->id,
+            'allocation_type' => 'percentage',
+            'allocation_base' => 'remaining',
+            'destination_type' => 'fund',
+            'destination_id' => $fund->id,
+            'is_active' => true,
+            'amount' => 10,
+            'order' => 1,
+        ]);
+
+        $created = $this->actingAs($user)->postJson('/categories', [
+            'name' => 'Dining',
+            'is_income' => false,
+            'is_expense' => true,
+            'advance_fund_id' => $fund->id,
+            'exclude_from_expense_basis_default' => true,
+        ])->assertStatus(200);
+
+        $family->update(['closeout_mode' => 'family_pooled']);
+        $user->unsetRelation('family');
+
+        $this->actingAs($user)->putJson('/categories/'.$created->json('id'), [
+            'name' => 'Dining',
+            'is_income' => false,
+            'is_expense' => true,
+            'advance_fund_id' => $fund->id,
+            'exclude_from_expense_basis_default' => false,
+        ])->assertStatus(200)
+            ->assertJsonPath('exclude_from_expense_basis_default', true);
     }
 }

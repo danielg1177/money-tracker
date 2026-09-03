@@ -44,7 +44,7 @@ class FundController extends Controller
             ->get()
             ->map(fn ($f) => array_merge($f->toArray(), [
                 'scope' => 'personal',
-                'has_non_necessity_rule' => isset($qualifyingFundIds[(int) $f->id]),
+                'has_remaining_percentage_rule' => isset($qualifyingFundIds[(int) $f->id]),
             ]))
             ->toBase();
 
@@ -56,7 +56,7 @@ class FundController extends Controller
                 ->get()
                 ->map(fn ($f) => array_merge($f->toArray(), [
                     'scope' => 'family',
-                    'has_non_necessity_rule' => isset($qualifyingFundIds[(int) $f->id]),
+                    'has_remaining_percentage_rule' => isset($qualifyingFundIds[(int) $f->id]),
                 ]))
                 ->toBase();
         }

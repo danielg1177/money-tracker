@@ -11,6 +11,21 @@ Format:
 
 ---
 
+## 2026-09-03 — Necessity default is family-shared
+
+- Files touched: `database/migrations/2026_09_03_172548_move_is_necessity_default_to_categories_table.php`, `app/Models/Category.php`, `app/Models/CategoryUserDefault.php`, `app/Http/Controllers/CategoryController.php`, `app/Services/PlaidMerchantRuleCategorySync.php`, `app/Services/PlaidMatchingService.php`, `app/Services/PlaidTransactionSyncService.php`, `database/factories/CategoryFactory.php`, `database/seeders/CloseoutDemoSeeder.php`, `resources/js/pages/Categories.vue`, `resources/js/components/DebtPaymentBenefitForm.vue`, `tests/Feature/CategoryTest.php`, `tests/Feature/PlaidMerchantRuleCategorySyncTest.php`, `tests/Feature/PlaidMatchingServiceTest.php`, `docs/ai/{00-repo-overview,01-architecture,02-backend-laravel,03-frontend-vue,04-database,06-feature-map,07-workflows,08-api-routes,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: Expense category **Default new expenses as a necessity** is stored on the shared `categories` row (like split). Any family member can change it. Saving a category copies that family flag onto every member's Plaid merchant rules for the category, without overwriting other members' personal advance / remaining-exclusion learning. Bank suggestions overlay family necessity from the category when a merchant rule has one. Advance and remaining-exclusion stay per-user. Existing user defaults are backfilled from the HoH row, else the first defaults row, else true. Per-expense `is_necessity` is unchanged.
+
+## 2026-09-03 — Apply category defaults to Plaid merchant rules
+
+- Files touched: `app/Services/PlaidMerchantRuleCategorySync.php`, `app/Http/Controllers/CategoryController.php`, `app/Http/Requests/SyncPlaidMerchantRulesFromCategoriesRequest.php`, `app/Console/Commands/SyncPlaidMerchantRulesFromCategoriesCommand.php`, `routes/web.php`, `resources/js/pages/Categories.vue`, `tests/Feature/PlaidMerchantRuleCategorySyncTest.php`, `docs/ai/{00-repo-overview,02-backend-laravel,03-frontend-vue,06-feature-map,07-workflows,08-api-routes,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: Saving an expense category copies that user's advance / remaining-exclusion / necessity defaults onto their bank merchant rules for that category (and open pending suggestions / unreviewed auto-created rows in open months). Categories has **Apply defaults to bank learning**. Artisan: `plaid:sync-merchant-rules-from-categories`. Does not reset categories, splits, dismiss rules, or confirmation counts.
+
+## 2026-09-03 — Resolve stash conflicts onto main
+
+- Files touched: `docs/ai/{00-repo-overview,01-architecture,02-backend-laravel,03-frontend-vue,04-database,06-feature-map,10-ai-change-log}.md`
+- Behavioral impact: **Docs only.** Merged closeout-mode documentation with `main` updates (manual fund override, Plaid pending skip, family-view edit of own rows). No code behavior change from this resolution.
+
 ## 2026-09-03 — Sweep amount defaults to available fund balance
 
 - Files touched: `resources/js/pages/Funds.vue`, `docs/ai/03-frontend-vue.md`, `docs/ai/10-ai-change-log.md`
@@ -47,6 +62,51 @@ Format:
 
 - Files touched: `resources/js/pages/Transactions.vue`, `resources/js/pages/Settings.vue`, `docs/ai/00-repo-overview.md`, `docs/ai/03-frontend-vue.md`, `docs/ai/04-database.md`, `docs/ai/06-feature-map.md`, `docs/ai/09-known-decisions.md`, `docs/ai/10-ai-change-log.md`
 - Behavioral impact: With **View all family expenses** on, the viewer can tap to edit and delete **their own** Transactions rows (same closeout / repaid / benefit locks as before). Other members’ rows stay browse-only. Settings copy no longer calls the overlay fully read-only. Creditor benefit-expense actions remain available on the viewer’s own debt-payment income.
+
+## 2026-08-24 — Closeout mode helpers and tighter family-rule authorization
+
+- Files touched: `app/Services/Closeout/{CloseoutMode,CloseoutScope,CloseoutEngineResolver,CloseoutTotals,CloseoutRulePreviewBuilder,CloseoutAllocationCommand,CloseoutAllocationWriter,ClassicCloseoutEngine,FamilyPooledCloseoutEngine,CloseoutArtifactReconstructor,LegacyCloseoutDataBackfill}.php`, `app/Models/{Family,FamilyCloseoutRule,MonthHardClose,User}.php`, `app/Http/Controllers/{FamilyCloseoutSettingsController,FamilyCloseoutRuleController,MonthSummaryController,CategoryController}.php`, `app/Http/Requests/{UpdateFamilyCloseoutSettingsRequest,StoreFamilyCloseoutRuleRequest,UpdateFamilyCloseoutRuleRequest,DestroyFamilyCloseoutRuleRequest,StoreCategoryRequest,Concerns/TransactionPayloadValidationRules}.php`, `app/Services/{MonthCloseoutService,TransactionService,PlaidTransactionSyncService}.php`, `database/migrations/2026_08_24_182044_add_family_id_order_index_to_family_closeout_rules_table.php`, `resources/js/support/closeoutMode.js`, Vue remaining-exclusion / Closeout Rules pages, `tests/Feature/{FamilyCloseoutModeTest,CategoryTest}.php`, `docs/ai/{00-repo-overview,01-architecture,02-backend-laravel,03-frontend-vue,04-database,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: Classic / family-pooled strings are centralized (`CloseoutMode` / `closeoutMode.js`). Family closeout rule update/delete is authorized via Form Requests and still 404s across families. Settings toggle requires `family_id` and returns the real `can_manage` flag. Remaining-exclusion validation is skipped while pooled (create still stores `false`; updates still preserve the stored flag, including category defaults). Settings snapshots include `version: 1` and store personal rules as plain attribute arrays. Cross-family rule mutation is tested.
+
+## 2026-08-24 — Mode switch keeps closed-month history labels
+
+- Files touched: `app/Http/Controllers/MonthCloseoutController.php`, `resources/js/pages/Transactions.vue`, `tests/Feature/CloseoutSnapshotTest.php`, `docs/ai/{02-backend-laravel,03-frontend-vue,07-workflows,08-api-routes,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: Switching Classic ↔ Family pooled still does not rewrite hard-closed snapshots, reconstructed classic months, or fund balances. `GET /closeout/closed-months` now includes each month’s stored `closeout_mode`. Transactions **Excluded from remaining** pills for a hard-closed month follow that stored mode, so classic history still shows remaining-exclusion after a switch to family pooled. Open months still follow the family’s current mode.
+
+## 2026-08-24 — Family pooled leftover UI matches leftover math
+
+- Files touched: `resources/js/pages/{MonthSummary,CloseoutRules}.vue`, `app/Services/Closeout/{FamilyPooledCloseoutEngine,CloseoutTotals,CloseoutRulePreviewBuilder}.php`, `tests/Feature/FamilyPooledCloseoutTest.php`, `docs/ai/{03-frontend-vue,10-ai-change-log}.md`
+- Behavioral impact: Family pooled Month Summary no longer presents leftover rules as classic remaining (income − expenses). The family box shows the full equation chain; leftover rules are **your leftover share**. Remaining-exclusion stays classic-only. Classic remaining still uses `exclude_from_expense_basis`. Closeout expense/income filters now use the same repaid/repayment-link scopes as category totals.
+
+## 2026-08-24 — Remaining-exclusion is classic-only
+
+- Files touched: `app/Services/TransactionService.php`, `app/Services/Closeout/{CloseoutTotals,FamilyPooledCloseoutEngine,CloseoutRulePreviewBuilder}.php`, `app/Services/PlaidTransactionSyncService.php`, `app/Models/{Family,User}.php`, `routes/web.php`, `resources/js/{support/authUser.js,pages/{PlaidImportReview,Categories,MonthSummary,Transactions}.vue,components/{TransactionForm,PlaidImportSplitLineOptions,DebtPaymentBenefitForm}.vue}`, `tests/Feature/{FamilyPooledCloseoutTest,FamilyCloseoutModeTest,UserSettingsTest}.php`, `docs/ai/{01-architecture,02-backend-laravel,03-frontend-vue,05-auth-permissions,06-feature-map,07-workflows,08-api-routes,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: **`exclude_from_expense_basis` has no effect when `closeout_mode=family_pooled`**. Math, leftover preview, Plaid auto-create, and UI (toggles, pills, remaining vs excluded breakdowns) ignore it. New writes store `false`; editing a row while pooled does not wipe an existing stored flag. Classic remaining-after-expenses is unchanged. Family pooled charity still uses **`is_necessity`**.
+
+## 2026-08-24 — Split remaining-exclusion from charity necessity
+
+- Files touched: migration `2026_08_24_165852_split_necessity_and_expense_basis_flags.php`, `app/Models/{Transaction,CategoryUserDefault,PlaidMerchantRule,PlaidPendingImport}.php`, `app/Services/Closeout/CloseoutTotals.php`, `app/Services/TransactionService.php`, category/transaction/Plaid requests and Vue forms (`TransactionForm`, `Categories`, `Transactions`, `MonthSummary`, `PlaidImportReview`, `PlaidImportSplitLineOptions`, `DebtPaymentBenefitForm`), `tests/Feature/{FamilyPooledCloseoutTest,CategoryTest,PlaidMatchingServiceTest}.php`, `docs/ai/{00-repo-overview,01-architecture,02-backend-laravel,03-frontend-vue,04-database,06-feature-map,07-workflows,08-api-routes,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: The old `is_non_necessity` flag is now **`exclude_from_expense_basis`** (advance + remaining-% rule only; classic remaining pool). A new **`is_necessity`** flag (default true) is on every expense and drives family-pooled **income − necessities**. Category defaults: `exclude_from_expense_basis_default` and `is_necessity_default`. Existing remaining-exclusion rows were backfilled to `is_necessity=false`.
+
+## 2026-08-24 — Show closeout mode toggle and Settings for cached sessions
+
+- Files touched: `resources/js/support/authUser.js`, `resources/js/AppShell.vue`, `resources/js/components/AppNav.vue`, `resources/js/pages/CloseoutRules.vue`, `resources/js/pages/MonthSummary.vue`, `docs/ai/{03-frontend-vue,05-auth-permissions,06-feature-map,10-ai-change-log}.md`
+- Behavioral impact: `normalizeAuthUser` now always sets `canManageFamily` / `can_manage_family`. App shell refreshes `/user` on load. Closeout Rules uses `can_manage` from `/family/closeout-settings` for the Classic / Family pooled toggle. Account menu is scrollable and labeled on phones so Settings is reachable. Members see a note that only the head of household can change closeout mode.
+
+## 2026-08-24 — Closeout demo seeder for local UI walkthrough
+
+- Files touched: `database/seeders/CloseoutDemoSeeder.php`, `tests/Feature/CloseoutDemoSeederTest.php`, `docs/ai/{00-repo-overview,04-database,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: Optional `php artisan db:seed --class=CloseoutDemoSeeder` creates a **Closeout Demo** household (not part of production `DatabaseSeeder`): Alex/Jordan logins (Alex is admin + head of household), family-pooled rules, a classic hard-closed month, a family-pooled hard-closed month, and a busy open current month for Transactions / Closeout Rules / View month.
+
+## 2026-08-24 — Backfill existing closeout history
+
+- Files touched: `app/Services/Closeout/CloseoutArtifactReconstructor.php`, `app/Services/Closeout/LegacyCloseoutDataBackfill.php`, `database/migrations/2026_08_24_154237_backfill_legacy_closeout_snapshots_and_scopes.php`, `tests/Feature/CloseoutLegacyDataBackfillTest.php`, `docs/ai/{02-backend-laravel,04-database,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: Existing families stay on **classic**. Existing closeout-initiated transactions get `closeout_scope=user`. Existing hard closes without snapshots get a reconstructed `results_snapshot` from fund movements / closeout debt payments / title savings — **not** from today’s `FundRule`s. New hard closes are unchanged.
+
+## 2026-08-24 — Dual-mode family closeout (history-safe)
+
+- Files touched: `app/Services/Closeout/*`, `app/Services/MonthCloseoutService.php`, `app/Http/Controllers/MonthSummaryController.php`, `app/Http/Controllers/FamilyCloseoutSettingsController.php`, `app/Http/Controllers/FamilyCloseoutRuleController.php`, `app/Models/{Family,FamilyCloseoutRule,MonthHardClose,Transaction}.php`, `database/migrations/2026_08_24_12000{0,1,2,3}_*.php`, `routes/web.php`, `resources/js/pages/{CloseoutRules,MonthSummary,Transactions}.vue`, `tests/Feature/{CloseoutSnapshotTest,FamilyCloseoutModeTest,FamilyPooledCloseoutTest}.php`, `docs/ai/{00-repo-overview,01-architecture,02-backend-laravel,03-frontend-vue,04-database,06-feature-map,07-workflows,08-api-routes,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: Families keep **Classic** per-user closeout (default) and can switch to **Family pooled** on Closeout Rules (HoH; open months only). Hard close snapshots mode + settings + results; Month Summary for closed months reads the snapshot (or reconstructs amounts from ledger artifacts). Family pooled: surplus charity on income − necessary expenses, remaining-after-charity subtracts all expenses including non-necessity, leftover split by inverse split-burden, then personal remaining rules on each share (gross/net skipped). Family-rule fund movements use `closeout_scope=family`.
 
 ## 2026-08-21 — Keep reimbursement card fills on locked months
 

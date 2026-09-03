@@ -19,7 +19,7 @@ class StoreDebtPaymentBenefitRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         if ($this->boolean('is_split') || ! $this->filled('advance_fund_id')) {
-            $this->merge(['is_non_necessity' => false]);
+            $this->merge(['exclude_from_expense_basis' => false]);
         }
 
         if (! $this->boolean('is_split')) {
@@ -29,7 +29,7 @@ class StoreDebtPaymentBenefitRequest extends FormRequest
         if ($this->boolean('is_split')) {
             $this->merge([
                 'advance_fund_id' => null,
-                'is_non_necessity' => false,
+                'exclude_from_expense_basis' => false,
             ]);
         }
     }
@@ -52,7 +52,8 @@ class StoreDebtPaymentBenefitRequest extends FormRequest
             'split_data.*.user_id' => ['required_with:split_data', 'exists:users,id'],
             'split_data.*.share_percentage' => ['required_with:split_data', 'numeric', 'min:0', 'max:100'],
             'advance_fund_id' => ['nullable', 'exists:funds,id'],
-            'is_non_necessity' => ['boolean'],
+            'exclude_from_expense_basis' => ['boolean'],
+            'is_necessity' => ['boolean'],
         ];
     }
 
@@ -66,7 +67,7 @@ class StoreDebtPaymentBenefitRequest extends FormRequest
                 }
             }
 
-            if ($this->boolean('is_non_necessity')) {
+            if ($this->boolean('exclude_from_expense_basis')) {
                 $user = $this->user();
                 $advanceFundId = (int) $this->input('advance_fund_id', 0);
                 $hasEligibleRule = $user !== null
@@ -85,8 +86,8 @@ class StoreDebtPaymentBenefitRequest extends FormRequest
                     || ! $hasEligibleRule
                 ) {
                     $v->errors()->add(
-                        'is_non_necessity',
-                        'Non-necessity is only allowed for non-split expenses with an advance fund that has an active percentage-of-remaining closeout rule targeting that fund.'
+                        'exclude_from_expense_basis',
+                        'Exclude from remaining is only allowed for non-split expenses with an advance fund that has an active percentage-of-remaining closeout rule targeting that fund.'
                     );
                 }
             }

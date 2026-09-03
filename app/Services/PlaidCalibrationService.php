@@ -228,7 +228,7 @@ class PlaidCalibrationService
                     'type' => $ledger->type,
                     'fund_id' => $ledger->fund_id,
                     'advance_fund_id' => $ledger->advance_fund_id,
-                    'is_non_necessity' => $ledger->is_non_necessity,
+                    'exclude_from_expense_basis' => $ledger->exclude_from_expense_basis,
                     'is_split' => $ledger->is_split,
                     'action' => 'categorize',
                 ]);
@@ -307,7 +307,7 @@ class PlaidCalibrationService
         }
 
         $advanceFundId = $pair['advance_fund_id'] ?? null;
-        $isNonNecessity = (bool) ($pair['is_non_necessity'] ?? false);
+        $excludeFromExpenseBasis = (bool) ($pair['exclude_from_expense_basis'] ?? false);
 
         $updatePayload = [
             'category_id' => $categoryId,
@@ -318,7 +318,10 @@ class PlaidCalibrationService
             'is_split' => (bool) $ledger->is_split,
             'split_data' => $ledger->split_data,
             'advance_fund_id' => $advanceFundId,
-            'is_non_necessity' => $isNonNecessity,
+            'exclude_from_expense_basis' => $excludeFromExpenseBasis,
+            'is_necessity' => array_key_exists('is_necessity', $pair)
+                ? (bool) $pair['is_necessity']
+                : (bool) $ledger->is_necessity,
         ];
 
         $this->transactionService->updateTransaction($ledger, $updatePayload);
@@ -336,7 +339,8 @@ class PlaidCalibrationService
             'type' => $type,
             'fund_id' => $pair['fund_id'] ?? null,
             'advance_fund_id' => $advanceFundId,
-            'is_non_necessity' => $isNonNecessity,
+            'exclude_from_expense_basis' => $excludeFromExpenseBasis,
+            'is_necessity' => (bool) ($pair['is_necessity'] ?? $ledger->is_necessity),
             'is_split' => (bool) $ledger->is_split,
             'action' => 'categorize',
         ]);
@@ -403,7 +407,8 @@ class PlaidCalibrationService
                 'suggested_type' => $suggestion['type'],
                 'suggested_fund_id' => $suggestion['fund_id'],
                 'suggested_advance_fund_id' => $suggestion['advance_fund_id'],
-                'suggested_is_non_necessity' => $suggestion['is_non_necessity'],
+                'suggested_exclude_from_expense_basis' => $suggestion['exclude_from_expense_basis'],
+                'suggested_is_necessity' => $suggestion['is_necessity'] ?? true,
                 'confidence_score' => $suggestion['confidence_score'],
                 'status' => 'dismissed',
                 'transaction_id' => null,
@@ -430,7 +435,8 @@ class PlaidCalibrationService
             'suggested_type' => $suggestion['type'],
             'suggested_fund_id' => $suggestion['fund_id'],
             'suggested_advance_fund_id' => $suggestion['advance_fund_id'],
-            'suggested_is_non_necessity' => $suggestion['is_non_necessity'],
+            'suggested_exclude_from_expense_basis' => $suggestion['exclude_from_expense_basis'],
+            'suggested_is_necessity' => $suggestion['is_necessity'] ?? true,
             'confidence_score' => $suggestion['confidence_score'],
             'status' => 'pending',
             'transaction_id' => null,

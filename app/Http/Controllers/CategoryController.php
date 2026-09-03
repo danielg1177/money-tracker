@@ -3,11 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreCategoryRequest;
+use App\Http\Requests\SyncPlaidMerchantRulesFromCategoriesRequest;
 use App\Models\Category;
+use App\Services\Closeout\CloseoutMode;
+use App\Services\PlaidMerchantRuleCategorySync;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 
 class CategoryController extends Controller
 {
+    public function __construct(private PlaidMerchantRuleCategorySync $plaidMerchantRuleCategorySync) {}
+
     public function index()
     {
         $user = Auth::user();
@@ -28,7 +34,8 @@ class CategoryController extends Controller
                 return [
                     ...$category->toArray(),
                     'advance_fund_id' => $category->is_expense ? $defaults?->advance_fund_id : null,
-                    'is_non_necessity_default' => $category->is_expense ? (bool) ($defaults?->is_non_necessity_default ?? false) : false,
+                    'exclude_from_expense_basis_default' => $category->is_expense ? (bool) ($defaults?->exclude_from_expense_basis_default ?? false) : false,
+                    'is_necessity_default' => $category->is_expense ? (bool) $category->is_necessity_default : true,
                 ];
             });
     }
@@ -41,6 +48,7 @@ class CategoryController extends Controller
             'family_id' => Auth::user()->family_id,
         ]);
         $this->upsertCategoryUserDefaults($category, $validated);
+        $this->plaidMerchantRuleCategorySync->syncFamilyCategory($category, Auth::user());
 
         return $this->categoryResponse($category->fresh());
     }
@@ -54,8 +62,16 @@ class CategoryController extends Controller
         $validated = $request->validated();
         $category->update($this->categoryPayload($validated));
         $this->upsertCategoryUserDefaults($category, $validated);
+        $this->plaidMerchantRuleCategorySync->syncFamilyCategory($category, Auth::user());
 
         return $this->categoryResponse($category->fresh());
+    }
+
+    public function syncPlaidMerchantRules(SyncPlaidMerchantRulesFromCategoriesRequest $request): JsonResponse
+    {
+        return response()->json(
+            $this->plaidMerchantRuleCategorySync->syncUser($request->user())
+        );
     }
 
     public function destroy(Category $category)
@@ -75,7 +91,14 @@ class CategoryController extends Controller
      */
     private function categoryPayload(array $validated): array
     {
-        return collect($validated)->except(['advance_fund_id', 'is_non_necessity_default'])->all();
+        $payload = collect($validated)->except(['advance_fund_id', 'exclude_from_expense_basis_default'])->all();
+        $isExpense = (bool) ($payload['is_expense'] ?? false);
+        $payload['is_necessity_default'] = $isExpense
+            ? (! array_key_exists('is_necessity_default', $validated)
+                || filter_var($validated['is_necessity_default'], FILTER_VALIDATE_BOOLEAN))
+            : true;
+
+        return $payload;
     }
 
     /**
@@ -84,15 +107,27 @@ class CategoryController extends Controller
     private function upsertCategoryUserDefaults(Category $category, array $validated): void
     {
         $advanceFundId = $category->is_expense ? ($validated['advance_fund_id'] ?? null) : null;
-        $isNonNecessityDefault = $category->is_expense
+        $user = Auth::user();
+        $excludeFromExpenseBasisDefault = $category->is_expense
             && $advanceFundId !== null
-            && ! empty($validated['is_non_necessity_default']);
+            && ! empty($validated['exclude_from_expense_basis_default']);
+
+        if (
+            $category->is_expense
+            && $advanceFundId !== null
+            && CloseoutMode::isFamilyPooled($user?->closeout_mode)
+        ) {
+            $existing = $category->userDefaults()
+                ->where('user_id', $user->id)
+                ->first();
+            $excludeFromExpenseBasisDefault = (bool) ($existing?->exclude_from_expense_basis_default);
+        }
 
         $category->userDefaults()->updateOrCreate(
             ['user_id' => Auth::id()],
             [
                 'advance_fund_id' => $advanceFundId,
-                'is_non_necessity_default' => $isNonNecessityDefault,
+                'exclude_from_expense_basis_default' => $excludeFromExpenseBasisDefault,
             ]
         );
     }
@@ -108,7 +143,8 @@ class CategoryController extends Controller
         return [
             ...$category->toArray(),
             'advance_fund_id' => $category->is_expense ? $defaults?->advance_fund_id : null,
-            'is_non_necessity_default' => $category->is_expense ? (bool) ($defaults?->is_non_necessity_default ?? false) : false,
+            'exclude_from_expense_basis_default' => $category->is_expense ? (bool) ($defaults?->exclude_from_expense_basis_default ?? false) : false,
+            'is_necessity_default' => $category->is_expense ? (bool) $category->is_necessity_default : true,
         ];
     }
 }

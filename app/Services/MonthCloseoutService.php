@@ -7,12 +7,13 @@ use App\Models\Debt;
 use App\Models\Family;
 use App\Models\Fund;
 use App\Models\FundMovement;
-use App\Models\FundRule;
 use App\Models\MonthHardClose;
 use App\Models\MonthSoftClose;
 use App\Models\Transaction;
-use App\Models\TransactionSplit;
 use App\Models\User;
+use App\Services\Closeout\CloseoutEngineResolver;
+use App\Services\Closeout\CloseoutMode;
+use App\Services\Closeout\CloseoutTotals;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,8 @@ class MonthCloseoutService
 {
     public function __construct(
         private DebtService $debtService,
+        private CloseoutEngineResolver $closeoutEngineResolver,
+        private CloseoutTotals $closeoutTotals,
     ) {}
 
     /**
@@ -177,12 +180,12 @@ class MonthCloseoutService
      * Includes tracked debt repayments (solo payer amount and split shares). Excludes closeout-generated
      * expense rows, borrow transactions, and expenses repaid via expense-repayment linking (`is_repaid`)
      * so hard-close math stays stable.
-     * Excludes non-necessity advance transactions (is_non_necessity = true); their deduction from fund balances
+     * Excludes advances marked exclude-from-remaining (`exclude_from_expense_basis = true`) in **classic** closeout only; family pooled ignores that flag. Their deduction from fund balances
      * is handled by applyFundAdvances() at closeout.
      */
     public function expenseTotalTowardRemainingBasis(User $user, int $year, int $month): float
     {
-        return $this->calculateExpenseTotalTowardRemainingBasis($user, $year, $month);
+        return $this->closeoutTotals->expenseTotalTowardRemainingBasis($user, $year, $month);
     }
 
     /**
@@ -192,56 +195,7 @@ class MonthCloseoutService
      */
     public function fundAdvanceOutstandingByFundForUserMonth(User $user, int $year, int $month): array
     {
-        return Transaction::query()
-            ->where('user_id', $user->id)
-            ->where('type', 'expense')
-            ->whereNotNull('advance_fund_id')
-            ->where('is_repaid', false)
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
-            ->selectRaw('advance_fund_id, SUM(amount) as total_advanced')
-            ->groupBy('advance_fund_id')
-            ->get()
-            ->mapWithKeys(fn ($row) => [(int) $row->advance_fund_id => (float) $row->total_advanced])
-            ->all();
-    }
-
-    /**
-     * @see expenseTotalTowardRemainingBasis()
-     */
-    private function calculateExpenseTotalTowardRemainingBasis(User $user, int $year, int $month): float
-    {
-        if (! $user->family_id) {
-            return 0.0;
-        }
-
-        $solo = (float) Transaction::query()
-            ->where('family_id', $user->family_id)
-            ->where('user_id', $user->id)
-            ->where('type', 'expense')
-            ->where('is_split', false)
-            ->where('is_closeout_initiated', false)
-            ->where('is_borrow', false)
-            ->where('is_non_necessity', false)
-            ->where('is_repaid', false)
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
-            ->sum('amount');
-
-        $split = (float) TransactionSplit::query()
-            ->where('user_id', $user->id)
-            ->whereHas('transaction', function ($q) use ($user, $year, $month): void {
-                $q->where('family_id', $user->family_id)
-                    ->whereYear('transaction_date', $year)
-                    ->whereMonth('transaction_date', $month)
-                    ->where('type', 'expense')
-                    ->where('is_closeout_initiated', false)
-                    ->where('is_borrow', false)
-                    ->where('is_repaid', false);
-            })
-            ->sum('amount');
-
-        return $solo + $split;
+        return $this->closeoutTotals->fundAdvanceOutstandingByFundForUserMonth($user, $year, $month);
     }
 
     /**
@@ -262,8 +216,14 @@ class MonthCloseoutService
         }
 
         return DB::transaction(function () use ($family, $closingUser, $year, $month) {
+            $family->loadMissing('users');
+            $engine = $this->closeoutEngineResolver->for($family);
+            $settingsSnapshot = $this->closeoutEngineResolver->settingsSnapshot($family);
+            $resultsSnapshot = $engine->preview($family, $year, $month);
+            $engine->apply($family, $closingUser, $year, $month);
+
             foreach ($family->users as $user) {
-                $this->processUserCloseoutRules($user, $year, $month);
+                $this->applyFundAdvances($user, sprintf('%04d-%02d', $year, $month), $year, $month);
             }
 
             $this->consolidatePendingSplitDebts($family, $year, $month);
@@ -275,6 +235,9 @@ class MonthCloseoutService
                 'month' => $month,
                 'closed_at' => now(),
                 'closed_by_user_id' => $closingUser->id,
+                'closeout_mode' => CloseoutMode::normalize($family->closeout_mode),
+                'settings_snapshot' => $settingsSnapshot,
+                'results_snapshot' => $resultsSnapshot,
             ]);
         });
     }
@@ -547,240 +510,7 @@ class MonthCloseoutService
     }
 
     /**
-     * Process a user's active closeout rules for a given month.
-     *
-     * @private
-     */
-    private function processUserCloseoutRules(User $user, int $year, int $month): void
-    {
-        $closeoutMonthTag = sprintf('%04d-%02d', $year, $month);
-
-        $grossIncome = Transaction::query()
-            ->where('user_id', $user->id)
-            ->where('type', 'income')
-            ->where('is_borrow', false)
-            ->where('is_debt_payment', false)
-            ->where('is_repayment', false)
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
-            ->sum('amount');
-
-        if ($grossIncome > 0) {
-            $grossRules = FundRule::query()
-                ->where('user_id', $user->id)
-                ->where('is_active', true)
-                ->where('allocation_base', '!=', 'remaining')
-                ->orderBy('order')
-                ->get();
-
-            $remainingRules = FundRule::query()
-                ->where('user_id', $user->id)
-                ->where('is_active', true)
-                ->where('allocation_base', 'remaining')
-                ->orderBy('order')
-                ->get();
-
-            $fundAdvanceRemaining = $this->fundAdvanceOutstandingByFundForUserMonth($user, $year, $month);
-
-            $grossRemaining = $grossIncome;
-            $grossAllocationsTotal = 0;
-
-            foreach ($grossRules as $rule) {
-                if ($rule->allocation_type === 'percentage') {
-                    $allocate = round($grossIncome * $rule->amount / 100, 2);
-                } else {
-                    $allocate = min((float) $rule->amount, $grossRemaining);
-                }
-
-                if ($allocate <= 0) {
-                    continue;
-                }
-
-                $actualAllocated = $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
-                $grossRemaining -= $actualAllocated;
-
-                $towardRemainingPool = $actualAllocated;
-                if ($rule->destination_type === 'fund' && $rule->destination_id) {
-                    $fundId = (int) $rule->destination_id;
-                    if ($fundId > 0) {
-                        $outstanding = (float) ($fundAdvanceRemaining[$fundId] ?? 0.0);
-                        $towardRemainingPool = max(0.0, $actualAllocated - $outstanding);
-                        $fundAdvanceRemaining[$fundId] = max(0.0, $outstanding - $actualAllocated);
-                    }
-                }
-
-                $grossAllocationsTotal += $towardRemainingPool;
-
-                if ($grossRemaining <= 0) {
-                    break;
-                }
-            }
-
-            $totalExpenses = $this->calculateExpenseTotalTowardRemainingBasis($user, $year, $month);
-
-            $remainingBasePool = $grossIncome - $grossAllocationsTotal - $totalExpenses;
-            $remainingAvailablePool = $remainingBasePool;
-
-            if ($remainingAvailablePool > 0) {
-                foreach ($remainingRules as $rule) {
-                    if ($rule->allocation_type === 'percentage') {
-                        $projectedAmount = round($remainingBasePool * $rule->amount / 100, 2);
-                        $allocate = min($projectedAmount, $remainingAvailablePool);
-                    } else {
-                        $allocate = min((float) $rule->amount, $remainingAvailablePool);
-                    }
-
-                    if ($allocate <= 0) {
-                        continue;
-                    }
-
-                    $actualAllocated = $this->applyRuleAllocation($rule, $user, $year, $month, $allocate);
-                    $remainingAvailablePool -= $actualAllocated;
-
-                    if ($remainingAvailablePool <= 0) {
-                        break;
-                    }
-                }
-            }
-        }
-
-        $this->applyFundAdvances($user, $closeoutMonthTag, $year, $month);
-    }
-
-    /**
-     * Apply a rule allocation to the appropriate destination (fund, debt, or title).
-     *
-     * @private
-     */
-    private function applyRuleAllocation(FundRule $rule, User $user, int $year, int $month, float $amount): float
-    {
-        return match ($rule->destination_type) {
-            'fund' => $this->allocateToFund($rule, $user, $year, $month, $amount),
-            'debt' => $this->allocateToDebt($rule, $user, $year, $month, $amount),
-            'title' => $this->allocateToTitle($rule, $user, $year, $month, $amount),
-        };
-    }
-
-    /**
-     * Allocate funds to a fund.
-     *
-     * @private
-     */
-    private function allocateToFund(FundRule $rule, User $user, int $year, int $month, float $amount): float
-    {
-        $fund = Fund::query()->findOrFail($rule->destination_id);
-        $fund->increment('balance', $amount);
-
-        $transaction = Transaction::query()->create([
-            'family_id' => $user->family_id,
-            'user_id' => $user->id,
-            'category_id' => $rule->closeout_expense_category_id,
-            'type' => 'expense',
-            'amount' => $amount,
-            'description' => "Closeout transfer to fund: {$fund->name}",
-            'transaction_date' => $this->resolveCloseoutTransactionDate($year, $month),
-            'is_debt_payment' => false,
-            'is_closeout_initiated' => true,
-            'is_split' => false,
-            'split_data' => null,
-        ]);
-
-        FundMovement::query()->create([
-            'fund_id' => $fund->id,
-            'user_id' => $user->id,
-            'type' => 'closeout_allocation',
-            'amount' => $amount,
-            'transaction_id' => $transaction->id,
-            'description' => sprintf('Closeout rule: %s (%04d-%02d)', $rule->name, $year, $month),
-        ]);
-
-        return $amount;
-    }
-
-    /**
-     * Allocate funds to pay down a debt.
-     *
-     * Allow any family member to contribute to family debts through closeout rules.
-     *
-     * @private
-     */
-    private function allocateToDebt(FundRule $rule, User $user, int $year, int $month, float $amount): float
-    {
-        $debt = Debt::query()
-            ->where('id', $rule->destination_id)
-            ->where('family_id', $user->family_id)
-            ->first();
-
-        if ($debt && $debt->balance > 0) {
-            $payAmount = min($amount, (float) $debt->balance);
-            $debt->decrement('balance', $payAmount);
-
-            $debtLabel = $debt->creditor_name ?? $debt->creditor?->name ?? 'Unknown';
-
-            Transaction::query()->create([
-                'family_id' => $user->family_id,
-                'user_id' => $user->id,
-                'category_id' => $rule->closeout_expense_category_id,
-                'type' => 'expense',
-                'amount' => $payAmount,
-                'description' => "Debt Payment: {$debtLabel}",
-                'transaction_date' => $this->resolveCloseoutTransactionDate($year, $month),
-                'is_debt_payment' => true,
-                'debt_id' => $debt->id,
-                'paid_by_user_id' => $user->id,
-                'is_closeout_initiated' => true,
-            ]);
-
-            return $payAmount;
-        }
-
-        return 0;
-    }
-
-    /**
-     * Resolve transaction date for closeout-generated entries.
-     */
-    private function resolveCloseoutTransactionDate(int $year, int $month): string
-    {
-        $now = now();
-
-        if ((int) $now->year === $year && (int) $now->month === $month) {
-            return $now->toDateString();
-        }
-
-        return Carbon::create($year, $month, 1)->endOfMonth()->toDateString();
-    }
-
-    /**
-     * Allocate funds to a titled savings record.
-     *
-     * @private
-     */
-    private function allocateToTitle(FundRule $rule, User $user, int $year, int $month, float $amount): float
-    {
-        $titleSaving = CloseoutTitleSaving::query()->firstOrNew([
-            'family_id' => $user->family_id,
-            'user_id' => $user->id,
-            'year' => $year,
-            'month' => $month,
-            'title' => $rule->destination_title,
-        ]);
-
-        $titleSaving->amount = ($titleSaving->amount ?? 0) + $amount;
-
-        if (! $titleSaving->exists) {
-            $titleSaving->rule_id = $rule->id;
-        }
-
-        $titleSaving->save();
-
-        return $amount;
-    }
-
-    /**
      * Deduct advance-against-fund expenses from fund balances at closeout.
-     *
-     * @private
      */
     private function applyFundAdvances(User $user, string $closeoutMonthTag, int $year, int $month): void
     {

@@ -78,6 +78,25 @@
             </div>
           </div>
 
+          <div
+            class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg cursor-pointer"
+            @click="form.is_necessity = !form.is_necessity"
+          >
+            <div>
+              <p class="text-sm font-medium text-gray-300">{{ form.is_necessity ? 'Necessity' : 'Not a necessity' }}</p>
+              <p class="text-xs text-gray-500 mt-0.5">Family pooled charity uses income minus necessities</p>
+            </div>
+            <div
+              class="w-10 h-6 rounded-full transition-colors relative flex-shrink-0"
+              :class="form.is_necessity ? 'bg-blue-600' : 'bg-violet-600'"
+            >
+              <div
+                class="absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                :class="form.is_necessity ? 'translate-x-5' : 'translate-x-1'"
+              />
+            </div>
+          </div>
+
           <div v-if="form.is_split">
             <SplitEditor
               :family-users="familyUsers"
@@ -117,21 +136,21 @@
               </option>
             </select>
             <div
-              v-if="form.advance_fund_id !== null && selectedFundHasNonNecessityRule"
+              v-if="form.advance_fund_id !== null && selectedFundHasRemainingPercentageRule && allowExpenseBasisExclusion"
               class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg cursor-pointer"
-              @click="form.is_non_necessity = !form.is_non_necessity"
+              @click="form.exclude_from_expense_basis = !form.exclude_from_expense_basis"
             >
               <div>
-                <p class="text-sm font-medium text-gray-300">Mark as non-necessity</p>
-                <p class="text-xs text-gray-500 mt-0.5">Excluded from expense basis at closeout</p>
+                <p class="text-sm font-medium text-gray-300">Exclude from remaining</p>
+                <p class="text-xs text-gray-500 mt-0.5">Do not subtract this from remaining closeout expenses</p>
               </div>
               <div
                 class="w-10 h-6 rounded-full transition-colors relative flex-shrink-0"
-                :class="form.is_non_necessity ? 'bg-violet-600' : 'bg-gray-700'"
+                :class="form.exclude_from_expense_basis ? 'bg-violet-600' : 'bg-gray-700'"
               >
                 <div
                   class="absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform"
-                  :class="form.is_non_necessity ? 'translate-x-5' : 'translate-x-1'"
+                  :class="form.exclude_from_expense_basis ? 'translate-x-5' : 'translate-x-1'"
                 />
               </div>
             </div>
@@ -177,7 +196,9 @@
 import { computed, ref, watch } from 'vue';
 import SplitEditor from './SplitEditor.vue';
 import { useApi } from '../composables/useApi';
+import { useAuth } from '../composables/useAuth';
 import { equalSplitPayloadForFamilyUsers } from '../support/equalFamilySplit.js';
+import { allowsExpenseBasisExclusion } from '../support/closeoutMode.js';
 
 const props = defineProps({
   income: {
@@ -201,6 +222,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'saved', 'removed']);
 
 const { post, put, del } = useApi();
+const { user } = useAuth();
 
 const form = ref({
   category_id: null,
@@ -208,7 +230,8 @@ const form = ref({
   is_split: false,
   split_data: [],
   advance_fund_id: null,
-  is_non_necessity: false,
+  exclude_from_expense_basis: false,
+  is_necessity: true,
 });
 const formError = ref('');
 const saving = ref(false);
@@ -222,13 +245,52 @@ const expenseCategories = computed(() =>
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })),
 );
 
-const selectedFundHasNonNecessityRule = computed(() => {
+const selectedFundHasRemainingPercentageRule = computed(() => {
   if (form.value.advance_fund_id == null) {
     return false;
   }
   const fund = props.funds.find((f) => Number(f.id) === Number(form.value.advance_fund_id));
-  return Boolean(fund?.has_non_necessity_rule);
+  return Boolean(fund?.has_remaining_percentage_rule);
 });
+
+const allowExpenseBasisExclusion = computed(
+  () => allowsExpenseBasisExclusion(user.value?.closeout_mode),
+);
+
+watch(
+  () => form.value.category_id,
+  (categoryId) => {
+    if (!categoryId) {
+      return;
+    }
+    const cat = expenseCategories.value.find((c) => Number(c.id) === Number(categoryId));
+    if (!cat) {
+      return;
+    }
+    if (existingBenefit.value && Number(existingBenefit.value.category_id) === Number(categoryId)) {
+      return;
+    }
+    form.value.is_necessity = cat.is_necessity_default !== false;
+    if (cat.is_split_default && cat.split_default?.length) {
+      form.value.is_split = true;
+      form.value.split_data = props.familyUsers?.length
+        ? equalSplitPayloadForFamilyUsers(props.familyUsers)
+        : [];
+    }
+    if (cat.advance_fund_id) {
+      form.value.advance_fund_id = cat.advance_fund_id;
+    }
+    if (
+      allowExpenseBasisExclusion.value
+      && cat.exclude_from_expense_basis_default
+      && selectedFundHasRemainingPercentageRule.value
+    ) {
+      form.value.exclude_from_expense_basis = true;
+    } else {
+      form.value.exclude_from_expense_basis = false;
+    }
+  },
+);
 
 function formatCurrency(amount) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -237,11 +299,11 @@ function formatCurrency(amount) {
 function toggleAdvanceFund() {
   if (form.value.advance_fund_id !== null) {
     form.value.advance_fund_id = null;
-    form.value.is_non_necessity = false;
+    form.value.exclude_from_expense_basis = false;
     return;
   }
   form.value.advance_fund_id = props.funds[0]?.id ?? null;
-  form.value.is_non_necessity = false;
+  form.value.exclude_from_expense_basis = false;
 }
 
 function resetFromIncome() {
@@ -257,7 +319,8 @@ function resetFromIncome() {
         share_percentage: Number(s.share_percentage),
       })),
       advance_fund_id: benefit.advance_fund_id ?? null,
-      is_non_necessity: Boolean(benefit.is_non_necessity),
+      exclude_from_expense_basis: Boolean(benefit.exclude_from_expense_basis),
+      is_necessity: benefit.is_necessity !== false,
     };
     return;
   }
@@ -268,7 +331,8 @@ function resetFromIncome() {
     is_split: false,
     split_data: equalSplitPayloadForFamilyUsers(props.familyUsers),
     advance_fund_id: null,
-    is_non_necessity: false,
+    exclude_from_expense_basis: false,
+    is_necessity: true,
   };
 }
 
@@ -287,7 +351,7 @@ watch(
   (isSplit) => {
     if (isSplit) {
       form.value.advance_fund_id = null;
-      form.value.is_non_necessity = false;
+      form.value.exclude_from_expense_basis = false;
       if (!form.value.split_data?.length) {
         form.value.split_data = equalSplitPayloadForFamilyUsers(props.familyUsers);
       }
@@ -298,8 +362,8 @@ watch(
 watch(
   () => form.value.advance_fund_id,
   () => {
-    if (!selectedFundHasNonNecessityRule.value) {
-      form.value.is_non_necessity = false;
+    if (!selectedFundHasRemainingPercentageRule.value) {
+      form.value.exclude_from_expense_basis = false;
     }
   },
 );
@@ -328,7 +392,8 @@ async function submit() {
     is_split: Boolean(form.value.is_split),
     split_data: form.value.is_split ? form.value.split_data : null,
     advance_fund_id: form.value.is_split ? null : form.value.advance_fund_id,
-    is_non_necessity: !form.value.is_split && Boolean(form.value.is_non_necessity),
+    exclude_from_expense_basis: allowExpenseBasisExclusion.value && !form.value.is_split && Boolean(form.value.exclude_from_expense_basis),
+    is_necessity: form.value.is_necessity !== false,
   };
 
   try {

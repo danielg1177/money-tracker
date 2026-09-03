@@ -43,6 +43,24 @@
       </button>
     </div>
 
+    <div v-if="user?.family_id" class="px-4 pt-4">
+      <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+        <p class="text-sm text-gray-300">
+          Necessity is shared for the family. Advance and remaining-exclusion stay yours. Saving a category updates bank merchants to match. After you change several defaults, apply them all at once.
+        </p>
+        <button
+          type="button"
+          class="mt-3 w-full min-h-[44px] px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+          :disabled="plaidSyncing"
+          @click="applyPlaidCategoryDefaults"
+        >
+          {{ plaidSyncing ? 'Updating bank learning…' : 'Apply defaults to bank learning' }}
+        </button>
+        <p v-if="plaidSyncMessage" class="mt-2 text-xs text-green-400">{{ plaidSyncMessage }}</p>
+        <p v-if="plaidSyncError" class="mt-2 text-xs text-red-400">{{ plaidSyncError }}</p>
+      </div>
+    </div>
+
     <!-- Loading State -->
     <div v-if="loading && !categories.length" class="flex items-center justify-center py-12">
       <div class="text-center">
@@ -114,8 +132,11 @@
             <span v-if="category.is_split_default && category.is_expense" class="px-2 py-1 bg-purple-900/30 text-purple-300 text-xs font-medium rounded">
               Split Default
             </span>
-            <span v-if="category.is_non_necessity_default && category.is_expense" class="px-2 py-1 bg-violet-900/30 text-violet-300 text-xs font-medium rounded">
-              Non-Necessity Default
+            <span v-if="allowExpenseBasisExclusion && category.exclude_from_expense_basis_default && category.is_expense" class="px-2 py-1 bg-amber-900/30 text-amber-300 text-xs font-medium rounded">
+              Exclude from remaining
+            </span>
+            <span v-if="category.is_expense && category.is_necessity_default === false" class="px-2 py-1 bg-violet-900/30 text-violet-300 text-xs font-medium rounded">
+              Not a necessity
             </span>
           </div>
         </div>
@@ -263,22 +284,36 @@
                     {{ fund.name }} ({{ fund.scope === 'family' || fund.family_id ? 'Family' : 'Personal' }})
                   </option>
                 </select>
-                <p class="text-xs text-gray-500 mt-1">Expense transactions in this category will default to advancing against this fund</p>
+                <p class="text-xs text-gray-500 mt-1">Only for you. New expenses you add in this category will default to advancing against this fund.</p>
               </div>
 
+              <div class="flex items-center gap-3">
+                <input
+                  id="is-necessity-default"
+                  v-model="form.is_necessity_default"
+                  type="checkbox"
+                  :disabled="submitting"
+                  class="w-4 h-4 bg-gray-800 border border-gray-700 rounded focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                />
+                <label for="is-necessity-default" class="text-sm font-medium text-gray-300 cursor-pointer">
+                  Default new expenses as a necessity
+                </label>
+              </div>
+              <p class="text-xs text-gray-500 -mt-1">Shared for the whole family. Family pooled charity uses income minus necessities. Saving also updates bank merchants already learned for this category.</p>
+
               <div
-                v-if="form.advance_fund_id && selectedAdvanceFundHasNonNecessityRule"
+                v-if="allowExpenseBasisExclusion && form.advance_fund_id && selectedAdvanceFundHasRemainingPercentageRule"
                 class="flex items-center gap-3"
               >
                 <input
-                  id="is-non-necessity-default"
-                  v-model="form.is_non_necessity_default"
+                  id="exclude-from-expense-basis-default"
+                  v-model="form.exclude_from_expense_basis_default"
                   type="checkbox"
                   :disabled="submitting"
-                  class="w-4 h-4 bg-gray-800 border border-gray-700 rounded focus:ring-violet-500 cursor-pointer disabled:opacity-50"
+                  class="w-4 h-4 bg-gray-800 border border-gray-700 rounded focus:ring-amber-500 cursor-pointer disabled:opacity-50"
                 />
-                <label for="is-non-necessity-default" class="text-sm font-medium text-gray-300 cursor-pointer">
-                  Default transactions as non-necessity
+                <label for="exclude-from-expense-basis-default" class="text-sm font-medium text-gray-300 cursor-pointer">
+                  Default to exclude from remaining
                 </label>
               </div>
             </template>
@@ -366,14 +401,17 @@
 <script setup>
 import { computed, ref, watch, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
+import { useAuth } from '../composables/useAuth';
 import IconPicker from '../components/IconPicker.vue';
 import SplitEditor from '../components/SplitEditor.vue';
 import {
   equalSplitPayloadForFamilyUsers,
   hasPositiveSplitShares,
 } from '../support/equalFamilySplit.js';
+import { allowsExpenseBasisExclusion } from '../support/closeoutMode.js';
 
 const { get, post, put, delete: apiDelete, loading } = useApi();
+const { user } = useAuth();
 
 const categories = ref([]);
 const familyUsers = ref([]);
@@ -387,6 +425,9 @@ const deleting = ref(false);
 const deleteConfirm = ref(null);
 const activeTypeFilter = ref('expense');
 const categoryType = ref('expense');
+const plaidSyncing = ref(false);
+const plaidSyncMessage = ref('');
+const plaidSyncError = ref('');
 
 const form = ref({
   name: '',
@@ -394,7 +435,8 @@ const form = ref({
   is_split_default: false,
   split_default: [],
   advance_fund_id: null,
-  is_non_necessity_default: false,
+  exclude_from_expense_basis_default: false,
+  is_necessity_default: true,
 });
 
 const filteredCategories = computed(() => {
@@ -409,11 +451,15 @@ const filteredCategories = computed(() => {
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 });
 
-const selectedAdvanceFundHasNonNecessityRule = computed(() => {
+const selectedAdvanceFundHasRemainingPercentageRule = computed(() => {
   if (!form.value.advance_fund_id) return false;
   const fund = funds.value.find(f => f.id === form.value.advance_fund_id);
-  return fund?.has_non_necessity_rule === true;
+  return fund?.has_remaining_percentage_rule === true;
 });
+
+const allowExpenseBasisExclusion = computed(
+  () => allowsExpenseBasisExclusion(user.value?.closeout_mode),
+);
 
 onMounted(() => {
   fetchCategories();
@@ -450,14 +496,15 @@ watch(
     if (t !== 'expense') {
       form.value.is_split_default = false;
       form.value.split_default = [];
-      form.value.is_non_necessity_default = false;
+      form.value.exclude_from_expense_basis_default = false;
+      form.value.is_necessity_default = true;
     }
   }
 );
 
 watch(() => form.value.advance_fund_id, (newVal) => {
   if (!newVal) {
-    form.value.is_non_necessity_default = false;
+    form.value.exclude_from_expense_basis_default = false;
   }
 });
 
@@ -496,6 +543,30 @@ async function fetchFunds() {
   }
 }
 
+async function applyPlaidCategoryDefaults() {
+  if (plaidSyncing.value) {
+    return;
+  }
+  if (!window.confirm('Apply your current category defaults to bank merchant learning? This replaces learned advance, necessity, and remaining-exclusion flags for merchants in those categories. Categories, splits, and dismiss rules stay as they are.')) {
+    return;
+  }
+
+  plaidSyncing.value = true;
+  plaidSyncMessage.value = '';
+  plaidSyncError.value = '';
+  try {
+    const result = await post('/categories/sync-plaid-rules');
+    const rules = Number(result?.merchant_rules ?? 0);
+    plaidSyncMessage.value = rules === 0
+      ? 'No bank merchants to update.'
+      : `Updated ${rules} bank merchant${rules === 1 ? '' : 's'}.`;
+  } catch (err) {
+    plaidSyncError.value = err.response?.data?.message || 'Could not update bank learning.';
+  } finally {
+    plaidSyncing.value = false;
+  }
+}
+
 function resetForm() {
   categoryType.value = 'expense';
   form.value = {
@@ -504,7 +575,8 @@ function resetForm() {
     is_split_default: false,
     split_default: [],
     advance_fund_id: null,
-    is_non_necessity_default: false,
+    exclude_from_expense_basis_default: false,
+    is_necessity_default: true,
   };
 }
 
@@ -526,7 +598,8 @@ function editCategory(category) {
     is_split_default: isExpense && category.is_split_default,
     split_default: isExpense ? (category.split_default || []) : [],
     advance_fund_id: isExpense ? (category.advance_fund_id || null) : null,
-    is_non_necessity_default: isExpense ? (category.is_non_necessity_default || false) : false,
+    exclude_from_expense_basis_default: isExpense ? (category.exclude_from_expense_basis_default || false) : false,
+    is_necessity_default: isExpense ? (category.is_necessity_default !== false) : true,
   };
   showAddModal.value = true;
 }
@@ -559,7 +632,12 @@ async function handleSubmit() {
       is_split_default: isExpense && form.value.is_split_default,
       split_default: isExpense && form.value.is_split_default ? form.value.split_default : null,
       advance_fund_id: isExpense ? (form.value.advance_fund_id || null) : null,
-      is_non_necessity_default: isExpense && !!form.value.advance_fund_id ? (form.value.is_non_necessity_default || false) : false,
+      exclude_from_expense_basis_default: isExpense && !!form.value.advance_fund_id
+        ? (allowExpenseBasisExclusion.value
+          ? (form.value.exclude_from_expense_basis_default || false)
+          : Boolean(editingCategory.value?.exclude_from_expense_basis_default))
+        : false,
+      is_necessity_default: isExpense ? form.value.is_necessity_default !== false : true,
     };
 
     if (editingCategory.value) {

@@ -10,7 +10,7 @@
 - Borrow from personal funds and track repayment
 - Mark expense transactions as advancing against (settling at month close against) a specific fund
 - Track debts owed between family members and record payments, including the initial value of the debt in history
-- Organize transactions by category (per family), with optional expense defaults where split template is family-shared and advance/non-necessity defaults are per-user-per-category
+- Organize transactions by category (per family), with optional expense defaults where split and necessity are family-shared and advance / exclude-from-remaining defaults are per-user-per-category
 - Administrate users and families (admin/head-of-household roles)
 
 ## Tech stack
@@ -35,16 +35,16 @@ money-tracker/
 ├── app/
 │   ├── Actions/Fortify/       # Fortify action overrides (user creation, password update)
 │   ├── Http/
-│   │   ├── Controllers/       # Admin, BankBalance, Category, Dashboard, Debt, Fund, MonthCloseout, MonthSummary, Plaid (+ webhook), Transaction, UserSettings + base Controller
+│   │   ├── Controllers/       # Admin, BankBalance, Category, Dashboard, Debt, FamilyCloseout*, Fund, MonthCloseout, MonthSummary, Plaid (+ webhook), Transaction, UserSettings + base Controller
 │   │   └── Requests/          # Form Request classes (incl. ExchangePlaidTokenRequest)
-│   ├── Models/                # 17 Eloquent models
+│   ├── Models/                # 18 Eloquent models
 │   ├── Policies/              # FundPolicy, DebtPolicy
 │   ├── Providers/             # AppServiceProvider (Gates, Plaid client singleton), FortifyServiceProvider
-│   └── Services/              # ClosedMonthGuard, DebtService, FundService, MonthCloseoutService, PlaidCalibrationService, PlaidClient, PlaidMatchingService, PlaidTransactionSyncService, SplitCalculator, TransactionRepaymentService, TransactionService
+│   └── Services/              # ClosedMonthGuard, DebtService, FundService, MonthCloseoutService, Closeout engines, PlaidCalibrationService, PlaidClient, PlaidMatchingService, PlaidMerchantRuleCategorySync, PlaidTransactionSyncService, SplitCalculator, TransactionRepaymentService, TransactionService
 ├── database/
-│   ├── factories/             # 7 factories
-│   ├── migrations/            # 57 migrations (initial set 2026-04-30; ongoing additions)
-│   └── seeders/               # DatabaseSeeder (creates one admin user + family, no factories)
+│   ├── factories/             # 8 factories
+│   ├── migrations/            # 64 migrations (initial set 2026-04-30; ongoing additions)
+│   └── seeders/               # DatabaseSeeder (admin + family); CloseoutDemoSeeder (optional local closeout UI demo)
 ├── resources/
 │   ├── css/app.css            # Tailwind v4 entry
 │   ├── js/                    # Vue SPA source
@@ -54,7 +54,7 @@ money-tracker/
 │   │   ├── composables/       # useApi.js, useAuth.js, useSelectedMonth.js
 │   │   ├── pages/             # user pages incl. BankConnections + admin pages
 │   │   ├── router/index.js    # Vue Router config + beforeEach guards
-│   │   └── support/           # authUser.js, yearMonth.js, debtPaymentLabel.js, etc.
+│   │   └── support/           # authUser.js, closeoutMode.js, yearMonth.js, debtPaymentLabel.js, etc.
 │   └── views/
 │       ├── app.blade.php      # SPA shell (single <div id="app">)
 │       └── welcome.blade.php  # Default Laravel welcome (not used in app flow)
@@ -62,7 +62,7 @@ money-tracker/
 │   ├── web.php                # All application routes (SPA views + JSON endpoints)
 │   └── console.php            # Artisan `inspire`; optional commented `Schedule` for `plaid:daily-sync` when enabled
 ├── tests/
-│   ├── Feature/               # 30 PHPUnit feature classes (see `tests/Feature/`; includes `FundOverrideTest`, `PlaidIntegrationTest`, `PlaidImportTest`, `PlaidMatchingServiceTest`, `PlaidCalibrationServiceTest`, `PlaidSweepMatchTest`)
+│   ├── Feature/               # 36 PHPUnit feature classes (see `tests/Feature/`; includes `FundOverrideTest`, closeout snapshot/mode tests, `PlaidIntegrationTest`, `PlaidImportTest`, `PlaidMatchingServiceTest`, `PlaidCalibrationServiceTest`, `PlaidSweepMatchTest`)
 │   └── Unit/                  # ExampleTest stub
 ├── config/                    # Standard Laravel config files + fortify.php + plaid.php
 ├── Caddyfile                  # FrankenPHP/Caddy runtime config (binds to `$PORT`, serves `/app/public`)

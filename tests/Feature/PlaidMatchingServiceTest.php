@@ -219,7 +219,8 @@ class PlaidMatchingServiceTest extends TestCase
         $this->assertNull($suggestion['category_id']);
         $this->assertNull($suggestion['fund_id']);
         $this->assertNull($suggestion['advance_fund_id']);
-        $this->assertFalse($suggestion['is_non_necessity']);
+        $this->assertFalse($suggestion['exclude_from_expense_basis']);
+        $this->assertTrue($suggestion['is_necessity']);
         $this->assertSame(0.0, $suggestion['confidence_score']);
         $this->assertFalse($suggestion['is_auto_eligible']);
     }
@@ -241,7 +242,7 @@ class PlaidMatchingServiceTest extends TestCase
             'type' => 'expense',
             'fund_id' => null,
             'advance_fund_id' => null,
-            'is_non_necessity' => true,
+            'exclude_from_expense_basis' => true,
             'is_split' => false,
             'confirmation_count' => 4,
             'total_seen_count' => 4,
@@ -254,9 +255,39 @@ class PlaidMatchingServiceTest extends TestCase
 
         $this->assertSame($category->id, $suggestion['category_id']);
         $this->assertSame('expense', $suggestion['type']);
-        $this->assertTrue($suggestion['is_non_necessity']);
+        $this->assertTrue($suggestion['exclude_from_expense_basis']);
+        $this->assertTrue($suggestion['is_necessity']);
         $this->assertSame(1.0, $suggestion['confidence_score']);
         $this->assertTrue($suggestion['is_auto_eligible']);
+    }
+
+    public function test_get_suggestion_uses_family_category_necessity_instead_of_stale_rule(): void
+    {
+        $family = Family::factory()->create();
+        $user = User::factory()->create(['family_id' => $family->id]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+            'is_necessity_default' => false,
+        ]);
+
+        PlaidMerchantRule::query()->create([
+            'user_id' => $user->id,
+            'merchant_key' => PlaidMerchantRule::normalizeKey('Corner Cafe'),
+            'category_id' => $category->id,
+            'type' => 'expense',
+            'is_necessity' => true,
+            'confirmation_count' => 4,
+            'total_seen_count' => 4,
+        ]);
+
+        $suggestion = $this->service()->getSuggestion([
+            'amount' => 3.5,
+            'merchant_name' => 'Corner Cafe',
+        ], $user->id);
+
+        $this->assertFalse($suggestion['is_necessity']);
     }
 
     public function test_record_confirmation_increments_both_counters(): void
@@ -271,7 +302,7 @@ class PlaidMatchingServiceTest extends TestCase
             'type' => 'expense',
             'fund_id' => null,
             'advance_fund_id' => null,
-            'is_non_necessity' => false,
+            'exclude_from_expense_basis' => false,
             'is_split' => false,
             'confirmation_count' => 1,
             'total_seen_count' => 2,
@@ -296,7 +327,7 @@ class PlaidMatchingServiceTest extends TestCase
             'type' => 'expense',
             'fund_id' => null,
             'advance_fund_id' => null,
-            'is_non_necessity' => false,
+            'exclude_from_expense_basis' => false,
             'is_split' => false,
             'confirmation_count' => 1,
             'total_seen_count' => 2,
@@ -322,12 +353,12 @@ class PlaidMatchingServiceTest extends TestCase
         $rule = $this->service()->learnFromConfirmation($user->id, 'Fresh Market!', [
             'category_id' => $category->id,
             'type' => 'expense',
-            'is_non_necessity' => true,
+            'exclude_from_expense_basis' => true,
         ]);
 
         $this->assertSame(PlaidMerchantRule::normalizeKey('Fresh Market!'), $rule->merchant_key);
         $this->assertSame($category->id, $rule->category_id);
-        $this->assertTrue($rule->is_non_necessity);
+        $this->assertTrue($rule->exclude_from_expense_basis);
         $this->assertSame(1, $rule->confirmation_count);
         $this->assertSame(1, $rule->total_seen_count);
 

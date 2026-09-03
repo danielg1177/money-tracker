@@ -178,10 +178,10 @@ class DebtPaymentBenefitTest extends TestCase
             'category_id' => $expenseCategory->id,
             'is_split' => false,
             'advance_fund_id' => $fund->id,
-            'is_non_necessity' => true,
+            'exclude_from_expense_basis' => true,
         ])->assertCreated()
             ->assertJsonPath('advance_fund_id', $fund->id)
-            ->assertJsonPath('is_non_necessity', true);
+            ->assertJsonPath('exclude_from_expense_basis', true);
     }
 
     public function test_debtor_cannot_record_benefit_on_creditor_income(): void

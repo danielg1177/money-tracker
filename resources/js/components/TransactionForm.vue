@@ -529,6 +529,27 @@
       </div>
     </div>
 
+    <div
+      v-if="form.type === 'expense'"
+      @click="!isInteractionBlocked && (form.is_necessity = !form.is_necessity)"
+      class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
+      :class="isInteractionBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
+    >
+      <div>
+        <p class="text-sm font-medium text-gray-300">{{ form.is_necessity ? 'Necessity' : 'Not a necessity' }}</p>
+        <p class="text-xs text-gray-500 mt-0.5">Family pooled charity uses income minus necessities</p>
+      </div>
+      <div
+        class="w-10 h-6 rounded-full transition-colors relative flex-shrink-0"
+        :class="form.is_necessity ? 'bg-blue-600' : 'bg-violet-600'"
+      >
+        <div
+          class="absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform"
+          :class="form.is_necessity ? 'translate-x-5' : 'translate-x-1'"
+        />
+      </div>
+    </div>
+
     <!-- Advance Against Fund -->
     <div v-if="form.type === 'expense' && !payTowardDebt" class="space-y-2">
       <div
@@ -561,22 +582,22 @@
         </option>
       </select>
       <div
-        v-if="form.advance_fund_id !== null && selectedFundHasNonNecessityRule"
-        @click="!isInteractionBlocked && (form.is_non_necessity = !form.is_non_necessity)"
+        v-if="form.advance_fund_id !== null && selectedFundHasRemainingPercentageRule && allowExpenseBasisExclusion"
+        @click="!isInteractionBlocked && (form.exclude_from_expense_basis = !form.exclude_from_expense_basis)"
         class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
         :class="isInteractionBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
       >
         <div>
-          <p class="text-sm font-medium text-gray-300">Mark as non-necessity</p>
-          <p class="text-xs text-gray-500 mt-0.5">Excluded from expense basis at closeout; advance settles net against the fund</p>
+          <p class="text-sm font-medium text-gray-300">Exclude from remaining</p>
+          <p class="text-xs text-gray-500 mt-0.5">Do not subtract this from remaining closeout expenses; it still settles against the advance fund</p>
         </div>
         <div
           class="w-10 h-6 rounded-full transition-colors relative flex-shrink-0"
-          :class="form.is_non_necessity ? 'bg-violet-600' : 'bg-gray-700'"
+          :class="form.exclude_from_expense_basis ? 'bg-violet-600' : 'bg-gray-700'"
         >
           <div
             class="absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform"
-            :class="form.is_non_necessity ? 'translate-x-5' : 'translate-x-1'"
+            :class="form.exclude_from_expense_basis ? 'translate-x-5' : 'translate-x-1'"
           />
         </div>
       </div>
@@ -630,6 +651,7 @@ import { ref, computed, watch } from 'vue';
 import { useApi } from '../composables/useApi';
 import { useAuth } from '../composables/useAuth';
 import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
+import { allowsExpenseBasisExclusion } from '../support/closeoutMode.js';
 import SplitEditor from './SplitEditor.vue';
 import DebtRepaymentReceivedOptions from './DebtRepaymentReceivedOptions.vue';
 import {
@@ -683,7 +705,8 @@ const form = ref({
   is_split: false,
   split_data: [],
   advance_fund_id: null,
-  is_non_necessity: false,
+  exclude_from_expense_basis: false,
+  is_necessity: true,
   debt_id: null,
   income_debt_mode: 'none',
   income_existing_debt_id: null,
@@ -746,11 +769,15 @@ const selectedCategory = computed(() => {
   return filteredCategories.value.find(cat => cat.id === form.value.category_id);
 });
 
-const selectedFundHasNonNecessityRule = computed(() => {
+const selectedFundHasRemainingPercentageRule = computed(() => {
   if (form.value.advance_fund_id === null) return false;
   const fund = props.funds.find(f => f.id === form.value.advance_fund_id);
-  return fund?.has_non_necessity_rule === true;
+  return fund?.has_remaining_percentage_rule === true;
 });
+
+const allowExpenseBasisExclusion = computed(
+  () => allowsExpenseBasisExclusion(user.value?.closeout_mode),
+);
 
 const isEditMode = computed(() => !!props.transaction);
 
@@ -948,7 +975,8 @@ watch(
         is_split: newTransaction.is_split,
         split_data: normalizeSplits(newTransaction.split_data || []),
         advance_fund_id: newTransaction.advance_fund_id ?? null,
-        is_non_necessity: newTransaction.is_non_necessity ?? false,
+        exclude_from_expense_basis: newTransaction.exclude_from_expense_basis ?? false,
+        is_necessity: newTransaction.is_necessity ?? true,
         debt_id: newTransaction.debt_id ?? null,
         income_debt_mode: newTransaction.is_loan_receipt
           ? 'receipt'
@@ -1025,7 +1053,7 @@ watch(payTowardDebt, (on) => {
     return;
   }
   form.value.advance_fund_id = null;
-  form.value.is_non_necessity = false;
+  form.value.exclude_from_expense_basis = false;
   if (payableDebts.value.length === 1) {
     form.value.debt_id = payableDebts.value[0].id;
   }
@@ -1033,7 +1061,7 @@ watch(payTowardDebt, (on) => {
 
 watch(() => form.value.is_split, (newVal) => {
   if (newVal) {
-    form.value.is_non_necessity = false;
+    form.value.exclude_from_expense_basis = false;
   }
 
   if (!newVal) {
@@ -1052,7 +1080,7 @@ watch(() => form.value.is_split, (newVal) => {
 watch(() => form.value.type, (newType) => {
   if (newType === 'income') {
     form.value.advance_fund_id = null;
-    form.value.is_non_necessity = false;
+    form.value.exclude_from_expense_basis = false;
     form.value.is_split = false;
     form.value.split_data = [];
     payTowardDebt.value = false;
@@ -1124,17 +1152,26 @@ watch(() => form.value.category_id, () => {
   if (selectedCategory.value?.advance_fund_id) {
     form.value.advance_fund_id = selectedCategory.value.advance_fund_id;
   }
-  // Auto-apply non-necessity default from category, subject to fund rule check
-  if (selectedCategory.value?.is_non_necessity_default && selectedFundHasNonNecessityRule.value) {
-    form.value.is_non_necessity = true;
+  // Auto-apply remaining-exclusion and necessity defaults from category
+  if (
+    allowExpenseBasisExclusion.value
+    && selectedCategory.value?.exclude_from_expense_basis_default
+    && selectedFundHasRemainingPercentageRule.value
+  ) {
+    form.value.exclude_from_expense_basis = true;
   } else {
-    form.value.is_non_necessity = false;
+    form.value.exclude_from_expense_basis = false;
+  }
+  if (selectedCategory.value && selectedCategory.value.is_necessity_default === false) {
+    form.value.is_necessity = false;
+  } else {
+    form.value.is_necessity = true;
   }
 });
 
 watch(() => form.value.advance_fund_id, (newVal) => {
   if (newVal === null) {
-    form.value.is_non_necessity = false;
+    form.value.exclude_from_expense_basis = false;
   }
 });
 
@@ -1201,7 +1238,8 @@ function resetForm() {
     is_split: false,
     split_data: [],
     advance_fund_id: null,
-    is_non_necessity: false,
+    exclude_from_expense_basis: false,
+    is_necessity: true,
     debt_id: null,
     income_debt_mode: 'none',
     income_existing_debt_id: null,
@@ -1339,14 +1377,16 @@ async function handleSubmit() {
       is_split: form.value.type === 'expense' && form.value.is_split,
       advance_fund_id:
         form.value.type === 'expense' && !payTowardDebt.value ? (form.value.advance_fund_id || null) : null,
-      is_non_necessity:
+      exclude_from_expense_basis:
+        allowExpenseBasisExclusion.value &&
         form.value.type === 'expense' &&
         !payTowardDebt.value &&
         !form.value.is_split &&
         form.value.advance_fund_id !== null &&
-        selectedFundHasNonNecessityRule.value
-          ? (form.value.is_non_necessity || false)
+        selectedFundHasRemainingPercentageRule.value
+          ? (form.value.exclude_from_expense_basis || false)
           : false,
+      is_necessity: form.value.type === 'expense' ? Boolean(form.value.is_necessity) : true,
       ...(form.value.type === 'expense' && form.value.is_split
         ? { split_data: form.value.split_data }
         : {}),

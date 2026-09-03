@@ -7,10 +7,14 @@ use App\Models\CloseoutTitleSaving;
 use App\Models\Debt;
 use App\Models\Fund;
 use App\Models\FundMovement;
-use App\Models\FundRule;
+use App\Models\MonthHardClose;
 use App\Models\Transaction;
 use App\Models\TransactionSplit;
 use App\Models\User;
+use App\Services\Closeout\CloseoutArtifactReconstructor;
+use App\Services\Closeout\CloseoutEngineResolver;
+use App\Services\Closeout\CloseoutMode;
+use App\Services\Closeout\CloseoutRulePreviewBuilder;
 use App\Services\MonthCloseoutService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -25,7 +29,12 @@ class MonthSummaryController extends Controller
      */
     private const SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID = -1;
 
-    public function __construct(private MonthCloseoutService $monthCloseoutService) {}
+    public function __construct(
+        private MonthCloseoutService $monthCloseoutService,
+        private CloseoutEngineResolver $closeoutEngineResolver,
+        private CloseoutArtifactReconstructor $artifactReconstructor,
+        private CloseoutRulePreviewBuilder $rulePreviewBuilder,
+    ) {}
 
     public function show(Request $request): JsonResponse
     {
@@ -51,7 +60,8 @@ class MonthSummaryController extends Controller
 
         $memberBalances = $this->getMemberBalances($user, $year, $month);
 
-        $rulePreview = $this->getRulePreview($user, $year, $month);
+        $closeoutResolved = $this->resolveCloseoutComputation($user, $year, $month, $isHardClosed);
+        $rulePreview = $this->viewerRulePreview($closeoutResolved['computation'], $user);
         $fundMovements = $this->getFundMovements($user, $year, $month);
         $debtRepayments = $this->getDebtRepaymentsSummary($user, $year, $month);
         $titleSavings = $this->getTitleSavings($user, $year, $month, $isHardClosed);
@@ -65,6 +75,11 @@ class MonthSummaryController extends Controller
             'category_transactions' => $this->getCategoryTransactions($user, $year, $month),
             'member_balances' => $memberBalances,
             'rule_preview' => $rulePreview,
+            'closeout_preview' => [
+                'mode' => $closeoutResolved['mode'],
+                'source' => $closeoutResolved['source'],
+                'family' => $closeoutResolved['computation']['family'] ?? null,
+            ],
             'fund_advance_transactions' => $this->getFundAdvanceTransactions($user, $year, $month),
             'fund_movements' => $fundMovements,
             'debt_repayments' => $debtRepayments,
@@ -995,7 +1010,8 @@ class MonthSummaryController extends Controller
      *     amount: float,
      *     category_name: string|null,
      *     category_icon: string|null,
-     *     is_non_necessity: bool
+     *     exclude_from_expense_basis: bool,
+     *     is_necessity: bool
      * }>>
      */
     private function getFundAdvanceTransactions(User $viewer, int $year, int $month): array
@@ -1026,7 +1042,8 @@ class MonthSummaryController extends Controller
                 'amount' => round((float) $transaction->amount, 2),
                 'category_name' => $transaction->category?->name,
                 'category_icon' => $transaction->category?->icon,
-                'is_non_necessity' => (bool) $transaction->is_non_necessity,
+                'exclude_from_expense_basis' => (bool) $transaction->exclude_from_expense_basis,
+                'is_necessity' => (bool) $transaction->is_necessity,
             ];
         }
 
@@ -1361,305 +1378,53 @@ class MonthSummaryController extends Controller
     }
 
     /**
-     * Human-readable lines describing how {@see MonthCloseoutService::expenseTotalTowardRemainingBasis}
-     * builds the expense total used in month-summary preview and hard-close remaining math.
-     *
-     * @return list<string>
+     * @return array{computation: array<string, mixed>, source: string, mode: string}
      */
-    private function expenseCloseoutBasisLines(): array
+    private function resolveCloseoutComputation(User $user, int $year, int $month, bool $isHardClosed): array
     {
-        return [
-            'Includes your solo expenses, your split expense shares, and repayments toward tracked debts.',
-            'Excludes fund-borrow withdrawals, expenses repaid by another member (`is_repaid`), and expenses created by closeout (so repeat closeouts do not change the basis).',
-            'Expense-repayment income (`is_repayment`) is excluded from gross income the same way debt repayments received are excluded.',
-            'Non-necessity advance transactions are excluded from this total; they are settled directly against their target fund at closeout.',
-        ];
-    }
+        $hardClose = MonthHardClose::query()
+            ->where('family_id', $user->family_id)
+            ->where('year', $year)
+            ->where('month', $month)
+            ->first();
 
-    /**
-     * Dry-run the closeout rule math for the current user (read-only).
-     *
-     * @return array{basis: array<string, float>, expense_closeout_basis: array{lines: list<string>}, rules: array}
-     */
-    private function getRulePreview(object $user, int $year, int $month): array
-    {
-        $grossIncome = Transaction::query()
-            ->where('user_id', $user->id)
-            ->where('type', 'income')
-            ->where('is_borrow', false)
-            ->where('is_debt_payment', false)
-            ->whereNotRepaymentIncome()
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
-            ->sum('amount');
-
-        $grossIncome = (float) $grossIncome;
-
-        if ($grossIncome <= 0) {
+        if ($hardClose && is_array($hardClose->results_snapshot) && $hardClose->results_snapshot !== []) {
             return [
-                'basis' => [
-                    'gross_income' => 0.0,
-                    'total_expenses' => 0.0,
-                    'non_necessity_expenses' => 0.0,
-                    'gross_allocations_total' => 0.0,
-                    'remaining_after_expenses' => 0.0,
-                ],
-                'expense_closeout_basis' => [
-                    'lines' => $this->expenseCloseoutBasisLines(),
-                ],
-                'rules' => [],
+                'computation' => $hardClose->results_snapshot,
+                'source' => 'snapshot',
+                'mode' => $hardClose->resolvedCloseoutMode(),
             ];
         }
 
-        $totalExpenses = $this->monthCloseoutService->expenseTotalTowardRemainingBasis($user, $year, $month);
-        $nonNecessityExpenses = (float) Transaction::query()
-            ->where('user_id', $user->id)
-            ->where('type', 'expense')
-            ->where('is_non_necessity', true)
-            ->whereNotNull('advance_fund_id')
-            ->where('is_closeout_initiated', false)
-            ->whereNotRepaidExpense()
-            ->whereYear('transaction_date', $year)
-            ->whereMonth('transaction_date', $month)
-            ->sum('amount');
-
-        $grossRules = FundRule::query()
-            ->where('user_id', $user->id)
-            ->where('is_active', true)
-            ->where('allocation_base', '!=', 'remaining')
-            ->orderBy('order')
-            ->get();
-
-        $remainingRules = FundRule::query()
-            ->where('user_id', $user->id)
-            ->where('is_active', true)
-            ->where('allocation_base', 'remaining')
-            ->orderBy('order')
-            ->get();
-
-        $previewDebtBalances = $this->previewDebtBalancesForRules($user, $grossRules, $remainingRules);
-
-        $fundAdvanceRemaining = $this->monthCloseoutService->fundAdvanceOutstandingByFundForUserMonth($user, $year, $month);
-
-        $grossRemaining = $grossIncome;
-        $grossAllocationsTotal = 0;
-        $ruleResults = [];
-
-        $grossRuleList = $grossRules->values()->all();
-        foreach ($grossRuleList as $grossRuleIndex => $rule) {
-            if ($rule->allocation_type === 'percentage') {
-                $nominalGrossAllocation = round($grossIncome * $rule->amount / 100, 2);
-            } else {
-                $nominalGrossAllocation = min((float) $rule->amount, $grossRemaining);
-            }
-
-            $appliedGrossAllocation = $this->applyDebtBalanceCapForRulePreview($rule, $nominalGrossAllocation, $previewDebtBalances);
-
-            $towardRemainingPool = $appliedGrossAllocation;
-            if ($rule->destination_type === 'fund' && $rule->destination_id) {
-                $fundId = (int) $rule->destination_id;
-                if ($fundId > 0) {
-                    $outstanding = (float) ($fundAdvanceRemaining[$fundId] ?? 0.0);
-                    $towardRemainingPool = max(0.0, $appliedGrossAllocation - $outstanding);
-                }
-            }
-
-            if ($appliedGrossAllocation > 0) {
-                $grossRemaining -= $appliedGrossAllocation;
-                $grossAllocationsTotal += $towardRemainingPool;
-            }
-
-            $this->pushRulePreviewResult(
-                $ruleResults,
-                $fundAdvanceRemaining,
-                $rule,
-                $appliedGrossAllocation,
-                ($rule->destination_type === 'debt') ? $nominalGrossAllocation : null,
-            );
-
-            if ($grossRemaining <= 0) {
-                foreach (array_slice($grossRuleList, $grossRuleIndex + 1) as $remainingGrossRule) {
-                    $this->pushRulePreviewResult($ruleResults, $fundAdvanceRemaining, $remainingGrossRule, 0.0);
-                }
-
-                break;
-            }
+        if ($isHardClosed) {
+            return [
+                'computation' => $this->artifactReconstructor->reconstructForUser($user, $year, $month),
+                'source' => 'reconstructed',
+                'mode' => CloseoutMode::Classic,
+            ];
         }
 
-        $remainingBasePool = max(0, $grossIncome - $grossAllocationsTotal - $totalExpenses);
-        $remainingAvailablePool = $remainingBasePool;
-
-        foreach ($remainingRules as $rule) {
-            if ($rule->allocation_type === 'percentage') {
-                $nominalRemainingAllocation = round($remainingBasePool * $rule->amount / 100, 2);
-                $nominalRemainingAllocation = min($nominalRemainingAllocation, $remainingAvailablePool);
-            } else {
-                $nominalRemainingAllocation = min((float) $rule->amount, $remainingAvailablePool);
-            }
-
-            $appliedRemainingAllocation = $this->applyDebtBalanceCapForRulePreview($rule, $nominalRemainingAllocation, $previewDebtBalances);
-
-            if ($appliedRemainingAllocation > 0) {
-                $remainingAvailablePool -= $appliedRemainingAllocation;
-            }
-
-            $this->pushRulePreviewResult(
-                $ruleResults,
-                $fundAdvanceRemaining,
-                $rule,
-                $appliedRemainingAllocation,
-                ($rule->destination_type === 'debt') ? $nominalRemainingAllocation : null,
-            );
-        }
-
-        $rawRemaining = round($grossIncome - $grossAllocationsTotal - $totalExpenses, 2);
+        $user->loadMissing('family.users');
+        $computation = $this->closeoutEngineResolver->for($user->family)->preview($user->family, $year, $month);
 
         return [
-            'basis' => [
-                'gross_income' => round($grossIncome, 2),
-                'total_expenses' => round($totalExpenses, 2),
-                'non_necessity_expenses' => round($nonNecessityExpenses, 2),
-                'gross_allocations_total' => round($grossAllocationsTotal, 2),
-                'remaining_after_expenses' => $rawRemaining,
-            ],
-            'expense_closeout_basis' => [
-                'lines' => $this->expenseCloseoutBasisLines(),
-            ],
-            'rules' => $ruleResults,
+            'computation' => $computation,
+            'source' => 'live',
+            'mode' => $computation['mode'] ?? CloseoutMode::normalize($user->family->closeout_mode),
         ];
     }
 
     /**
-     * Snapshot of debt balances for closeout preview, decremented across gross then remaining rules
-     * so multiple rules targeting the same debt match {@see MonthCloseoutService::allocateToDebt()} order.
-     *
-     * @param  iterable<int, FundRule>  $grossRules
-     * @param  iterable<int, FundRule>  $remainingRules
-     * @return array<int, float>
+     * @param  array<string, mixed>  $computation
+     * @return array{basis: array<string, float>, expense_closeout_basis: array{lines: list<string>}, rules: array}
      */
-    private function previewDebtBalancesForRules(object $user, iterable $grossRules, iterable $remainingRules): array
+    private function viewerRulePreview(array $computation, User $user): array
     {
-        $merged = collect($grossRules)->merge(collect($remainingRules));
-        $debtDestinationIds = $merged
-            ->where('destination_type', 'debt')
-            ->pluck('destination_id')
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn (int $id) => $id > 0)
-            ->unique()
-            ->values()
-            ->all();
+        $members = $computation['members'] ?? [];
+        $key = (string) $user->id;
 
-        if ($debtDestinationIds === []) {
-            return [];
-        }
-
-        $debts = Debt::query()
-            ->where('family_id', $user->family_id)
-            ->whereIn('id', $debtDestinationIds)
-            ->get()
-            ->keyBy('id');
-
-        $balances = [];
-
-        foreach ($debtDestinationIds as $debtId) {
-            $debt = $debts->get($debtId);
-            $balances[$debtId] = ($debt && (float) $debt->balance > 0) ? (float) $debt->balance : 0.0;
-        }
-
-        return $balances;
-    }
-
-    /**
-     * Cap rule output at remaining preview debt balance (same principle as allocateToDebt) and decrement the preview balance.
-     *
-     * @param  array<int, float>  $previewDebtBalances
-     */
-    private function applyDebtBalanceCapForRulePreview(FundRule $rule, float $projectedAmount, array &$previewDebtBalances): float
-    {
-        if ($rule->destination_type !== 'debt' || ! $rule->destination_id) {
-            return $projectedAmount;
-        }
-
-        $debtId = (int) $rule->destination_id;
-        $available = max(0.0, $previewDebtBalances[$debtId] ?? 0.0);
-        $applied = min($projectedAmount, $available);
-        $previewDebtBalances[$debtId] = max(0.0, $available - $applied);
-
-        return $applied;
-    }
-
-    /**
-     * @param  array<int, float>  $fundAdvanceRemaining
-     * @param  ?float  $debtNominalDisplayed  When set (debt destinations), **`projected_amount`** shows the nominal rule math before the debt-balance cap; **`net_after_advances`** carries the capped amount applied to the debt, matching **`MonthCloseoutService::allocateToDebt`** ledger behavior while keeping basis totals aligned.
-     */
-    private function pushRulePreviewResult(
-        array &$ruleResults,
-        array &$fundAdvanceRemaining,
-        FundRule $rule,
-        float $allocationAmountApplied,
-        ?float $debtNominalDisplayed = null,
-    ): void {
-        $previewProjected = $debtNominalDisplayed ?? $allocationAmountApplied;
-
-        $outstandingBeforeRounded = 0.0;
-        $netRounded = round($allocationAmountApplied, 2);
-
-        if ($rule->destination_type === 'fund' && $rule->destination_id) {
-            $fundId = (int) $rule->destination_id;
-            if ($fundId > 0) {
-                $outstandingBefore = (float) ($fundAdvanceRemaining[$fundId] ?? 0.0);
-                $netRounded = round($allocationAmountApplied - $outstandingBefore, 2);
-                $outstandingBeforeRounded = round($outstandingBefore, 2);
-                $fundAdvanceRemaining[$fundId] = max(0.0, $outstandingBefore - $allocationAmountApplied);
-            }
-        }
-
-        $ruleResults[] = $this->formatRuleForPreview(
-            $rule,
-            $previewProjected,
-            $outstandingBeforeRounded,
-            $netRounded,
-        );
-    }
-
-    /**
-     * Format a rule result for preview output.
-     *
-     * For debt destinations, projected_amount reflects nominal rule allocation (before debt-balance cap) and net_after_advances carries the capped payoff.
-     *
-     * @return array{rule_id: int, rule_name: string, order: int, allocation_type: string, amount: float, allocation_base: string, destination_type: string, destination_id: int|null, destination_name: string, projected_amount: float, fund_advance_outstanding_before: float, net_after_advances: float, is_active: bool}
-     */
-    private function formatRuleForPreview(FundRule $rule, float $projectedAmount, float $fundAdvanceOutstandingBefore, float $netAfterAdvances): array
-    {
-        $destinationName = 'Unknown';
-
-        if ($rule->destination_type === 'fund') {
-            $destinationName = Fund::find($rule->destination_id)?->name ?? 'Unknown Fund';
-        } elseif ($rule->destination_type === 'debt') {
-            $debt = Debt::find($rule->destination_id);
-            if ($debt) {
-                $destinationName = $debt->creditor_name ?? $debt->creditor?->name ?? 'Unknown Debt';
-            } else {
-                $destinationName = 'Unknown Debt';
-            }
-        } elseif ($rule->destination_type === 'title') {
-            $destinationName = $rule->destination_title;
-        }
-
-        return [
-            'rule_id' => $rule->id,
-            'rule_name' => $rule->name,
-            'order' => $rule->order,
-            'allocation_type' => $rule->allocation_type,
-            'amount' => (float) $rule->amount,
-            'allocation_base' => $rule->allocation_base,
-            'destination_type' => $rule->destination_type,
-            'destination_id' => $rule->destination_id ? (int) $rule->destination_id : null,
-            'destination_name' => $destinationName,
-            'projected_amount' => $projectedAmount,
-            'fund_advance_outstanding_before' => $fundAdvanceOutstandingBefore,
-            'net_after_advances' => $netAfterAdvances,
-            'is_active' => $rule->is_active,
-        ];
+        return $members[$key]
+            ?? $members[$user->id]
+            ?? $this->rulePreviewBuilder->emptyUserPreview();
     }
 }

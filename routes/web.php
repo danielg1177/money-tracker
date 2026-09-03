@@ -5,6 +5,8 @@ use App\Http\Controllers\BankBalanceController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DebtController;
+use App\Http\Controllers\FamilyCloseoutRuleController;
+use App\Http\Controllers\FamilyCloseoutSettingsController;
 use App\Http\Controllers\FundController;
 use App\Http\Controllers\MonthCloseoutController;
 use App\Http\Controllers\MonthSummaryController;
@@ -45,7 +47,7 @@ Route::view('/settings', 'app');
 Route::middleware(['auth'])->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->expectsJson()
-            ? auth()->user()
+            ? $request->user()
             : view('app');
     });
     Route::put('/user/settings', [UserSettingsController::class, 'update']);
@@ -96,6 +98,21 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/closeout-rules/{fundRule}', [FundController::class, 'updateRule']);
     Route::delete('/closeout-rules/{fundRule}', [FundController::class, 'destroyRule']);
 
+    Route::get('/family/closeout-settings', function (Request $request) {
+        return $request->expectsJson()
+            ? app(FamilyCloseoutSettingsController::class)->show()
+            : view('app');
+    });
+    Route::put('/family/closeout-settings', [FamilyCloseoutSettingsController::class, 'update']);
+    Route::get('/family/closeout-rules', function (Request $request) {
+        return $request->expectsJson()
+            ? app(FamilyCloseoutRuleController::class)->index()
+            : view('app');
+    });
+    Route::post('/family/closeout-rules', [FamilyCloseoutRuleController::class, 'store']);
+    Route::put('/family/closeout-rules/{familyCloseoutRule}', [FamilyCloseoutRuleController::class, 'update']);
+    Route::delete('/family/closeout-rules/{familyCloseoutRule}', [FamilyCloseoutRuleController::class, 'destroy']);
+
     // Backward compatibility
     Route::get('/funds/{fund}/rules', function (Request $request) {
         return $request->expectsJson()
@@ -132,6 +149,7 @@ Route::middleware(['auth'])->group(function () {
             : view('app');
     });
     Route::post('/categories', [CategoryController::class, 'store']);
+    Route::post('/categories/sync-plaid-rules', [CategoryController::class, 'syncPlaidMerchantRules']);
     Route::put('/categories/{category}', [CategoryController::class, 'update']);
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
 

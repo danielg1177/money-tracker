@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Family;
+use App\Services\Closeout\CloseoutMode;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -20,6 +21,7 @@ class FamilyFactory extends Factory
         return [
             'name' => fake()->company(),
             'description' => fake()->boolean(70) ? fake()->sentence() : null,
+            'closeout_mode' => CloseoutMode::Classic,
         ];
     }
 }

@@ -14,7 +14,8 @@ class PlaidMerchantRule extends Model
         'type',
         'fund_id',
         'advance_fund_id',
-        'is_non_necessity',
+        'exclude_from_expense_basis',
+        'is_necessity',
         'is_split',
         'description',
         'is_debt_payment',
@@ -31,7 +32,8 @@ class PlaidMerchantRule extends Model
     protected function casts(): array
     {
         return [
-            'is_non_necessity' => 'bool',
+            'exclude_from_expense_basis' => 'bool',
+            'is_necessity' => 'bool',
             'is_split' => 'bool',
             'is_debt_payment' => 'bool',
             'split_data' => 'array',

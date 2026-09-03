@@ -8,8 +8,17 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue';
 import AppNav from './components/AppNav.vue';
 import { useAuth } from './composables/useAuth';
 
-const { user } = useAuth();
+const { user, fetchUser } = useAuth();
+
+onMounted(() => {
+  if (!user.value) {
+    return;
+  }
+
+  fetchUser().catch(() => {});
+});
 </script>

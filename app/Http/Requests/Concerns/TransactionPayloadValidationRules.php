@@ -6,6 +6,7 @@ use App\Models\Debt;
 use App\Models\FundRule;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\Closeout\CloseoutMode;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Validation\Rule;
 
@@ -27,7 +28,8 @@ trait TransactionPayloadValidationRules
             'split_data.*.user_id' => ['required_with:split_data', 'exists:users,id'],
             'split_data.*.share_percentage' => ['required_with:split_data', 'numeric', 'min:0', 'max:100'],
             'advance_fund_id' => ['nullable', 'exists:funds,id'],
-            'is_non_necessity' => ['boolean'],
+            'is_necessity' => ['boolean'],
+            'exclude_from_expense_basis' => ['boolean'],
             'debt_id' => [
                 'nullable',
                 'integer',
@@ -314,7 +316,11 @@ trait TransactionPayloadValidationRules
             }
         }
 
-        if (($value('type') ?? '') === 'expense' && $boolean('is_non_necessity')) {
+        if (
+            CloseoutMode::allowsExpenseBasisExclusion($this->user()?->closeout_mode)
+            && ($value('type') ?? '') === 'expense'
+            && $boolean('exclude_from_expense_basis')
+        ) {
             $user = $this->user();
             $advanceFundId = (int) $value('advance_fund_id', 0);
             $hasEligibleRule = $user !== null
@@ -332,7 +338,7 @@ trait TransactionPayloadValidationRules
                 || $boolean('is_split')
                 || ! $hasEligibleRule
             ) {
-                $validator->errors()->add($field('is_non_necessity'), 'Non-necessity is only allowed for non-split expenses with an advance fund that has an active percentage-of-remaining closeout rule targeting that fund.');
+                $validator->errors()->add($field('exclude_from_expense_basis'), 'Exclude from remaining is only allowed for non-split expenses with an advance fund that has an active percentage-of-remaining closeout rule targeting that fund.');
             }
         }
     }
@@ -360,7 +366,7 @@ trait TransactionPayloadValidationRules
             'split_data.*.share_percentage.max' => 'Share percentage cannot exceed 100.',
             'advance_fund_id.exists' => 'The selected advance fund does not exist.',
             'debt_id.exists' => 'The selected debt is invalid.',
-            'is_non_necessity' => 'Non-necessity requires an advance fund with a matching closeout rule.',
+            'exclude_from_expense_basis' => 'Exclude from remaining requires an advance fund with a matching closeout rule.',
         ];
     }
 }

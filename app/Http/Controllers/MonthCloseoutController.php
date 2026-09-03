@@ -144,7 +144,7 @@ class MonthCloseoutController extends Controller
 
         $closes = MonthHardClose::query()
             ->where('family_id', $user->family_id)
-            ->get(['year', 'month']);
+            ->get(['year', 'month', 'closeout_mode']);
 
         return response()->json($closes);
     }

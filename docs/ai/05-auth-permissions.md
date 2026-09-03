@@ -49,7 +49,7 @@ These are computed in `User.php` and serialized with every user response:
 | `is_head_of_household` | `role === 'head_of_household'` |
 | `can_manage_family` | `is_admin === true OR role === 'head_of_household'` |
 
-The frontend normalizes these into `isAdmin` via `normalizeAuthUser()`.
+The frontend normalizes these into both `isAdmin` / `is_admin` and `canManageFamily` / `can_manage_family` via `normalizeAuthUser()`. `GET /user` also appends `closeout_mode` (`classic` or `family_pooled`) from the user’s family. `AppShell` refreshes `GET /user` on mount when a cached user exists so those flags are not stuck on an old `localStorage` snapshot.
 
 ## Laravel Gates (defined in `AppServiceProvider`)
 

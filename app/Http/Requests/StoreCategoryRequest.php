@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\FundRule;
+use App\Services\Closeout\CloseoutMode;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -20,12 +21,13 @@ class StoreCategoryRequest extends FormRequest
                 'advance_fund_id' => null,
                 'is_split_default' => false,
                 'split_default' => null,
+                'exclude_from_expense_basis_default' => false,
+                'is_necessity_default' => true,
             ]);
         }
 
-        // Clear is_non_necessity_default if not applicable
         if (! $this->boolean('is_expense') || ! $this->filled('advance_fund_id')) {
-            $this->merge(['is_non_necessity_default' => false]);
+            $this->merge(['exclude_from_expense_basis_default' => false]);
         }
     }
 
@@ -44,7 +46,11 @@ class StoreCategoryRequest extends FormRequest
         });
 
         $validator->after(function (Validator $v): void {
-            if (! $this->boolean('is_non_necessity_default')) {
+            if (! CloseoutMode::allowsExpenseBasisExclusion($this->user()?->closeout_mode)) {
+                return;
+            }
+
+            if (! $this->boolean('exclude_from_expense_basis_default')) {
                 return;
             }
 
@@ -63,7 +69,7 @@ class StoreCategoryRequest extends FormRequest
                 ->exists();
 
             if (! $hasMatchingRule) {
-                $v->errors()->add('is_non_necessity_default', 'Non-necessity default requires an active percentage-of-remaining closeout rule targeting the selected advance fund.');
+                $v->errors()->add('exclude_from_expense_basis_default', 'Exclude-from-remaining default requires an active percentage-of-remaining closeout rule targeting the selected advance fund.');
             }
         });
     }
@@ -77,7 +83,8 @@ class StoreCategoryRequest extends FormRequest
             'is_income' => ['boolean'],
             'is_expense' => ['boolean'],
             'is_split_default' => ['boolean'],
-            'is_non_necessity_default' => ['boolean'],
+            'exclude_from_expense_basis_default' => ['boolean'],
+            'is_necessity_default' => ['boolean'],
             'split_default' => ['nullable', 'array'],
             'advance_fund_id' => ['nullable', 'exists:funds,id'],
         ];

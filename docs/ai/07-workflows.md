@@ -98,7 +98,7 @@ Use case: B owes A money; B covers A's rent and marks the bank charge as paying 
 
 1. Debt-payment pair already exists (Workflow 2 or transaction-form debt payment): B expense + A income (`is_debt_payment`, linked via `mirror_transaction_id`)
 2. A opens Transactions, taps **Record as expense** on the repayment income (or opens the Repayment pill → Record as expense)
-3. `DebtPaymentBenefitForm` collects category (required), optional description, split, advance fund, non-necessity
+3. `DebtPaymentBenefitForm` collects category (required), optional description, split, advance fund, remaining-exclusion, necessity
 4. Vue submits `POST /transactions/{incomeId}/debt-payment-benefit`
 5. `ClosedMonthGuard` checks A's month is open
 6. `TransactionService::createDebtPaymentBenefit`:
@@ -177,6 +177,10 @@ Use case: B owes A money; B covers A's rent and marks the bank charge as paying 
 
 Triggered during `MonthCloseoutService::hardClose()`, not on individual income transactions.
 
+`hardClose` picks `ClassicCloseoutEngine` or `FamilyPooledCloseoutEngine` from `families.closeout_mode`. Classic math is unchanged (below). After either engine, `applyFundAdvances` (per user), `consolidatePendingSplitDebts`, and `applyMonthlyDebtInterest` run, then `MonthHardClose` stores `closeout_mode`, `settings_snapshot`, and `results_snapshot`. Viewing that month later (Month Summary **Closeout Results**, fund balances, closeout ledger rows) uses the snapshot — or classic reconstruction if a snapshot is missing — even if the family later switches modes. Undo hard close deletes that row (snapshot included); re-closing then uses the **current** mode.
+
+### Classic engine
+
 1. Loads active `FundRule`s for user, ordered by `order` ASC
 2. Separates rules into two groups:
    - **Gross-based rules**: `allocation_base` = `gross_income` or `net_income` (processed first)
@@ -213,6 +217,14 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
 - A matching closeout-tagged `expense` transaction is created for Transactions-page visibility (category defaults to `rule.closeout_expense_category_id` when present)
 
 **Title completion details:** `destination_type='title'` creates `CloseoutTitleSaving` records at hard-close; when user later marks one complete (`POST /title-savings/{id}/complete`), backend creates a closeout-tagged expense transaction using the rule's default closeout category if configured. Undo completion deletes that generated transaction.
+
+### Family pooled engine
+
+1. **Stage A — surplus (charity):** `charity_base = family_earned_income − family_necessary_expenses` (expenses with `is_necessity=true`). Active `FamilyCloseoutRule` rows with `stage=surplus` allocate from that base (shared-percentage behavior). If `charity_base <= 0`, surplus rules allocate 0.
+2. **Stage B — remaining after charity:** `remaining_after_charity = family_earned_income − family_all_expenses − surplus_allocations` (**all** closeout-eligible expenses, including `is_necessity=false`; **`exclude_from_expense_basis` is ignored**). Inter-member debt payments are omitted from family income and family expenses. If `remaining_after_charity <= 0`, skip remaining family rules and leftover split.
+3. **Stage C — family remaining % rules:** `stage=remaining_after_charity` rules share the same remaining-after-charity basis.
+4. **Stage D — leftover split:** `leftover = remaining_after_charity − stage_C_actuals`. For each member, `burden = split_spend / own_earned_income` (split shares only; solo bills ignored), `weight = max(0, 1 − burden)`, `share = weight / sum(weights)`, `member_pool = leftover * share`. Zero income or split > income → weight 0. All weights 0 → leftover unallocated.
+5. **Stage E — personal leftover rules:** each member’s remaining-base `FundRule`s run against `member_pool`. Personal gross/net rules are skipped. Family-rule fund allocations are attributed to the user who hard-closed with `closeout_scope=family`. **`exclude_from_expense_basis` is ignored** (classic remaining-exclusion only).
 
 **After rule processing:** `hardClose` runs `consolidatePendingSplitDebts`, which nets pending split debts for the closed month—including pending rows with a null `transaction_id` so they are not skipped—then applies each pair net via `DebtService::applyInterFamilyPairNet` (also nets against opposite-direction confirmed debts) before deleting the pending rows.
 
@@ -379,6 +391,8 @@ Known limitations:
 7. Institutions that keep the same id and send `modified` with `pending: false` ingest at modification time.
 
 See `docs/ai/09-known-decisions.md` (known bug) and `PlaidTransactionSyncService` / `PlaidMatchingService`.
+
+**Category defaults vs merchant rules:** Saving an expense category copies family necessity onto every member's existing `plaid_merchant_rules` for that category (and open pending suggestions / unreviewed auto-created rows). The saver's personal advance / remaining-exclusion are applied only to the saver's rules. **Apply defaults to bank learning** applies the signed-in user's personal defaults plus family necessity onto their own rules. Confirmed history and closed-month auto-created rows are left alone.
 
 ---
 

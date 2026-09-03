@@ -11,6 +11,7 @@ use App\Models\PlaidMerchantRule;
 use App\Models\PlaidPendingImport;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\Closeout\CloseoutMode;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -304,7 +305,8 @@ class PlaidTransactionSyncService
                 'suggested_type' => $suggestion['type'],
                 'suggested_fund_id' => $suggestion['fund_id'],
                 'suggested_advance_fund_id' => $suggestion['advance_fund_id'],
-                'suggested_is_non_necessity' => $suggestion['is_non_necessity'],
+                'suggested_exclude_from_expense_basis' => $suggestion['exclude_from_expense_basis'],
+                'suggested_is_necessity' => $suggestion['is_necessity'] ?? true,
                 'suggested_description' => $suggestion['description'] ?? null,
                 'suggested_is_debt_payment' => (bool) ($suggestion['is_debt_payment'] ?? false),
                 'suggested_debt_id' => $suggestion['debt_id'] ?? null,
@@ -336,7 +338,8 @@ class PlaidTransactionSyncService
             'suggested_type' => $suggestion['type'],
             'suggested_fund_id' => $suggestion['fund_id'],
             'suggested_advance_fund_id' => $suggestion['advance_fund_id'],
-            'suggested_is_non_necessity' => $suggestion['is_non_necessity'],
+            'suggested_exclude_from_expense_basis' => $suggestion['exclude_from_expense_basis'],
+            'suggested_is_necessity' => $suggestion['is_necessity'] ?? true,
             'suggested_description' => $suggestion['description'] ?? null,
             'suggested_is_debt_payment' => (bool) ($suggestion['is_debt_payment'] ?? false),
             'suggested_debt_id' => $suggestion['debt_id'] ?? null,
@@ -455,7 +458,7 @@ class PlaidTransactionSyncService
      *     type: string,
      *     fund_id: int|null,
      *     advance_fund_id: int|null,
-     *     is_non_necessity: bool
+     *     exclude_from_expense_basis: bool
      * }  $suggestion
      * @return array<string, mixed>
      */
@@ -482,12 +485,13 @@ class PlaidTransactionSyncService
                 'is_split' => false,
                 'split_data' => null,
                 'advance_fund_id' => null,
-                'is_non_necessity' => false,
+                'exclude_from_expense_basis' => false,
+                'is_necessity' => true,
             ];
         }
 
         $advanceFundId = $suggestion['advance_fund_id'];
-        $ruleNonNecessity = (bool) ($suggestion['is_non_necessity'] ?? false);
+        $ruleExcludeFromExpenseBasis = (bool) ($suggestion['exclude_from_expense_basis'] ?? false);
         $isSplit = false;
         $splitData = null;
 
@@ -532,12 +536,12 @@ class PlaidTransactionSyncService
                 $advanceFundId = (int) $advanceFromCategory;
             }
 
-            $isNonNecessity = $this->resolveAutoCreateNonNecessityFlag(
+            $excludeFromExpenseBasis = $this->resolveAutoCreateExcludeFromExpenseBasisFlag(
                 $user,
                 $advanceFundId,
                 $isSplit,
                 $userDefaults,
-                $ruleNonNecessity,
+                $ruleExcludeFromExpenseBasis,
             );
         } else {
             if ($rule !== null && $rule->is_split) {
@@ -555,12 +559,12 @@ class PlaidTransactionSyncService
                 }
             }
 
-            $isNonNecessity = $this->resolveAutoCreateNonNecessityFlag(
+            $excludeFromExpenseBasis = $this->resolveAutoCreateExcludeFromExpenseBasisFlag(
                 $user,
                 $advanceFundId,
                 $isSplit,
                 null,
-                $ruleNonNecessity,
+                $ruleExcludeFromExpenseBasis,
             );
         }
 
@@ -576,7 +580,10 @@ class PlaidTransactionSyncService
             'is_split' => $isSplit,
             'split_data' => $splitData,
             'advance_fund_id' => $advanceFundId,
-            'is_non_necessity' => $isNonNecessity,
+            'exclude_from_expense_basis' => $excludeFromExpenseBasis,
+            'is_necessity' => $category !== null
+                ? (bool) $category->is_necessity_default
+                : (bool) ($suggestion['is_necessity'] ?? true),
         ];
 
         if ($isDebtPayment && $learnedDebtId !== null) {
@@ -610,29 +617,33 @@ class PlaidTransactionSyncService
         return $splitData;
     }
 
-    private function resolveAutoCreateNonNecessityFlag(
+    private function resolveAutoCreateExcludeFromExpenseBasisFlag(
         User $user,
         ?int $advanceFundId,
         bool $isSplit,
         ?CategoryUserDefault $userDefaults,
-        bool $ruleNonNecessity,
+        bool $ruleExcludeFromExpenseBasis,
     ): bool {
         if ($isSplit || $advanceFundId === null || $advanceFundId === 0) {
             return false;
         }
 
-        if (! $this->userHasNonNecessityEligibleFundRule($user->id, $advanceFundId)) {
+        if (CloseoutMode::isFamilyPooled($user->closeout_mode)) {
             return false;
         }
 
-        if ($userDefaults !== null && $userDefaults->is_non_necessity_default) {
+        if (! $this->userHasRemainingPercentageFundRule($user->id, $advanceFundId)) {
+            return false;
+        }
+
+        if ($userDefaults !== null && $userDefaults->exclude_from_expense_basis_default) {
             return true;
         }
 
-        return $ruleNonNecessity;
+        return $ruleExcludeFromExpenseBasis;
     }
 
-    private function userHasNonNecessityEligibleFundRule(int $userId, int $advanceFundId): bool
+    private function userHasRemainingPercentageFundRule(int $userId, int $advanceFundId): bool
     {
         return FundRule::query()
             ->where('user_id', $userId)

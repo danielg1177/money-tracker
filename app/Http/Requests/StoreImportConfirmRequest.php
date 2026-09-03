@@ -33,7 +33,8 @@ class StoreImportConfirmRequest extends FormRequest
                 'is_split' => false,
                 'split_data' => null,
                 'debt_id' => null,
-                'is_non_necessity' => false,
+                'exclude_from_expense_basis' => false,
+                'is_necessity' => true,
                 'income_debt_mode' => $this->boolean('is_debt_repayment_received')
                     ? 'none'
                     : $this->input('income_debt_mode', 'none'),
@@ -77,7 +78,7 @@ class StoreImportConfirmRequest extends FormRequest
         if ($this->filled('debt_id')) {
             $this->merge([
                 'advance_fund_id' => null,
-                'is_non_necessity' => false,
+                'exclude_from_expense_basis' => false,
             ]);
         }
 
@@ -87,7 +88,11 @@ class StoreImportConfirmRequest extends FormRequest
             || $this->boolean('is_split')
             || $this->filled('debt_id')
         ) {
-            $this->merge(['is_non_necessity' => false]);
+            $this->merge(['exclude_from_expense_basis' => false]);
+        }
+
+        if ($this->input('type') !== 'expense') {
+            $this->merge(['is_necessity' => true]);
         }
 
         if (in_array($this->input('income_debt_mode'), ['existing', 'receipt'], true)) {

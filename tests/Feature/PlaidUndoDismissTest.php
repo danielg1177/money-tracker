@@ -57,7 +57,7 @@ class PlaidUndoDismissTest extends TestCase
             'suggested_type' => 'expense',
             'suggested_fund_id' => null,
             'suggested_advance_fund_id' => null,
-            'suggested_is_non_necessity' => false,
+            'suggested_exclude_from_expense_basis' => false,
             'confidence_score' => 0.5,
             'status' => 'pending',
             'transaction_id' => null,

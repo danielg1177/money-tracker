@@ -653,6 +653,30 @@
                 </div>
               </div>
 
+              <div
+                v-if="formFor(row).type === 'expense'"
+                class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
+                role="button"
+                tabindex="0"
+                @click="actionId !== row.id && (formFor(row).is_necessity = !formFor(row).is_necessity)"
+                @keydown.enter.prevent="actionId !== row.id && (formFor(row).is_necessity = !formFor(row).is_necessity)"
+                @keydown.space.prevent="actionId !== row.id && (formFor(row).is_necessity = !formFor(row).is_necessity)"
+              >
+                <div>
+                  <p class="text-sm font-medium text-gray-300">{{ formFor(row).is_necessity ? 'Necessity' : 'Not a necessity' }}</p>
+                  <p class="mt-0.5 text-xs text-gray-500">Family pooled charity uses income minus necessities</p>
+                </div>
+                <div
+                  class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"
+                  :class="formFor(row).is_necessity ? 'bg-blue-600' : 'bg-violet-600'"
+                >
+                  <div
+                    class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    :class="formFor(row).is_necessity ? 'translate-x-5' : 'translate-x-1'"
+                  />
+                </div>
+              </div>
+
               <div v-if="formFor(row).type === 'expense' && formFor(row).is_split">
                 <SplitEditor
                   :family-users="familyUsers"
@@ -698,25 +722,25 @@
                   </option>
                 </select>
                 <div
-                  v-if="formFor(row).advance_fund_id !== null && selectedFundHasNonNecessityRule(formFor(row))"
+                  v-if="allowExpenseBasisExclusion && formFor(row).advance_fund_id !== null && selectedFundHasRemainingPercentageRule(formFor(row))"
                   class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
                   role="button"
                   tabindex="0"
-                  @click="actionId !== row.id && (formFor(row).is_non_necessity = !formFor(row).is_non_necessity)"
-                  @keydown.enter.prevent="actionId !== row.id && (formFor(row).is_non_necessity = !formFor(row).is_non_necessity)"
-                  @keydown.space.prevent="actionId !== row.id && (formFor(row).is_non_necessity = !formFor(row).is_non_necessity)"
+                  @click="actionId !== row.id && (formFor(row).exclude_from_expense_basis = !formFor(row).exclude_from_expense_basis)"
+                  @keydown.enter.prevent="actionId !== row.id && (formFor(row).exclude_from_expense_basis = !formFor(row).exclude_from_expense_basis)"
+                  @keydown.space.prevent="actionId !== row.id && (formFor(row).exclude_from_expense_basis = !formFor(row).exclude_from_expense_basis)"
                 >
                   <div>
-                    <p class="text-sm font-medium text-gray-300">Mark as non-necessity</p>
+                    <p class="text-sm font-medium text-gray-300">Exclude from remaining</p>
                     <p class="mt-0.5 text-xs text-gray-500">Excluded from expense basis when the fund allows it</p>
                   </div>
                   <div
                     class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"
-                    :class="formFor(row).is_non_necessity ? 'bg-violet-600' : 'bg-gray-700'"
+                    :class="formFor(row).exclude_from_expense_basis ? 'bg-violet-600' : 'bg-gray-700'"
                   >
                     <div
                       class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
-                      :class="formFor(row).is_non_necessity ? 'translate-x-5' : 'translate-x-1'"
+                      :class="formFor(row).exclude_from_expense_basis ? 'translate-x-5' : 'translate-x-1'"
                     />
                   </div>
                 </div>
@@ -914,6 +938,7 @@
                     :income-attachable-debts="incomeAttachableDebts"
                     :receivable-debts="receivableDebts"
                     :split-link-candidates="splitLinkCandidatesMap[`${row.id}-${idx}`] ?? []"
+                    :allow-expense-basis-exclusion="allowExpenseBasisExclusion"
                     @match-existing-changed="fetchSplitLinkCandidates(row, idx)"
                   />
                 </div>
@@ -1249,10 +1274,16 @@
                         {{ advanceFundRecord(row.transaction)?.name || '—' }}
                       </dd>
                     </div>
-                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
-                      <dt class="shrink-0 text-gray-500">Non-necessity</dt>
+                    <div v-if="allowExpenseBasisExclusion" class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Exclude from remaining</dt>
                       <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
-                        {{ yesNoDisplay(row.transaction.is_non_necessity) }}
+                        {{ yesNoDisplay(row.transaction.exclude_from_expense_basis) }}
+                      </dd>
+                    </div>
+                    <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+                      <dt class="shrink-0 text-gray-500">Necessity</dt>
+                      <dd class="min-w-0 text-right text-gray-200 sm:max-w-[60%] sm:text-right">
+                        {{ yesNoDisplay(row.transaction.is_necessity !== false) }}
                       </dd>
                     </div>
                     <div class="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
@@ -1728,6 +1759,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
+import { useAuth } from '../composables/useAuth';
 import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js';
 import SplitEditor from '../components/SplitEditor.vue';
 import PlaidImportSplitLineOptions from '../components/PlaidImportSplitLineOptions.vue';
@@ -1737,8 +1769,13 @@ import {
   equalSplitPayloadForFamilyUsers,
   hasPositiveSplitShares,
 } from '../support/equalFamilySplit.js';
+import { allowsExpenseBasisExclusion } from '../support/closeoutMode.js';
 
 const { get, post } = useApi();
+const { user } = useAuth();
+const allowExpenseBasisExclusion = computed(
+  () => allowsExpenseBasisExclusion(user.value?.closeout_mode),
+);
 
 const loading = ref(true);
 const pageError = ref('');
@@ -2037,13 +2074,13 @@ function autoCreatedIncomeAmount(row) {
   return Math.abs(Number(amount) || 0);
 }
 
-function selectedFundHasNonNecessityRule(f) {
+function selectedFundHasRemainingPercentageRule(f) {
   if (f.advance_fund_id === null || f.advance_fund_id === undefined) {
     return false;
   }
   const fund = funds.value.find((x) => Number(x.id) === Number(f.advance_fund_id));
 
-  return fund?.has_non_necessity_rule === true;
+  return fund?.has_remaining_percentage_rule === true;
 }
 
 function resetIncomeDebtFields(f) {
@@ -2076,7 +2113,7 @@ function resetExpenseOnlyFields(f) {
   f.is_split = false;
   f.split_data = [];
   f.advance_fund_id = null;
-  f.is_non_necessity = false;
+  f.exclude_from_expense_basis = false;
 }
 
 function ensureForm(row) {
@@ -2106,7 +2143,8 @@ function ensureForm(row) {
     is_split: false,
     split_data: [],
     advance_fund_id: null,
-    is_non_necessity: false,
+    exclude_from_expense_basis: false,
+    is_necessity: true,
     income_debt_mode: 'none',
     income_existing_debt_id: null,
     income_new_is_family_debt: false,
@@ -2133,8 +2171,8 @@ function formFor(row) {
 }
 
 /**
- * Align expense split / advance / non-necessity with category + per-user defaults from GET /categories.
- * @param {{ mergePlaidSuggestion?: boolean }} options When true (first expand of a row), apply suggested_advance_fund_id / suggested_fund_id / suggested_is_non_necessity only if the category does not define an advance.
+ * Align expense split / advance / remaining-exclusion / necessity with category + per-user defaults from GET /categories.
+ * @param {{ mergePlaidSuggestion?: boolean }} options When true (first expand of a row), apply suggested_advance_fund_id / suggested_fund_id / suggested_exclude_from_expense_basis / suggested_is_necessity only if the category does not define an advance.
  */
 function applyCategoryDefaults(row, { mergePlaidSuggestion = false } = {}) {
   const f = forms[row.id];
@@ -2160,11 +2198,13 @@ function applyCategoryDefaults(row, { mergePlaidSuggestion = false } = {}) {
     f.advance_fund_id = null;
   }
 
-  if (cat.is_non_necessity_default && selectedFundHasNonNecessityRule(f)) {
-    f.is_non_necessity = true;
+  if (allowExpenseBasisExclusion.value && cat.exclude_from_expense_basis_default && selectedFundHasRemainingPercentageRule(f)) {
+    f.exclude_from_expense_basis = true;
   } else {
-    f.is_non_necessity = false;
+    f.exclude_from_expense_basis = false;
   }
+
+  f.is_necessity = cat.is_necessity_default !== false;
 
   if (mergePlaidSuggestion) {
     if (!f.advance_fund_id) {
@@ -2173,8 +2213,15 @@ function applyCategoryDefaults(row, { mergePlaidSuggestion = false } = {}) {
         f.advance_fund_id = Number(sug);
       }
     }
-    if (row.suggested_is_non_necessity && selectedFundHasNonNecessityRule(f)) {
-      f.is_non_necessity = true;
+    if (
+      allowExpenseBasisExclusion.value &&
+      row.suggested_exclude_from_expense_basis &&
+      selectedFundHasRemainingPercentageRule(f)
+    ) {
+      f.exclude_from_expense_basis = true;
+    }
+    if (row.suggested_is_necessity === false) {
+      f.is_necessity = false;
     }
   }
 }
@@ -2221,7 +2268,7 @@ function togglePayTowardDebt(row) {
   f.pay_toward_debt = !f.pay_toward_debt;
   if (f.pay_toward_debt) {
     f.advance_fund_id = null;
-    f.is_non_necessity = false;
+    f.exclude_from_expense_basis = false;
     const pd = payableDebts.value;
     if (pd.length === 1) {
       f.debt_id = pd[0].id;
@@ -2237,9 +2284,11 @@ function togglePayTowardDebt(row) {
 function toggleSplit(row) {
   const f = formFor(row);
   f.is_split = !f.is_split;
+  if (f.is_split) {
+    f.exclude_from_expense_basis = false;
+  }
   if (!f.is_split) {
     f.split_data = [];
-    f.is_non_necessity = false;
 
     return;
   }
@@ -2252,7 +2301,7 @@ function toggleAdvanceFund(row) {
   const f = formFor(row);
   if (f.advance_fund_id !== null) {
     f.advance_fund_id = null;
-    f.is_non_necessity = false;
+    f.exclude_from_expense_basis = false;
   } else {
     f.advance_fund_id = funds.value.length > 0 ? funds.value[0].id : null;
   }
@@ -2261,9 +2310,9 @@ function toggleAdvanceFund(row) {
 function onAdvanceFundChange(row) {
   const f = formFor(row);
   if (f.advance_fund_id === null) {
-    f.is_non_necessity = false;
-  } else if (!selectedFundHasNonNecessityRule(f)) {
-    f.is_non_necessity = false;
+    f.exclude_from_expense_basis = false;
+  } else if (!selectedFundHasRemainingPercentageRule(f)) {
+    f.exclude_from_expense_basis = false;
   }
 }
 
@@ -2328,7 +2377,8 @@ function makeSplitLine(amount = '') {
     is_split: false,
     split_data: [],
     advance_fund_id: null,
-    is_non_necessity: false,
+    exclude_from_expense_basis: false,
+    is_necessity: true,
     income_debt_mode: 'none',
     income_existing_debt_id: null,
     income_new_is_family_debt: false,
@@ -2394,22 +2444,27 @@ function applySplitLineCategoryDefaults(line) {
     line.advance_fund_id = Number(cat.advance_fund_id);
   } else {
     line.advance_fund_id = null;
-    line.is_non_necessity = false;
+    line.exclude_from_expense_basis = false;
   }
-  if (cat.is_non_necessity_default && splitLineFundHasNonNecessityRule(line)) {
-    line.is_non_necessity = true;
-  } else if (!splitLineFundHasNonNecessityRule(line)) {
-    line.is_non_necessity = false;
+  if (
+    allowExpenseBasisExclusion.value &&
+    cat.exclude_from_expense_basis_default &&
+    splitLineFundHasRemainingPercentageRule(line)
+  ) {
+    line.exclude_from_expense_basis = true;
+  } else if (!allowExpenseBasisExclusion.value || !splitLineFundHasRemainingPercentageRule(line)) {
+    line.exclude_from_expense_basis = false;
   }
+  line.is_necessity = cat.is_necessity_default !== false;
 }
 
-function splitLineFundHasNonNecessityRule(line) {
+function splitLineFundHasRemainingPercentageRule(line) {
   if (line.advance_fund_id === null || line.advance_fund_id === undefined) {
     return false;
   }
   const fund = funds.value.find((x) => Number(x.id) === Number(line.advance_fund_id));
 
-  return fund?.has_non_necessity_rule === true;
+  return fund?.has_remaining_percentage_rule === true;
 }
 
 function setSplitLineType(line, type) {
@@ -2426,7 +2481,8 @@ function setSplitLineType(line, type) {
     line.is_split = false;
     line.split_data = [];
     line.advance_fund_id = null;
-    line.is_non_necessity = false;
+    line.exclude_from_expense_basis = false;
+    line.is_necessity = true;
     line.income_debt_mode = 'none';
     line.income_existing_debt_id = null;
     line.income_new_is_family_debt = false;
@@ -2503,7 +2559,7 @@ function toggleSplitLinePayTowardDebt(line) {
   line.pay_toward_debt = !line.pay_toward_debt;
   if (line.pay_toward_debt) {
     line.advance_fund_id = null;
-    line.is_non_necessity = false;
+    line.exclude_from_expense_basis = false;
     const pd = payableDebts.value;
     if (pd.length === 1) {
       line.debt_id = pd[0].id;
@@ -2518,9 +2574,11 @@ function toggleSplitLinePayTowardDebt(line) {
 
 function toggleSplitLineFamilySplit(line) {
   line.is_split = !line.is_split;
+  if (line.is_split) {
+    line.exclude_from_expense_basis = false;
+  }
   if (!line.is_split) {
     line.split_data = [];
-    line.is_non_necessity = false;
 
     return;
   }
@@ -2532,7 +2590,7 @@ function toggleSplitLineFamilySplit(line) {
 function toggleSplitLineAdvanceFund(line) {
   if (line.advance_fund_id !== null) {
     line.advance_fund_id = null;
-    line.is_non_necessity = false;
+    line.exclude_from_expense_basis = false;
   } else {
     line.advance_fund_id = funds.value.length > 0 ? funds.value[0].id : null;
   }
@@ -2540,9 +2598,9 @@ function toggleSplitLineAdvanceFund(line) {
 
 function onSplitLineAdvanceFundChange(line) {
   if (line.advance_fund_id === null) {
-    line.is_non_necessity = false;
-  } else if (!splitLineFundHasNonNecessityRule(line)) {
-    line.is_non_necessity = false;
+    line.exclude_from_expense_basis = false;
+  } else if (!splitLineFundHasRemainingPercentageRule(line)) {
+    line.exclude_from_expense_basis = false;
   }
 }
 
@@ -2719,15 +2777,16 @@ function buildSplitLinePayload(line) {
     description: line.description?.trim() || undefined,
     is_split: line.type === 'expense' && line.is_split,
     advance_fund_id: line.type === 'expense' && !payTowardDebt ? line.advance_fund_id || null : null,
-    is_non_necessity:
+    exclude_from_expense_basis:
+      allowExpenseBasisExclusion.value &&
       line.type === 'expense' &&
       !payTowardDebt &&
       !line.is_split &&
       line.advance_fund_id !== null &&
-      splitLineFundHasNonNecessityRule(line)
-        ? Boolean(line.is_non_necessity)
+      splitLineFundHasRemainingPercentageRule(line)
+        ? Boolean(line.exclude_from_expense_basis)
         : false,
-    ...(line.type === 'expense' && line.is_split ? { split_data: line.split_data } : {}),
+    is_necessity: line.type === 'expense' ? line.is_necessity !== false : true,
     ...(line.type === 'expense' && payTowardDebt && line.debt_id ? { debt_id: line.debt_id } : {}),
     ...(line.type === 'income'
       ? {
@@ -2863,7 +2922,7 @@ function ensureAutoCreatedForm(row) {
     category_id: tx?.category_id ? String(tx.category_id) : '',
     fund_id: tx?.fund_id ? String(tx.fund_id) : '',
     advance_fund_id: tx?.advance_fund_id ?? null,
-    is_non_necessity: Boolean(tx?.is_non_necessity),
+    exclude_from_expense_basis: Boolean(tx?.exclude_from_expense_basis),
     correcting: false,
     is_repayment_mode: false,
     repayment_for_user_id: null,
@@ -2900,7 +2959,8 @@ function ensureDismissedForm(row) {
     category_id: '',
     fund_id: '',
     advance_fund_id: null,
-    is_non_necessity: false,
+    exclude_from_expense_basis: false,
+    is_necessity: true,
     description: '',
     restoring: false,
     is_repayment_mode: false,
@@ -3177,14 +3237,16 @@ function buildConfirmPayload(row, f) {
     description: f.description?.trim() || undefined,
     is_split: f.type === 'expense' && f.is_split,
     advance_fund_id: f.type === 'expense' && !payTowardDebt ? f.advance_fund_id || null : null,
-    is_non_necessity:
+    exclude_from_expense_basis:
+      allowExpenseBasisExclusion.value &&
       f.type === 'expense' &&
       !payTowardDebt &&
       !f.is_split &&
       f.advance_fund_id !== null &&
-      selectedFundHasNonNecessityRule(f)
-        ? Boolean(f.is_non_necessity)
+      selectedFundHasRemainingPercentageRule(f)
+        ? Boolean(f.exclude_from_expense_basis)
         : false,
+    is_necessity: f.type === 'expense' ? f.is_necessity !== false : true,
     ...(f.type === 'expense' && f.is_split ? { split_data: f.split_data } : {}),
     ...(f.type === 'expense' && payTowardDebt && f.debt_id ? { debt_id: f.debt_id } : {}),
     ...(f.type === 'income'
@@ -3364,7 +3426,8 @@ function buildDismissedRestorePayload(f) {
     fund_id: f.fund_id ? Number(f.fund_id) : null,
     is_split: false,
     advance_fund_id: f.type === 'expense' && !payTowardDebt ? f.advance_fund_id || null : null,
-    is_non_necessity: false,
+    exclude_from_expense_basis: false,
+    is_necessity: true,
     ...(f.type === 'income'
       ? { ...buildDebtRepaymentReceivedPayload(f), ...buildRepaymentPayload(f) }
       : { is_repayment_mode: false, is_external_repayment_mode: false, is_debt_repayment_received: false }),
@@ -3377,7 +3440,7 @@ function buildAutoCreatedCorrectionPayload(f) {
     type: f.type,
     fund_id: f.fund_id ? Number(f.fund_id) : null,
     advance_fund_id: f.advance_fund_id ?? null,
-    is_non_necessity: Boolean(f.is_non_necessity),
+    exclude_from_expense_basis: allowExpenseBasisExclusion.value && Boolean(f.exclude_from_expense_basis),
     ...(f.type === 'income'
       ? { ...buildDebtRepaymentReceivedPayload(f), ...buildRepaymentPayload(f) }
       : { is_repayment_mode: false, is_external_repayment_mode: false, is_debt_repayment_received: false }),

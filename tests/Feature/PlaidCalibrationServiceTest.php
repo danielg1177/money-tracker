@@ -245,7 +245,7 @@ class PlaidCalibrationServiceTest extends TestCase
             'description' => 'Coffee',
             'transaction_date' => '2026-03-05',
             'is_split' => false,
-            'is_non_necessity' => false,
+            'exclude_from_expense_basis' => false,
         ]);
 
         $item = PlaidItem::query()->create([
@@ -317,7 +317,7 @@ class PlaidCalibrationServiceTest extends TestCase
             'date' => '2026-03-01',
             'raw_name' => 'x',
             'suggested_type' => 'expense',
-            'suggested_is_non_necessity' => false,
+            'suggested_exclude_from_expense_basis' => false,
             'confidence_score' => 0,
             'status' => 'pending',
             'raw_payload' => [],

@@ -235,6 +235,30 @@
       </div>
     </div>
 
+    <div
+      v-if="line.type === 'expense' && !line.match_existing_mode"
+      class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
+      role="button"
+      tabindex="0"
+      @click="!disabled && (line.is_necessity = !line.is_necessity)"
+      @keydown.enter.prevent="!disabled && (line.is_necessity = !line.is_necessity)"
+      @keydown.space.prevent="!disabled && (line.is_necessity = !line.is_necessity)"
+    >
+      <div>
+        <p class="text-sm font-medium text-gray-300">{{ line.is_necessity !== false ? 'Necessity' : 'Not a necessity' }}</p>
+        <p class="mt-0.5 text-xs text-gray-500">Family pooled charity uses income minus necessities</p>
+      </div>
+      <div
+        class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"
+        :class="line.is_necessity !== false ? 'bg-blue-600' : 'bg-violet-600'"
+      >
+        <div
+          class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+          :class="line.is_necessity !== false ? 'translate-x-5' : 'translate-x-1'"
+        />
+      </div>
+    </div>
+
     <div v-if="line.type === 'expense' && line.is_split && !line.match_existing_mode">
       <SplitEditor
         :family-users="familyUsers"
@@ -280,25 +304,25 @@
         </option>
       </select>
       <div
-        v-if="line.advance_fund_id !== null && fundHasNonNecessityRule"
+        v-if="allowExpenseBasisExclusion && line.advance_fund_id !== null && fundHasRemainingPercentageRule"
         class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
         role="button"
         tabindex="0"
-        @click="!disabled && (line.is_non_necessity = !line.is_non_necessity)"
-        @keydown.enter.prevent="!disabled && (line.is_non_necessity = !line.is_non_necessity)"
-        @keydown.space.prevent="!disabled && (line.is_non_necessity = !line.is_non_necessity)"
+        @click="!disabled && (line.exclude_from_expense_basis = !line.exclude_from_expense_basis)"
+        @keydown.enter.prevent="!disabled && (line.exclude_from_expense_basis = !line.exclude_from_expense_basis)"
+        @keydown.space.prevent="!disabled && (line.exclude_from_expense_basis = !line.exclude_from_expense_basis)"
       >
         <div>
-          <p class="text-sm font-medium text-gray-300">Mark as non-necessity</p>
+          <p class="text-sm font-medium text-gray-300">Exclude from remaining</p>
           <p class="mt-0.5 text-xs text-gray-500">Excluded from expense basis when the fund allows it</p>
         </div>
         <div
           class="relative flex h-6 w-10 shrink-0 rounded-full transition-colors"
-          :class="line.is_non_necessity ? 'bg-violet-600' : 'bg-gray-700'"
+          :class="line.exclude_from_expense_basis ? 'bg-violet-600' : 'bg-gray-700'"
         >
           <div
             class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
-            :class="line.is_non_necessity ? 'translate-x-5' : 'translate-x-1'"
+            :class="line.exclude_from_expense_basis ? 'translate-x-5' : 'translate-x-1'"
           />
         </div>
       </div>
@@ -353,6 +377,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  allowExpenseBasisExclusion: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(['match-existing-changed']);
@@ -365,13 +393,13 @@ const splitEditorAmount = computed(() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 });
 
-const fundHasNonNecessityRule = computed(() => {
+const fundHasRemainingPercentageRule = computed(() => {
   if (props.line.advance_fund_id === null || props.line.advance_fund_id === undefined) {
     return false;
   }
   const fund = props.funds.find((x) => Number(x.id) === Number(props.line.advance_fund_id));
 
-  return fund?.has_non_necessity_rule === true;
+  return fund?.has_remaining_percentage_rule === true;
 });
 
 function formatCurrency(amount) {
@@ -448,7 +476,7 @@ function togglePayTowardDebt() {
     props.line.match_existing_mode = false;
     props.line.link_to_transaction_id = null;
     props.line.advance_fund_id = null;
-    props.line.is_non_necessity = false;
+    props.line.exclude_from_expense_basis = false;
     const pd = props.payableDebts;
     if (pd.length === 1) {
       props.line.debt_id = pd[0].id;
@@ -462,9 +490,11 @@ function togglePayTowardDebt() {
 
 function toggleFamilySplit() {
   props.line.is_split = !props.line.is_split;
+  if (props.line.is_split) {
+    props.line.exclude_from_expense_basis = false;
+  }
   if (!props.line.is_split) {
     props.line.split_data = [];
-    props.line.is_non_necessity = false;
 
     return;
   }
@@ -476,7 +506,7 @@ function toggleFamilySplit() {
 function toggleAdvanceFund() {
   if (props.line.advance_fund_id !== null) {
     props.line.advance_fund_id = null;
-    props.line.is_non_necessity = false;
+    props.line.exclude_from_expense_basis = false;
   } else {
     props.line.advance_fund_id = props.funds.length > 0 ? props.funds[0].id : null;
   }
@@ -484,9 +514,9 @@ function toggleAdvanceFund() {
 
 function onAdvanceFundChange() {
   if (props.line.advance_fund_id === null) {
-    props.line.is_non_necessity = false;
-  } else if (!fundHasNonNecessityRule.value) {
-    props.line.is_non_necessity = false;
+    props.line.exclude_from_expense_basis = false;
+  } else if (!fundHasRemainingPercentageRule.value) {
+    props.line.exclude_from_expense_basis = false;
   }
 }
 
@@ -501,7 +531,7 @@ function toggleMatchExisting() {
     props.line.is_split = false;
     props.line.split_data = [];
     props.line.advance_fund_id = null;
-    props.line.is_non_necessity = false;
+    props.line.exclude_from_expense_basis = false;
     props.line.link_to_transaction_id = null;
     emit('match-existing-changed');
   }

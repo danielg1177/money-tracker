@@ -254,7 +254,38 @@
 
     <!-- Transactions List (grouped by day; closeout fund transfers are a separate group) -->
     <div v-if="!loading && transactions.length > 0" class="space-y-0 px-0 py-4">
-      <div v-if="closeoutFundMovementTransactions.length > 0">
+      <div v-if="familyCloseoutFundMovementTransactions.length > 0">
+        <div class="flex items-center justify-between px-4 py-1.5 mt-2">
+          <span class="text-[10px] sm:text-sm font-semibold text-blue-300">
+            Family closeout fund movements
+          </span>
+        </div>
+        <div class="space-y-2 px-4 py-1.5">
+          <div
+            v-for="transaction in familyCloseoutFundMovementTransactions"
+            :key="'family-closeout-fund-' + transaction.id"
+            class="flex overflow-hidden rounded-lg sm:rounded-xl cursor-default bg-blue-950/25"
+          >
+            <div class="min-w-0 flex-1">
+            <div class="p-2 sm:p-3">
+            <div class="flex min-w-0 flex-row items-start justify-between gap-2 sm:gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-[11px] sm:text-base font-medium truncate leading-tight text-blue-100">
+                  {{ closeoutFundName(transaction) }}
+                </p>
+              </div>
+              <span class="text-sm sm:text-base font-medium shrink-0 tabular-nums text-blue-300">
+                −{{ formatCurrency(transaction.amount) }}
+              </span>
+            </div>
+            </div>
+            <div class="h-2 w-full" :style="closeoutFundTypeBarStyle()"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="personalCloseoutFundMovementTransactions.length > 0">
         <div class="flex items-center justify-between px-4 py-1.5 mt-2">
           <span class="text-[10px] sm:text-sm font-semibold text-blue-300">
             Closeout fund movements
@@ -262,7 +293,7 @@
         </div>
         <div class="space-y-2 px-4 py-1.5">
           <div
-            v-for="transaction in closeoutFundMovementTransactions"
+            v-for="transaction in personalCloseoutFundMovementTransactions"
             :key="'closeout-fund-' + transaction.id"
             class="flex overflow-hidden rounded-lg sm:rounded-xl cursor-default bg-blue-950/25"
           >
@@ -1025,6 +1056,7 @@ import { closeoutFundName, isCloseoutFundMovement } from '../support/closeoutFun
 import { closeoutFundTypeBarStyle, transactionTypeBarStyle } from '../support/transactionTypeBar.js';
 import { useSelectedMonth } from '../composables/useSelectedMonth';
 import { buildQuickSelectMonths, parseYearMonth } from '../support/yearMonth.js';
+import { allowsExpenseBasisExclusion, normalizeCloseoutMode } from '../support/closeoutMode.js';
 
 const router = useRouter();
 const route = useRoute();
@@ -1450,6 +1482,14 @@ const closeoutFundMovementTransactions = computed(() =>
     }),
 );
 
+const familyCloseoutFundMovementTransactions = computed(() =>
+  closeoutFundMovementTransactions.value.filter((tx) => tx.closeout_scope === 'family'),
+);
+
+const personalCloseoutFundMovementTransactions = computed(() =>
+  closeoutFundMovementTransactions.value.filter((tx) => tx.closeout_scope !== 'family'),
+);
+
 const totalIncome = computed(() => {
   return ledgerTransactions.value
     .filter(tx => tx.type === 'income' && !tx.is_debt_payment && !tx.is_repayment && !isTransactionOwnedByOther(tx))
@@ -1476,7 +1516,7 @@ const familyTotalExpenses = computed(() => {
 
 const totalNonNecessityExpenses = computed(() => {
   return ledgerTransactions.value
-    .filter(tx => tx.type === 'expense' && tx.is_non_necessity && !tx.is_closeout_initiated)
+    .filter(tx => tx.type === 'expense' && tx.is_necessity === false && !tx.is_closeout_initiated)
     .reduce((sum, tx) => sum + expenseAmountForViewerTotals(tx), 0);
 });
 
@@ -1494,6 +1534,27 @@ const isSelectedMonthLocked = computed(() => {
 
 function isMonthClosed(year, month) {
   return closedMonths.value.some(m => m.year === year && m.month === month);
+}
+
+/**
+ * Hard-closed months keep the mode they were closed under. Open months follow the family’s current mode.
+ * @param {object} tx
+ * @returns {string}
+ */
+function closeoutModeForTransaction(tx) {
+  const date = typeof tx?.transaction_date === 'string' ? tx.transaction_date : '';
+  const yearMonth = parseYearMonth(date.length >= 7 ? date.slice(0, 7) : null);
+  if (yearMonth) {
+    const [year, month] = yearMonth.split('-').map(Number);
+    const closed = closedMonths.value.find(
+      (m) => Number(m.year) === year && Number(m.month) === month,
+    );
+    if (closed) {
+      return normalizeCloseoutMode(closed.closeout_mode);
+    }
+  }
+
+  return normalizeCloseoutMode(currentUser.value?.closeout_mode);
 }
 
 const currentMonthYear = computed(() => {
@@ -1618,12 +1679,21 @@ function transactionKindPills(tx) {
     });
   }
 
-  if (tx.type === 'expense' && tx.is_non_necessity) {
+  if (tx.type === 'expense' && tx.exclude_from_expense_basis && allowsExpenseBasisExclusion(closeoutModeForTransaction(tx))) {
     pills.push({
-      key: 'non-necessity',
-      label: 'Non-necessity',
+      key: 'exclude-from-remaining',
+      label: 'Excluded from remaining',
+      classes: 'bg-amber-900/55 text-amber-200',
+      title: 'Not subtracted from remaining closeout expenses; still settles against the advance fund',
+    });
+  }
+
+  if (tx.type === 'expense' && tx.is_necessity === false) {
+    pills.push({
+      key: 'not-a-necessity',
+      label: 'Not a necessity',
       classes: 'bg-violet-900/55 text-violet-200',
-      title: 'Excluded from closeout necessity-expense basis',
+      title: 'Omitted from family pooled charity (income minus necessities)',
     });
   }
 
