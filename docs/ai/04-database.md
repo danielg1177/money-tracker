@@ -69,9 +69,10 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `2026_08_24_120002_create_family_closeout_rules_table` | `family_closeout_rules` |
 | `2026_08_24_182044_add_family_id_order_index_to_family_closeout_rules_table` | Adds `(family_id, order)` index on `family_closeout_rules` |
 | `2026_08_24_120003_add_closeout_scope_to_transactions_table` | Adds nullable `closeout_scope` (`user` \| `family`) to `transactions` |
-| `2026_08_24_154237_backfill_legacy_closeout_snapshots_and_scopes` | Backfills `closeout_scope=user` on existing closeout-initiated transactions and reconstructed `results_snapshot` on pre-snapshot hard closes |
+| `2026_08_24_154237_backfill_legacy_closeout_snapshots_and_scopes` | Backfills `families.closeout_mode=classic` and `closeout_scope=user` on existing closeout-initiated transactions. Snapshot reconstruction is deferred (see `2026_09_03_202551`) because this runs before `exclude_from_expense_basis` exists. |
 | `2026_08_24_165852_split_necessity_and_expense_basis_flags` | Renames `is_non_necessity` → `exclude_from_expense_basis` (transactions, category defaults, Plaid rules/suggestions); adds `is_necessity` / `is_necessity_default` / `suggested_is_necessity` (default true). Existing remaining-exclusion rows get `is_necessity=false` so charity math stays the same until edited. |
 | `2026_09_03_172548_move_is_necessity_default_to_categories_table` | Moves `is_necessity_default` from `category_user_defaults` onto shared `categories` (backfill: HoH user default, else first defaults row, else true). |
+| `2026_09_03_202551_backfill_legacy_closeout_snapshots` | Reconstructs `results_snapshot` on pre-snapshot hard closes from ledger artifacts. Idempotent: skips months that already have a snapshot. |
 
 ## Table schemas
 

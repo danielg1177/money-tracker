@@ -140,4 +140,38 @@ class CloseoutLegacyDataBackfillTest extends TestCase
         );
         $this->assertArrayNotHasKey('reconstructed', $hardClose->settings_snapshot);
     }
+
+    public function test_modes_and_scopes_backfill_does_not_write_snapshots(): void
+    {
+        $family = Family::factory()->create(['closeout_mode' => '']);
+        $user = User::factory()->create(['family_id' => $family->id]);
+
+        $transaction = Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $user->id,
+            'type' => 'expense',
+            'amount' => 10,
+            'transaction_date' => '2026-08-31',
+            'is_split' => false,
+            'is_closeout_initiated' => true,
+            'closeout_scope' => null,
+        ]);
+
+        $hardClose = MonthHardClose::query()->create([
+            'family_id' => $family->id,
+            'year' => 2026,
+            'month' => 8,
+            'closed_at' => now(),
+            'closed_by_user_id' => $user->id,
+            'closeout_mode' => null,
+            'settings_snapshot' => null,
+            'results_snapshot' => null,
+        ]);
+
+        app(LegacyCloseoutDataBackfill::class)->backfillModesAndScopes();
+
+        $this->assertSame('classic', $family->fresh()->closeout_mode);
+        $this->assertSame('user', $transaction->fresh()->closeout_scope);
+        $this->assertNull($hardClose->fresh()->results_snapshot);
+    }
 }

@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-09-03 — Fix closeout snapshot backfill running before column rename
+
+- Files touched: `database/migrations/2026_08_24_154237_backfill_legacy_closeout_snapshots_and_scopes.php`, `database/migrations/2026_09_03_202551_backfill_legacy_closeout_snapshots.php`, `app/Services/Closeout/LegacyCloseoutDataBackfill.php`, `tests/Feature/CloseoutLegacyDataBackfillTest.php`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`
+- Behavioral impact: `2026_08_24_154237` no longer reconstructs hard-close snapshots (that query now uses `exclude_from_expense_basis`, which does not exist yet on Railway). It only backfills closeout mode + `closeout_scope`. Snapshot reconstruction runs in `2026_09_03_202551` after the rename migration. Existing snapshots are left alone.
+
 ## 2026-09-03 — Necessity default is family-shared
 
 - Files touched: `database/migrations/2026_09_03_172548_move_is_necessity_default_to_categories_table.php`, `app/Models/Category.php`, `app/Models/CategoryUserDefault.php`, `app/Http/Controllers/CategoryController.php`, `app/Services/PlaidMerchantRuleCategorySync.php`, `app/Services/PlaidMatchingService.php`, `app/Services/PlaidTransactionSyncService.php`, `database/factories/CategoryFactory.php`, `database/seeders/CloseoutDemoSeeder.php`, `resources/js/pages/Categories.vue`, `resources/js/components/DebtPaymentBenefitForm.vue`, `tests/Feature/CategoryTest.php`, `tests/Feature/PlaidMerchantRuleCategorySyncTest.php`, `tests/Feature/PlaidMatchingServiceTest.php`, `docs/ai/{00-repo-overview,01-architecture,02-backend-laravel,03-frontend-vue,04-database,06-feature-map,07-workflows,08-api-routes,09-known-decisions,10-ai-change-log}.md`

@@ -14,9 +14,14 @@ class LegacyCloseoutDataBackfill
 
     public function run(): void
     {
+        $this->backfillModesAndScopes();
+        $this->backfillHardCloseSnapshots();
+    }
+
+    public function backfillModesAndScopes(): void
+    {
         $this->backfillFamilyCloseoutModes();
         $this->backfillCloseoutScopes();
-        $this->backfillHardCloseSnapshots();
     }
 
     private function backfillFamilyCloseoutModes(): void
@@ -37,7 +42,7 @@ class LegacyCloseoutDataBackfill
             ->update(['closeout_scope' => CloseoutScope::User]);
     }
 
-    private function backfillHardCloseSnapshots(): void
+    public function backfillHardCloseSnapshots(): void
     {
         $hardCloses = MonthHardClose::query()
             ->with('family.users')

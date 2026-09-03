@@ -394,7 +394,7 @@ When **no** ledger match is found (`findLedgerMatchWithScore` returns null), `pr
 - `CloseoutEngineResolver` — picks engine from `family.closeout_mode`; `settingsSnapshot()` captures `version` (1), mode, family rules, and each user’s personal rules (personal rules loaded in one query)
 - `CloseoutMode` / `CloseoutScope` — allowed-value helpers for `classic`/`family_pooled` and `user`/`family` closeout attribution
 - `CloseoutTotals` — earned income, necessity vs all expenses, split spend, inter-member debt-payment exclusion from **family** totals
-- `CloseoutArtifactReconstructor` — pre-snapshot hard closes rebuilt from `fund_movements`, closeout debt payments, and title savings (amounts, not original percentages). `LegacyCloseoutDataBackfill` persists those reconstructions onto existing `month_hard_closes` and sets `closeout_scope=user` on legacy closeout-initiated transactions.
+- `CloseoutArtifactReconstructor` — pre-snapshot hard closes rebuilt from `fund_movements`, closeout debt payments, and title savings (amounts, not original percentages). `LegacyCloseoutDataBackfill` persists those reconstructions onto existing `month_hard_closes` and sets `closeout_scope=user` on legacy closeout-initiated transactions. Modes/scopes run in `2026_08_24_154237`; snapshot reconstruction runs later in `2026_09_03_202551` after `exclude_from_expense_basis` exists.
 
 ## Form Requests
 
