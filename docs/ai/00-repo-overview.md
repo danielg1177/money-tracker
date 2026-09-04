@@ -35,7 +35,7 @@ money-tracker/
 ├── app/
 │   ├── Actions/Fortify/       # Fortify action overrides (user creation, password update)
 │   ├── Http/
-│   │   ├── Controllers/       # Admin, BankBalance, Category, Dashboard, Debt, FamilyCloseout*, Fund, MonthCloseout, MonthSummary, Plaid (+ webhook), Transaction, UserSettings + base Controller
+│   │   ├── Controllers/       # Admin, BankBalance, Category, Dashboard, Debt, FamilyCloseout*, Fund, MonthCloseout, MonthSummary, Plaid, PlaidImport, PlaidWebhook, Transaction, UserSettings + base Controller
 │   │   └── Requests/          # Form Request classes (incl. ExchangePlaidTokenRequest)
 │   ├── Models/                # 18 Eloquent models
 │   ├── Policies/              # FundPolicy, DebtPolicy
@@ -43,14 +43,14 @@ money-tracker/
 │   └── Services/              # ClosedMonthGuard, DebtService, FundService, MonthCloseoutService, Closeout engines, PlaidCalibrationService, PlaidClient, PlaidMatchingService, PlaidMerchantRuleCategorySync, PlaidTransactionSyncService, SplitCalculator, TransactionRepaymentService, TransactionService
 ├── database/
 │   ├── factories/             # 8 factories
-│   ├── migrations/            # 64 migrations (initial set 2026-04-30; ongoing additions)
+│   ├── migrations/            # 66 migrations (initial set 2026-04-30; ongoing additions)
 │   └── seeders/               # DatabaseSeeder (admin + family); CloseoutDemoSeeder (optional local closeout UI demo)
 ├── resources/
 │   ├── css/app.css            # Tailwind v4 entry
 │   ├── js/                    # Vue SPA source
 │   │   ├── app.js             # Entry point — mounts AppShell
 │   │   ├── AppShell.vue       # Root layout (nav wrapper)
-│   │   ├── components/        # AppNav, TransactionForm, SplitEditor, IconPicker, App.vue (legacy)
+│   │   ├── components/        # AppNav, TransactionForm, SplitEditor, IconPicker, DebtPaymentBenefitForm, PlaidImport*, DebtRepaymentReceivedOptions, App.vue (legacy)
 │   │   ├── composables/       # useApi.js, useAuth.js, useSelectedMonth.js
 │   │   ├── pages/             # user pages incl. BankConnections + admin pages
 │   │   ├── router/index.js    # Vue Router config + beforeEach guards
@@ -79,5 +79,5 @@ money-tracker/
 - No Enums exist yet. Roles and allocation types are plain strings.
 - No API versioning — routes are in `web.php`, not `api.php`.
 - No Eloquent API Resources — controllers return models/collections directly.
-- Funds: **personal** funds are per-user (`user_id`, `family_id` null). **Family** funds share `family_id` with the household but still store `user_id` as the creator; **`GET /funds`** lists personal funds and family funds separately so each fund row appears once (family rows are not duplicated under the creator’s personal list). **`DELETE /funds/{id}` 500s on Railway** when any transaction still has `advance_fund_id` on that fund (see `docs/ai/09-known-decisions.md`). Categories and transactions are **per-family** (stored); **`GET /transactions` defaults to rows relevant to the signed-in user** (their own plus split co-participations). Pass **`?view=family`** for the household overlay used by the Transactions page when Settings **View all family expenses** is on (viewer can still edit/delete their own rows). Dashboard keeps the default viewer-scoped list. See `docs/ai/01-architecture.md` (data scoping).
+- Funds: **personal** funds are per-user (`user_id`, `family_id` null). **Family** funds share `family_id` with the household but still store `user_id` as the creator; **`GET /funds`** lists personal funds and family funds separately so each fund row appears once (family rows are not duplicated under the creator’s personal list). **`DELETE /funds/{id}` 500s on Railway** when any transaction still has `advance_fund_id` on that fund (see `docs/ai/09-known-decisions.md`). Categories and transactions are **per-family** (stored); **`GET /transactions` defaults to rows relevant to the signed-in user** (their own plus split co-participations). Pass **`?view=family`** for the household overlay used by the Transactions page when Settings **View all family expenses** is on (viewer can still edit/delete their own rows; **`can_manage_family`** users can also edit/delete other members’ rows). Dashboard keeps the default viewer-scoped list. See `docs/ai/01-architecture.md` (data scoping).
 - A user without a `family_id` is essentially unusable (most endpoints 403 or return empty).

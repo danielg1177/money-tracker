@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-09-04 — Family managers can edit other members’ transactions
+
+- Files touched: `app/Http/Controllers/TransactionController.php`, `resources/js/pages/Transactions.vue`, `resources/js/pages/Settings.vue`, `tests/Feature/TransactionTest.php`, `docs/ai/{00-repo-overview,01-architecture,02-backend-laravel,03-frontend-vue,04-database,05-auth-permissions,06-feature-map,08-api-routes,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: With **View all family expenses** on, a **`can_manage_family`** user (head of household or system admin in the family) can tap to edit and delete other members’ Transactions rows (same closeout / repaid / benefit / debt-payment-income locks as own rows). Regular members still see those rows as browse-only. Soft-close still follows the **owner**. Docs also corrected: 66 migrations, 8 factories, duplicate `month_hard_closes` schema, `PUT /funds` family-member update policy, Plaid import `recently_confirmed` / `undo-confirm`, and the family-scoped transaction update/delete API vs UI.
+
 ## 2026-09-03 — Fix closeout snapshot backfill running before column rename
 
 - Files touched: `database/migrations/2026_08_24_154237_backfill_legacy_closeout_snapshots_and_scopes.php`, `database/migrations/2026_09_03_202551_backfill_legacy_closeout_snapshots.php`, `app/Services/Closeout/LegacyCloseoutDataBackfill.php`, `tests/Feature/CloseoutLegacyDataBackfillTest.php`, `docs/ai/04-database.md`, `docs/ai/10-ai-change-log.md`

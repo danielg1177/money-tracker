@@ -28,8 +28,10 @@ class TransactionController extends Controller
      * when the creditor is also a split participant on that expense, the income row is kept
      * and the mirrored expense leg is omitted so the payment appears once in their list.
      *
-     * Pass `view=family` to include every family transaction in the date range (read-only
-     * household overlay). Default (and Dashboard) remain viewer-scoped.
+     * Pass `view=family` to include every family transaction in the date range (household
+     * overlay). Members’ UI treats other owners as browse-only; `can_manage_family` users
+     * can edit/delete those rows (same closeout / repaid / benefit locks). Default (and
+     * Dashboard) remain viewer-scoped.
      */
     public function index(Request $request): JsonResponse
     {

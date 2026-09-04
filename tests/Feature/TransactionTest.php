@@ -723,4 +723,67 @@ class TransactionTest extends TestCase
         $debt->refresh();
         $this->assertEqualsWithDelta(500.00, (float) $debt->balance, 0.01);
     }
+
+    public function test_head_of_household_can_update_another_family_members_transaction(): void
+    {
+        $family = Family::factory()->create();
+        $head = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'head_of_household',
+        ]);
+        $member = User::factory()->create(['family_id' => $family->id]);
+        $category = Category::factory()->create(['family_id' => $family->id]);
+
+        $this->actingAs($member)->postJson('/transactions', [
+            'category_id' => $category->id,
+            'amount' => 25.00,
+            'description' => 'Member expense',
+            'type' => 'expense',
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+        ])->assertStatus(201);
+
+        $transaction = Transaction::query()->latest('id')->first();
+
+        $this->actingAs($head)->putJson("/transactions/{$transaction->id}", [
+            'category_id' => $category->id,
+            'amount' => 40.00,
+            'description' => 'Corrected by family admin',
+            'type' => 'expense',
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+        ])->assertOk();
+
+        $transaction->refresh();
+        $this->assertEqualsWithDelta(40.00, (float) $transaction->amount, 0.01);
+        $this->assertSame('Corrected by family admin', $transaction->description);
+        $this->assertSame($member->id, $transaction->user_id);
+    }
+
+    public function test_head_of_household_can_delete_another_family_members_transaction(): void
+    {
+        $family = Family::factory()->create();
+        $head = User::factory()->create([
+            'family_id' => $family->id,
+            'role' => 'head_of_household',
+        ]);
+        $member = User::factory()->create(['family_id' => $family->id]);
+        $category = Category::factory()->create(['family_id' => $family->id]);
+
+        $this->actingAs($member)->postJson('/transactions', [
+            'category_id' => $category->id,
+            'amount' => 25.00,
+            'description' => 'Member expense',
+            'type' => 'expense',
+            'transaction_date' => now()->toDateString(),
+            'is_split' => false,
+        ])->assertStatus(201);
+
+        $transactionId = Transaction::query()->latest('id')->value('id');
+
+        $this->actingAs($head)->deleteJson("/transactions/{$transactionId}")
+            ->assertNoContent();
+
+        $this->assertDatabaseMissing('transactions', ['id' => $transactionId]);
+    }
 }

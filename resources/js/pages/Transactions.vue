@@ -570,7 +570,7 @@
                   </svg>
 
                   <!-- Action Buttons -->
-                  <div v-if="!isFamilyViewOtherMemberRow(transaction) && !confirmDelete[transaction.id]" class="flex gap-1">
+                  <div v-if="!isFamilyViewBrowseOnlyRow(transaction) && !confirmDelete[transaction.id]" class="flex gap-1">
                     <button
                       @click.stop="confirmDelete[transaction.id] = true"
                       :disabled="isSelectedMonthLocked || transaction.is_closeout_initiated || transaction.is_debt_payment_benefit"
@@ -584,7 +584,7 @@
                   </div>
 
                   <!-- Delete Confirmation -->
-                  <div v-else-if="!isFamilyViewOtherMemberRow(transaction)" class="flex gap-1">
+                  <div v-else-if="!isFamilyViewBrowseOnlyRow(transaction)" class="flex gap-1">
                     <button
                       @click.stop="handleDeleteConfirm(transaction.id)"
                       class="px-2 py-0.5 text-[10px] sm:text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
@@ -1646,6 +1646,14 @@ function isFamilyViewOtherMemberRow(transaction) {
   return isFamilyExpenseView.value && isTransactionOwnedByOther(transaction);
 }
 
+function canMutateOtherFamilyTransactions() {
+  return Boolean(currentUser.value?.can_manage_family || currentUser.value?.canManageFamily);
+}
+
+function isFamilyViewBrowseOnlyRow(transaction) {
+  return isFamilyViewOtherMemberRow(transaction) && !canMutateOtherFamilyTransactions();
+}
+
 /**
  * Small attribute pills on each row (debt repayment, advance, non-necessity, borrow, closeout).
  * Split expenses list each member’s share beside the amount with Total underneath, not a title-row pill.
@@ -1914,7 +1922,7 @@ function isSystemCloseoutEntry(transaction) {
 }
 
 function isTransactionEditLocked(transaction) {
-  if (isFamilyViewOtherMemberRow(transaction)) {
+  if (isFamilyViewBrowseOnlyRow(transaction)) {
     return true;
   }
 
@@ -1991,7 +1999,7 @@ async function reloadCurrentFilterData() {
 
 async function handleDeleteConfirm(transactionId) {
   const tx = getTransactionById(transactionId);
-  if (isSelectedMonthLocked.value || isFamilyViewOtherMemberRow(tx)) {
+  if (isSelectedMonthLocked.value || isFamilyViewBrowseOnlyRow(tx)) {
     confirmDelete.value[transactionId] = false;
     return;
   }

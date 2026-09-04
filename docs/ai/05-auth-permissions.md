@@ -101,5 +101,5 @@ Fortify 2FA columns exist in the `users` table migration. `FortifyServiceProvide
 
 1. **`CategoryController`** — no `CategoryPolicy`. `update`/`destroy` require `$category->family_id === auth user family_id` (cross-family IDs 403). Any member of that family can still edit/delete any of that family’s categories.
 2. **`DebtController`** — `DebtPolicy` is not applied. Any authenticated user can access debt records as long as they match `family_id` (index) or have no guard at all (store has family membership check; payDebt checks debtor_id).
-3. **`TransactionController::update/destroy`** — checks `user_id === auth()->id()` OR `family_id === auth()->family_id`. Family members can delete each other's transactions.
+3. **`TransactionController::update/destroy`** — 403 only when the row is not owned **and** not same-family. Any family member can mutate another member’s row via the API. The Transactions UI is stricter: other members’ overlay rows are browse-only unless the viewer has **`can_manage_family`**.
 4. **`AdminController::createFamily`** — requires `can:admin` gate. But `updateFamily`, `deleteFamily`, `addFamilyMember`, `removeFamilyMember` use `can:manage_family`, which includes `head_of_household`. The logic inside manually re-checks role for head_of_household scope.

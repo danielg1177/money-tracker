@@ -91,7 +91,7 @@ All custom migrations are dated `2026-04-30` or later. Key migrations:
 | `bank_balance_enabled` | boolean | default false; opt-in flag — user must enable bank balance tracking |
 | `bank_balance` | decimal(15,2) nullable | user-set anchor balance (the manually reconciled amount) |
 | `bank_balance_set_at` | date nullable | date when anchor was last set; transactions on/after this date form the running delta |
-| `view_family_expenses` | boolean | default false; when true, Transactions/Month Summary show a household overlay (Transactions still lets the viewer edit/delete their own rows) |
+| `view_family_expenses` | boolean | default false; when true, Transactions/Month Summary show a household overlay (Transactions still lets the viewer edit/delete their own rows; `can_manage_family` users can also mutate other members’ rows) |
 | `two_factor_*` | various | Fortify 2FA columns |
 | `timestamps` | | |
 
@@ -316,19 +316,6 @@ Unique key: `category_id` + `user_id` (one default row per user/category pair).
 
 Unique: (`family_id`, `user_id`, `year`, `month`).
 
-### `month_hard_closes`
-| Column | Type | Notes |
-|---|---|---|
-| `id` | bigint PK | |
-| `family_id` | bigint FK | → `families.id` (`cascadeOnDelete`) |
-| `year` | unsigned smallint | |
-| `month` | unsigned tinyint | 1–12 |
-| `closed_at` | timestamp | |
-| `closed_by_user_id` | bigint FK nullable | → `users.id` (`nullOnDelete`) |
-| `timestamps` | | |
-
-Unique: (`family_id`, `year`, `month`).
-
 ### `plaid_items`
 | Column | Type | Notes |
 |---|---|---|
@@ -422,7 +409,7 @@ debts: debtor_id → users, creditor_id → users (nullable)
 
 ## Factories
 
-Seven factories exist in `database/factories/` (not every model):
+Eight factories exist in `database/factories/` (not every model):
 - `UserFactory` — sets role to `member` by default; password is `password`
 - `FamilyFactory`
 - `CategoryFactory`
