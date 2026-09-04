@@ -31,7 +31,7 @@ class TransactionService
      */
     public function createTransaction(array $data, User $user): Transaction
     {
-        if (($data['type'] ?? null) === 'expense' && ! empty($data['debt_id'])) {
+        if (($data['type'] ?? null) === 'expense' && (! empty($data['debt_id']) || ! empty($data['transfer_to_user_id']))) {
             return $this->createDebtRepaymentExpense($data, $user);
         }
 
@@ -115,6 +115,7 @@ class TransactionService
     private function createDebtRepaymentExpense(array $data, User $user): Transaction
     {
         return DB::transaction(function () use ($data, $user) {
+            $data = $this->resolveExpenseDebtId($data, $user);
             $debt = Debt::query()
                 ->where('family_id', $user->family_id)
                 ->lockForUpdate()
@@ -853,6 +854,44 @@ class TransactionService
         PlaidPendingImport::query()
             ->where('transaction_id', $transaction->id)
             ->update(['status' => 'pending', 'transaction_id' => null]);
+    }
+
+    /**
+     * Resolve `transfer_to_user_id` on an expense into a payable in-family `debt_id`.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function resolveExpenseDebtId(array $data, User $user): array
+    {
+        if (! empty($data['debt_id'])) {
+            return $data;
+        }
+
+        $recipientId = (int) ($data['transfer_to_user_id'] ?? 0);
+        if ($recipientId < 1) {
+            throw new InvalidArgumentException('Select a family member to send money to.');
+        }
+
+        $recipient = User::query()->find($recipientId);
+        if ($recipient === null) {
+            throw new InvalidArgumentException('The selected family member was not found.');
+        }
+
+        $amount = round((float) ($data['amount'] ?? 0), 2);
+        $description = isset($data['description']) && is_string($data['description']) && $data['description'] !== ''
+            ? $data['description']
+            : null;
+
+        $debt = $this->debtService->findOrCreatePayableInterFamilyDebt(
+            $user,
+            $recipient,
+            $amount,
+            $description,
+        );
+        $data['debt_id'] = $debt->id;
+
+        return $data;
     }
 
     /**

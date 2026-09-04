@@ -439,7 +439,8 @@ class PlaidImportController extends Controller
         }
 
         $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
-        $payTowardDebt = ($validated['type'] ?? '') === 'expense' && ! empty($validated['debt_id']);
+        $sendToFamilyMember = ($validated['type'] ?? '') === 'expense' && ! empty($validated['transfer_to_user_id']);
+        $payTowardDebt = ($validated['type'] ?? '') === 'expense' && ! empty($validated['debt_id']) && ! $sendToFamilyMember;
         $this->matchingService->learnFromConfirmation($user->id, $merchantName, [
             'category_id' => $validated['category_id'],
             'type' => $validated['type'],
@@ -528,9 +529,10 @@ class PlaidImportController extends Controller
         }
 
         $merchantName = (string) ($pendingImport->merchant_name ?? $pendingImport->raw_name ?? '');
-        $payTowardDebt = ($validated['type'] ?? '') === 'expense' && ! empty($validated['debt_id']);
+        $sendToFamilyMember = ($validated['type'] ?? '') === 'expense' && ! empty($validated['transfer_to_user_id']);
+        $payTowardDebt = ($validated['type'] ?? '') === 'expense' && ! empty($validated['debt_id']) && ! $sendToFamilyMember;
         $isSplit = (bool) ($validated['is_split'] ?? false);
-        $resolvedAdvanceFundId = ($validated['type'] === 'expense' && ! $payTowardDebt) ? ($validated['advance_fund_id'] ?? null) : null;
+        $resolvedAdvanceFundId = ($validated['type'] === 'expense' && ! $payTowardDebt && ! $sendToFamilyMember) ? ($validated['advance_fund_id'] ?? null) : null;
 
         $this->matchingService->learnFromConfirmation($user->id, $merchantName, [
             'category_id' => $validated['category_id'],
@@ -543,7 +545,7 @@ class PlaidImportController extends Controller
             'action' => 'categorize',
             'description' => $payload['description'],
             'is_debt_payment' => $payTowardDebt,
-            'debt_id' => isset($validated['debt_id']) ? (int) $validated['debt_id'] : null,
+            'debt_id' => $payTowardDebt ? (int) $validated['debt_id'] : null,
             'split_data' => $isSplit && ! empty($validated['split_data']) ? $validated['split_data'] : null,
         ]);
 
@@ -713,7 +715,9 @@ class PlaidImportController extends Controller
 
         $isSplit = (bool) ($fields['is_split'] ?? false);
         $payTowardDebt = ($fields['type'] ?? '') === 'expense' && ! empty($fields['debt_id']);
-        $resolvedAdvanceFundId = ($fields['type'] === 'expense' && ! $payTowardDebt) ? ($fields['advance_fund_id'] ?? null) : null;
+        $sendToFamilyMember = ($fields['type'] ?? '') === 'expense' && ! empty($fields['transfer_to_user_id']);
+        $isInterMemberPayment = $payTowardDebt || $sendToFamilyMember;
+        $resolvedAdvanceFundId = ($fields['type'] === 'expense' && ! $isInterMemberPayment) ? ($fields['advance_fund_id'] ?? null) : null;
 
         $payload = [
             'type' => $fields['type'],
@@ -730,6 +734,10 @@ class PlaidImportController extends Controller
 
         if (($fields['type'] ?? '') === 'expense' && $payTowardDebt) {
             $payload['debt_id'] = (int) $fields['debt_id'];
+        }
+
+        if (($fields['type'] ?? '') === 'expense' && $sendToFamilyMember) {
+            $payload['transfer_to_user_id'] = (int) $fields['transfer_to_user_id'];
         }
 
         if (($fields['type'] ?? '') === 'income') {
@@ -775,7 +783,10 @@ class PlaidImportController extends Controller
     private function resolvedTagFundIdFromImportFields(array $fields): ?int
     {
         $payTowardDebt = ($fields['type'] ?? '') === 'expense' && ! empty($fields['debt_id']);
-        $resolvedAdvanceFundId = ($fields['type'] === 'expense' && ! $payTowardDebt) ? ($fields['advance_fund_id'] ?? null) : null;
+        $sendToFamilyMember = ($fields['type'] ?? '') === 'expense' && ! empty($fields['transfer_to_user_id']);
+        $resolvedAdvanceFundId = ($fields['type'] === 'expense' && ! $payTowardDebt && ! $sendToFamilyMember)
+            ? ($fields['advance_fund_id'] ?? null)
+            : null;
 
         if (! empty($fields['fund_id'])) {
             return (int) $fields['fund_id'];

@@ -209,6 +209,17 @@
           </option>
         </select>
       </div>
+      <FamilyTransferOptions
+        v-if="!line.match_existing_mode"
+        :enabled="line.send_to_family"
+        :user-id="line.transfer_to_user_id"
+        :family-members="otherFamilyMembers"
+        :disabled="disabled"
+        surface-class="bg-gray-900/40"
+        :select-id="selectId"
+        @update:enabled="setSendToFamily"
+        @update:user-id="(id) => (line.transfer_to_user_id = id)"
+      />
     </div>
 
     <div
@@ -268,7 +279,7 @@
       />
     </div>
 
-    <div v-if="line.type === 'expense' && !line.pay_toward_debt && !line.match_existing_mode" class="space-y-2">
+    <div v-if="line.type === 'expense' && !line.pay_toward_debt && !line.send_to_family && !line.match_existing_mode" class="space-y-2">
       <div
         class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
         role="button"
@@ -334,7 +345,9 @@
 import { computed } from 'vue';
 import PlaidImportRepaymentOptions from './PlaidImportRepaymentOptions.vue';
 import DebtRepaymentReceivedOptions from './DebtRepaymentReceivedOptions.vue';
+import FamilyTransferOptions from './FamilyTransferOptions.vue';
 import SplitEditor from './SplitEditor.vue';
+import { useAuth } from '../composables/useAuth';
 import {
   equalSplitPayloadForFamilyUsers,
   hasPositiveSplitShares,
@@ -381,9 +394,18 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  selectId: {
+    type: String,
+    default: 'split-family-transfer-select',
+  },
 });
 
-const emit = defineEmits(['match-existing-changed']);
+const emit = defineEmits(['match-existing-changed', 'family-transfer-cleared']);
+
+const { user } = useAuth();
+const otherFamilyMembers = computed(() =>
+  (props.familyUsers || []).filter((member) => Number(member.id) !== Number(user.value?.id)),
+);
 
 const isMatchExistingMode = computed(() => props.line.match_existing_mode === true);
 
@@ -473,6 +495,8 @@ function setIncomeDebtMode(mode) {
 function togglePayTowardDebt() {
   props.line.pay_toward_debt = !props.line.pay_toward_debt;
   if (props.line.pay_toward_debt) {
+    props.line.send_to_family = false;
+    props.line.transfer_to_user_id = null;
     props.line.match_existing_mode = false;
     props.line.link_to_transaction_id = null;
     props.line.advance_fund_id = null;
@@ -520,6 +544,22 @@ function onAdvanceFundChange() {
   }
 }
 
+function setSendToFamily(on) {
+  props.line.send_to_family = on;
+  if (on) {
+    props.line.match_existing_mode = false;
+    props.line.link_to_transaction_id = null;
+    props.line.pay_toward_debt = false;
+    props.line.debt_id = null;
+    props.line.advance_fund_id = null;
+    props.line.exclude_from_expense_basis = false;
+
+    return;
+  }
+  props.line.transfer_to_user_id = null;
+  emit('family-transfer-cleared');
+}
+
 function toggleMatchExisting() {
   if (isMatchExistingMode.value) {
     props.line.match_existing_mode = false;
@@ -528,6 +568,8 @@ function toggleMatchExisting() {
     props.line.match_existing_mode = true;
     props.line.pay_toward_debt = false;
     props.line.debt_id = null;
+    props.line.send_to_family = false;
+    props.line.transfer_to_user_id = null;
     props.line.is_split = false;
     props.line.split_data = [];
     props.line.advance_fund_id = null;

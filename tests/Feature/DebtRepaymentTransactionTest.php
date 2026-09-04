@@ -736,4 +736,188 @@ class DebtRepaymentTransactionTest extends TestCase
         $this->assertNotNull($loanStart);
         $this->assertEqualsWithDelta(100.0, (float) $loanStart['amount'], 0.01);
     }
+
+    public function test_expense_with_transfer_to_user_id_creates_debt_payment_pair_and_new_debt(): void
+    {
+        $family = Family::factory()->create();
+        $payer = User::factory()->create(['family_id' => $family->id, 'view_family_expenses' => true]);
+        $recipient = User::factory()->create(['family_id' => $family->id, 'view_family_expenses' => true]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->actingAs($payer)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 40,
+            'category_id' => $category->id,
+            'transaction_date' => '2026-09-04',
+            'is_split' => false,
+            'description' => 'Venmo to family',
+            'transfer_to_user_id' => $recipient->id,
+        ])->assertCreated();
+
+        $debt = Debt::query()
+            ->where('family_id', $family->id)
+            ->where('debtor_id', $payer->id)
+            ->where('creditor_id', $recipient->id)
+            ->where('is_family_debt', false)
+            ->sole();
+        $this->assertSame('40.00', (string) $debt->amount);
+        $this->assertSame('0.00', (string) $debt->balance);
+
+        $expense = Transaction::query()->where('user_id', $payer->id)->where('type', 'expense')->sole();
+        $income = Transaction::query()->where('user_id', $recipient->id)->where('type', 'income')->sole();
+
+        $this->assertTrue($expense->is_debt_payment);
+        $this->assertTrue($income->is_debt_payment);
+        $this->assertSame($debt->id, (int) $expense->debt_id);
+        $this->assertSame($debt->id, (int) $income->debt_id);
+        $this->assertSame($expense->mirror_transaction_id, $income->id);
+        $this->assertSame($income->mirror_transaction_id, $expense->id);
+
+        $recipientSummary = $this->actingAs($recipient)->getJson('/month-summary?year=2026&month=9')->assertOk();
+        $this->assertEqualsWithDelta(0.0, (float) data_get($recipientSummary->json(), 'rule_preview.basis.gross_income'), 0.001);
+        $this->assertEqualsWithDelta(40.0, (float) data_get($recipientSummary->json(), 'debt_repayments.received.0.amount'), 0.001);
+
+        $familyExpenseTotal = collect($recipientSummary->json('family_category_totals'))
+            ->where('type', 'expense')
+            ->sum('total');
+        $familyIncomeTotal = collect($recipientSummary->json('family_category_totals'))
+            ->where('type', 'income')
+            ->sum('total');
+        $this->assertEqualsWithDelta(0.0, (float) $familyExpenseTotal, 0.001);
+        $this->assertEqualsWithDelta(0.0, (float) $familyIncomeTotal, 0.001);
+    }
+
+    public function test_expense_with_transfer_to_user_id_pays_existing_open_debt(): void
+    {
+        $family = Family::factory()->create();
+        $payer = User::factory()->create(['family_id' => $family->id]);
+        $recipient = User::factory()->create(['family_id' => $family->id]);
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $payer->id,
+            'creditor_id' => $recipient->id,
+            'amount' => 100.00,
+            'balance' => 100.00,
+            'is_pending_closeout' => false,
+            'is_family_debt' => false,
+        ]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->actingAs($payer)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 25,
+            'category_id' => $category->id,
+            'transaction_date' => '2026-09-04',
+            'is_split' => false,
+            'transfer_to_user_id' => $recipient->id,
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('debts', [
+            'id' => $debt->id,
+            'balance' => '75.00',
+        ]);
+        $this->assertSame(1, Debt::query()->where('family_id', $family->id)->count());
+
+        $expense = Transaction::query()->where('user_id', $payer->id)->where('type', 'expense')->sole();
+        $this->assertSame($debt->id, (int) $expense->debt_id);
+        $this->assertTrue($expense->is_debt_payment);
+    }
+
+    public function test_expense_with_transfer_to_user_id_does_not_reuse_zero_balance_debt(): void
+    {
+        $family = Family::factory()->create();
+        $payer = User::factory()->create(['family_id' => $family->id]);
+        $recipient = User::factory()->create(['family_id' => $family->id]);
+        $paidOff = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $payer->id,
+            'creditor_id' => $recipient->id,
+            'amount' => 50.00,
+            'balance' => 0.00,
+            'is_pending_closeout' => false,
+            'is_family_debt' => false,
+        ]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->actingAs($payer)->postJson('/transactions', [
+            'type' => 'expense',
+            'amount' => 20,
+            'category_id' => $category->id,
+            'transaction_date' => '2026-09-04',
+            'is_split' => false,
+            'transfer_to_user_id' => $recipient->id,
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('debts', [
+            'id' => $paidOff->id,
+            'balance' => '0.00',
+        ]);
+
+        $newDebt = Debt::query()
+            ->where('family_id', $family->id)
+            ->whereKeyNot($paidOff->id)
+            ->sole();
+        $this->assertSame('20.00', (string) $newDebt->amount);
+        $this->assertSame('0.00', (string) $newDebt->balance);
+
+        $expense = Transaction::query()->where('user_id', $payer->id)->where('type', 'expense')->sole();
+        $this->assertSame($newDebt->id, (int) $expense->debt_id);
+    }
+
+    public function test_expense_transfer_to_user_id_rejects_self_outsider_and_debt_id_combo(): void
+    {
+        $family = Family::factory()->create();
+        $payer = User::factory()->create(['family_id' => $family->id]);
+        $recipient = User::factory()->create(['family_id' => $family->id]);
+        $outsider = User::factory()->create();
+        $debt = Debt::factory()->create([
+            'family_id' => $family->id,
+            'debtor_id' => $payer->id,
+            'creditor_id' => $recipient->id,
+            'amount' => 80.00,
+            'balance' => 80.00,
+            'is_pending_closeout' => false,
+        ]);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $payload = [
+            'type' => 'expense',
+            'amount' => 20,
+            'category_id' => $category->id,
+            'transaction_date' => '2026-09-04',
+            'is_split' => false,
+        ];
+
+        $this->actingAs($payer)->postJson('/transactions', [
+            ...$payload,
+            'transfer_to_user_id' => $payer->id,
+        ])->assertUnprocessable();
+
+        $this->actingAs($payer)->postJson('/transactions', [
+            ...$payload,
+            'transfer_to_user_id' => $outsider->id,
+        ])->assertUnprocessable();
+
+        $this->actingAs($payer)->postJson('/transactions', [
+            ...$payload,
+            'debt_id' => $debt->id,
+            'transfer_to_user_id' => $recipient->id,
+        ])->assertUnprocessable();
+    }
 }

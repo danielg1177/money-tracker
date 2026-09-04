@@ -37,6 +37,7 @@ trait TransactionPayloadValidationRules
                     fn ($query) => $query->where('family_id', $this->user()?->family_id ?? 0)
                 ),
             ],
+            'transfer_to_user_id' => ['nullable', 'integer', 'exists:users,id'],
             'income_debt_mode' => ['nullable', 'in:none,existing,new,receipt'],
             'income_existing_debt_id' => ['nullable', 'integer', 'exists:debts,id'],
             'income_new_is_family_debt' => ['nullable', 'boolean'],
@@ -79,6 +80,23 @@ trait TransactionPayloadValidationRules
         $value = fn (string $key, mixed $default = null): mixed => $data[$key] ?? $default;
         $filled = fn (string $key): bool => array_key_exists($key, $data) && $data[$key] !== null && $data[$key] !== '';
         $boolean = fn (string $key): bool => filter_var($value($key, false), FILTER_VALIDATE_BOOLEAN);
+
+        if (($value('type') ?? '') === 'expense' && $filled('debt_id') && $filled('transfer_to_user_id')) {
+            $validator->errors()->add(
+                $field('transfer_to_user_id'),
+                'Choose either a tracked debt or a family member to send money to, not both.',
+            );
+        }
+
+        if (($value('type') ?? '') === 'expense' && $filled('transfer_to_user_id') && ! $filled('debt_id')) {
+            $user = $this->user();
+            $recipient = User::query()->find($value('transfer_to_user_id'));
+            if ($user?->family_id === null) {
+                $validator->errors()->add($field('transfer_to_user_id'), 'You must belong to a family to send money to a family member.');
+            } elseif (! $recipient || (int) $recipient->family_id !== (int) $user->family_id || (int) $recipient->id === (int) $user->id) {
+                $validator->errors()->add($field('transfer_to_user_id'), 'Select a different family member.');
+            }
+        }
 
         if (($value('type') ?? '') === 'expense' && $filled('debt_id')) {
             $user = $this->user();
@@ -366,6 +384,7 @@ trait TransactionPayloadValidationRules
             'split_data.*.share_percentage.max' => 'Share percentage cannot exceed 100.',
             'advance_fund_id.exists' => 'The selected advance fund does not exist.',
             'debt_id.exists' => 'The selected debt is invalid.',
+            'transfer_to_user_id.exists' => 'The selected family member is invalid.',
             'exclude_from_expense_basis' => 'Exclude from remaining requires an advance fund with a matching closeout rule.',
         ];
     }

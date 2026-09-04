@@ -50,7 +50,7 @@ money-tracker/
 │   ├── js/                    # Vue SPA source
 │   │   ├── app.js             # Entry point — mounts AppShell
 │   │   ├── AppShell.vue       # Root layout (nav wrapper)
-│   │   ├── components/        # AppNav, TransactionForm, SplitEditor, IconPicker, DebtPaymentBenefitForm, PlaidImport*, DebtRepaymentReceivedOptions, App.vue (legacy)
+│   │   ├── components/        # AppNav, TransactionForm, SplitEditor, IconPicker, DebtPaymentBenefitForm, PlaidImport*, FamilyTransferOptions, DebtRepaymentReceivedOptions, App.vue (legacy)
 │   │   ├── composables/       # useApi.js, useAuth.js, useSelectedMonth.js
 │   │   ├── pages/             # user pages incl. BankConnections + admin pages
 │   │   ├── router/index.js    # Vue Router config + beforeEach guards

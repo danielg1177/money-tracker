@@ -627,6 +627,16 @@
                   </select>
                   <p v-if="payableDebts.length === 0" class="text-xs text-amber-400">No payable debts found.</p>
                 </div>
+                <FamilyTransferOptions
+                  :enabled="formFor(row).send_to_family"
+                  :user-id="formFor(row).transfer_to_user_id"
+                  :family-members="otherFamilyMembers"
+                  :disabled="actionId === row.id"
+                  surface-class="bg-gray-900/40"
+                  :select-id="`family-transfer-${row.id}`"
+                  @update:enabled="(on) => setSendToFamily(row, on)"
+                  @update:user-id="(id) => (formFor(row).transfer_to_user_id = id)"
+                />
               </div>
 
               <div
@@ -686,7 +696,7 @@
                 />
               </div>
 
-              <div v-if="formFor(row).type === 'expense' && !formFor(row).pay_toward_debt" class="space-y-2">
+              <div v-if="formFor(row).type === 'expense' && !formFor(row).pay_toward_debt && !formFor(row).send_to_family" class="space-y-2">
                 <div
                   class="flex cursor-pointer items-center justify-between rounded-lg border border-gray-700 bg-gray-900/40 p-3 transition-colors hover:border-gray-600"
                   role="button"
@@ -939,7 +949,9 @@
                     :receivable-debts="receivableDebts"
                     :split-link-candidates="splitLinkCandidatesMap[`${row.id}-${idx}`] ?? []"
                     :allow-expense-basis-exclusion="allowExpenseBasisExclusion"
+                    :select-id="`split-family-transfer-${row.id}-${idx}`"
                     @match-existing-changed="fetchSplitLinkCandidates(row, idx)"
+                    @family-transfer-cleared="applySplitLineCategoryDefaults(line)"
                   />
                 </div>
 
@@ -1765,6 +1777,7 @@ import SplitEditor from '../components/SplitEditor.vue';
 import PlaidImportSplitLineOptions from '../components/PlaidImportSplitLineOptions.vue';
 import PlaidImportRepaymentOptions from '../components/PlaidImportRepaymentOptions.vue';
 import DebtRepaymentReceivedOptions from '../components/DebtRepaymentReceivedOptions.vue';
+import FamilyTransferOptions from '../components/FamilyTransferOptions.vue';
 import {
   equalSplitPayloadForFamilyUsers,
   hasPositiveSplitShares,
@@ -1786,6 +1799,9 @@ const categories = ref([]);
 const funds = ref([]);
 const debtsPayload = ref({ owed: [], owing: [], family_debts: [] });
 const familyUsers = ref([]);
+const otherFamilyMembers = computed(() =>
+  familyUsers.value.filter((member) => Number(member.id) !== Number(user.value?.id)),
+);
 const autoCreatedImports = ref([]);
 const autoCreatedForms = reactive({});
 const dismissedImports = ref([]);
@@ -2110,6 +2126,8 @@ function resetDebtRepaymentReceivedFields(f) {
 function resetExpenseOnlyFields(f) {
   f.pay_toward_debt = false;
   f.debt_id = null;
+  f.send_to_family = false;
+  f.transfer_to_user_id = null;
   f.is_split = false;
   f.split_data = [];
   f.advance_fund_id = null;
@@ -2140,6 +2158,8 @@ function ensureForm(row) {
     description: '',
     pay_toward_debt: !!(row.suggested_is_debt_payment && row.suggested_debt_id),
     debt_id: (row.suggested_is_debt_payment && row.suggested_debt_id) ? row.suggested_debt_id : null,
+    send_to_family: false,
+    transfer_to_user_id: null,
     is_split: false,
     split_data: [],
     advance_fund_id: null,
@@ -2176,7 +2196,7 @@ function formFor(row) {
  */
 function applyCategoryDefaults(row, { mergePlaidSuggestion = false } = {}) {
   const f = forms[row.id];
-  if (!f || f.type !== 'expense' || f.pay_toward_debt) {
+  if (!f || f.type !== 'expense' || f.pay_toward_debt || f.send_to_family) {
     return;
   }
   const cat = categories.value.find((c) => String(c.id) === String(f.category_id));
@@ -2267,6 +2287,8 @@ function togglePayTowardDebt(row) {
   const f = formFor(row);
   f.pay_toward_debt = !f.pay_toward_debt;
   if (f.pay_toward_debt) {
+    f.send_to_family = false;
+    f.transfer_to_user_id = null;
     f.advance_fund_id = null;
     f.exclude_from_expense_basis = false;
     const pd = payableDebts.value;
@@ -2332,8 +2354,25 @@ function setType(row, type) {
     resetRepaymentFields(f);
     f.pay_toward_debt = false;
     f.debt_id = null;
+    f.send_to_family = false;
+    f.transfer_to_user_id = null;
     applyCategoryDefaults(row);
   }
+}
+
+function setSendToFamily(row, on) {
+  const f = formFor(row);
+  f.send_to_family = on;
+  if (on) {
+    f.pay_toward_debt = false;
+    f.debt_id = null;
+    f.advance_fund_id = null;
+    f.exclude_from_expense_basis = false;
+
+    return;
+  }
+  f.transfer_to_user_id = null;
+  applyCategoryDefaults(row);
 }
 
 function toggleExpand(row) {
@@ -2374,6 +2413,8 @@ function makeSplitLine(amount = '') {
     description: '',
     pay_toward_debt: false,
     debt_id: null,
+    send_to_family: false,
+    transfer_to_user_id: null,
     is_split: false,
     split_data: [],
     advance_fund_id: null,
@@ -2426,7 +2467,7 @@ function removeSplitLine(row, idx) {
 }
 
 function applySplitLineCategoryDefaults(line) {
-  if (!line || line.type !== 'expense' || line.pay_toward_debt) {
+  if (!line || line.type !== 'expense' || line.pay_toward_debt || line.send_to_family) {
     return;
   }
   const cat = categories.value.find((c) => String(c.id) === String(line.category_id));
@@ -2478,6 +2519,8 @@ function setSplitLineType(line, type) {
     line.link_to_transaction_id = null;
     line.pay_toward_debt = false;
     line.debt_id = null;
+    line.send_to_family = false;
+    line.transfer_to_user_id = null;
     line.is_split = false;
     line.split_data = [];
     line.advance_fund_id = null;
@@ -2512,6 +2555,8 @@ function setSplitLineType(line, type) {
     line.income_new_interest_rate = 0;
     line.pay_toward_debt = false;
     line.debt_id = null;
+    line.send_to_family = false;
+    line.transfer_to_user_id = null;
     applySplitLineCategoryDefaults(line);
   }
 }
@@ -2558,6 +2603,8 @@ function setSplitLineIncomeDebtMode(line, mode) {
 function toggleSplitLinePayTowardDebt(line) {
   line.pay_toward_debt = !line.pay_toward_debt;
   if (line.pay_toward_debt) {
+    line.send_to_family = false;
+    line.transfer_to_user_id = null;
     line.advance_fund_id = null;
     line.exclude_from_expense_basis = false;
     const pd = payableDebts.value;
@@ -2644,6 +2691,11 @@ function validateSplitLine(line) {
   if (line.type === 'expense' && line.pay_toward_debt) {
     if (!line.debt_id) {
       return 'Select which debt you are paying toward.';
+    }
+  }
+  if (line.type === 'expense' && line.send_to_family) {
+    if (!line.transfer_to_user_id) {
+      return 'Select which family member you sent money to.';
     }
   }
   if (line.type === 'income') {
@@ -2769,6 +2821,7 @@ function buildSplitLinePayload(line) {
   }
 
   const payTowardDebt = line.type === 'expense' && line.pay_toward_debt;
+  const sendToFamily = line.type === 'expense' && line.send_to_family;
 
   return {
     amount: parseFloat(line.amount),
@@ -2776,11 +2829,12 @@ function buildSplitLinePayload(line) {
     category_id: Number(line.category_id),
     description: line.description?.trim() || undefined,
     is_split: line.type === 'expense' && line.is_split,
-    advance_fund_id: line.type === 'expense' && !payTowardDebt ? line.advance_fund_id || null : null,
+    advance_fund_id: line.type === 'expense' && !payTowardDebt && !sendToFamily ? line.advance_fund_id || null : null,
     exclude_from_expense_basis:
       allowExpenseBasisExclusion.value &&
       line.type === 'expense' &&
       !payTowardDebt &&
+      !sendToFamily &&
       !line.is_split &&
       line.advance_fund_id !== null &&
       splitLineFundHasRemainingPercentageRule(line)
@@ -2788,6 +2842,9 @@ function buildSplitLinePayload(line) {
         : false,
     is_necessity: line.type === 'expense' ? line.is_necessity !== false : true,
     ...(line.type === 'expense' && payTowardDebt && line.debt_id ? { debt_id: line.debt_id } : {}),
+    ...(line.type === 'expense' && sendToFamily && line.transfer_to_user_id
+      ? { transfer_to_user_id: line.transfer_to_user_id }
+      : {}),
     ...(line.type === 'income'
       ? {
           income_debt_mode: line.income_debt_mode,
@@ -3168,6 +3225,11 @@ function validateConfirmForm(row, f) {
       return 'Select which debt you are paying toward.';
     }
   }
+  if (f.type === 'expense' && f.send_to_family) {
+    if (!f.transfer_to_user_id) {
+      return 'Select which family member you sent money to.';
+    }
+  }
   if (f.type === 'income') {
     if (f.income_debt_mode === 'existing' && !f.income_existing_debt_id) {
       return 'Select which existing debt this income belongs to.';
@@ -3231,16 +3293,18 @@ function validateConfirmForm(row, f) {
 
 function buildConfirmPayload(row, f) {
   const payTowardDebt = f.type === 'expense' && f.pay_toward_debt;
+  const sendToFamily = f.type === 'expense' && f.send_to_family;
   const payload = {
     category_id: Number(f.category_id),
     type: f.type,
     description: f.description?.trim() || undefined,
     is_split: f.type === 'expense' && f.is_split,
-    advance_fund_id: f.type === 'expense' && !payTowardDebt ? f.advance_fund_id || null : null,
+    advance_fund_id: f.type === 'expense' && !payTowardDebt && !sendToFamily ? f.advance_fund_id || null : null,
     exclude_from_expense_basis:
       allowExpenseBasisExclusion.value &&
       f.type === 'expense' &&
       !payTowardDebt &&
+      !sendToFamily &&
       !f.is_split &&
       f.advance_fund_id !== null &&
       selectedFundHasRemainingPercentageRule(f)
@@ -3249,6 +3313,9 @@ function buildConfirmPayload(row, f) {
     is_necessity: f.type === 'expense' ? f.is_necessity !== false : true,
     ...(f.type === 'expense' && f.is_split ? { split_data: f.split_data } : {}),
     ...(f.type === 'expense' && payTowardDebt && f.debt_id ? { debt_id: f.debt_id } : {}),
+    ...(f.type === 'expense' && sendToFamily && f.transfer_to_user_id
+      ? { transfer_to_user_id: f.transfer_to_user_id }
+      : {}),
     ...(f.type === 'income'
       ? {
           income_debt_mode: f.income_debt_mode,
@@ -3418,6 +3485,7 @@ function validateAutoCreatedCorrection(row, f) {
 
 function buildDismissedRestorePayload(f) {
   const payTowardDebt = f.type === 'expense' && f.pay_toward_debt;
+  const sendToFamily = f.type === 'expense' && f.send_to_family;
 
   return {
     category_id: Number(f.category_id),
@@ -3425,7 +3493,7 @@ function buildDismissedRestorePayload(f) {
     description: f.description?.trim() || undefined,
     fund_id: f.fund_id ? Number(f.fund_id) : null,
     is_split: false,
-    advance_fund_id: f.type === 'expense' && !payTowardDebt ? f.advance_fund_id || null : null,
+    advance_fund_id: f.type === 'expense' && !payTowardDebt && !sendToFamily ? f.advance_fund_id || null : null,
     exclude_from_expense_basis: false,
     is_necessity: true,
     ...(f.type === 'income'

@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-09-04 — Mark an expense as sent to a family member
+
+- Files touched: `app/Services/DebtService.php`, `app/Services/TransactionService.php`, `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `app/Http/Requests/{StoreTransactionRequest,StoreImportConfirmRequest,CorrectAutoCreatedImportRequest,RestoreDismissedImportRequest,ConfirmSplitImportRequest}.php`, `app/Http/Controllers/PlaidImportController.php`, `resources/js/components/{FamilyTransferOptions,TransactionForm,PlaidImportSplitLineOptions}.vue`, `resources/js/pages/PlaidImportReview.vue`, `tests/Feature/{DebtRepaymentTransactionTest,PlaidImportTest}.php`, `docs/ai/{00-repo-overview,02-backend-laravel,03-frontend-vue,06-feature-map,07-workflows,08-api-routes,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: Creating an expense (FAB or bank review confirm / split line) can mark **Sent to a family member** (`transfer_to_user_id`). That is mutually exclusive with **Pay toward a tracked debt**. The server find-or-creates an open personal in-family debt and records the same `is_debt_payment` expense + mirrored income pair already excluded from closeout rules and family totals. `$0` debts are not reused. Create-only (edit still uses `debt_id`). Plaid confirm does not learn `is_debt_payment` / `debt_id` from this path. Docs also corrected: expense `debt_id` is **not** mutually exclusive with split (only advance is cleared).
+
 ## 2026-09-04 — Family managers can edit other members’ transactions
 
 - Files touched: `app/Http/Controllers/TransactionController.php`, `resources/js/pages/Transactions.vue`, `resources/js/pages/Settings.vue`, `tests/Feature/TransactionTest.php`, `docs/ai/{00-repo-overview,01-architecture,02-backend-laravel,03-frontend-vue,04-database,05-auth-permissions,06-feature-map,08-api-routes,09-known-decisions,10-ai-change-log}.md`

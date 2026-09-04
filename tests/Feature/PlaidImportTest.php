@@ -370,6 +370,112 @@ class PlaidImportTest extends TestCase
         $this->assertSame($debt->id, (int) $expense->debt_id);
     }
 
+    public function test_confirm_pending_import_with_transfer_to_user_id_creates_debt_payment_pair(): void
+    {
+        $family = Family::factory()->create();
+        $payer = User::factory()->create(['family_id' => $family->id]);
+        $recipient = User::factory()->create(['family_id' => $family->id]);
+        $item = $this->createPlaidItem($payer);
+        $category = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $import = PlaidPendingImport::query()->create([
+            'user_id' => $payer->id,
+            'plaid_item_id' => $item->id,
+            'plaid_transaction_id' => 'txn-family-transfer-import-1',
+            'plaid_account_id' => 'acc1',
+            'amount' => 30.0,
+            'date' => now()->toDateString(),
+            'merchant_name' => 'Venmo Family',
+            'raw_name' => 'VENMO FAMILY',
+            'suggested_category_id' => $category->id,
+            'suggested_type' => 'expense',
+            'suggested_fund_id' => null,
+            'suggested_advance_fund_id' => null,
+            'suggested_exclude_from_expense_basis' => false,
+            'confidence_score' => 0.5,
+            'status' => 'pending',
+            'transaction_id' => null,
+            'raw_payload' => [],
+            'is_transfer' => false,
+        ]);
+
+        $this->actingAs($payer)->postJson(
+            "/plaid/pending-imports/{$import->id}/confirm",
+            [
+                'category_id' => $category->id,
+                'type' => 'expense',
+                'transfer_to_user_id' => $recipient->id,
+                'is_split' => false,
+            ]
+        )->assertOk();
+
+        $import->refresh();
+        $this->assertSame('confirmed', $import->status);
+        $expense = Transaction::query()->findOrFail($import->transaction_id);
+        $this->assertTrue($expense->is_debt_payment);
+        $income = Transaction::query()->where('user_id', $recipient->id)->where('type', 'income')->sole();
+        $this->assertTrue($income->is_debt_payment);
+        $this->assertSame($expense->debt_id, $income->debt_id);
+
+        $rule = PlaidMerchantRule::query()
+            ->where('user_id', $payer->id)
+            ->where('merchant_key', app(PlaidMatchingService::class)->normalizeMerchantKey('Venmo Family'))
+            ->firstOrFail();
+        $this->assertFalse((bool) $rule->is_debt_payment);
+        $this->assertNull($rule->debt_id);
+    }
+
+    public function test_confirm_split_line_with_transfer_to_user_id_creates_debt_payment(): void
+    {
+        $family = Family::factory()->create();
+        $payer = User::factory()->create(['family_id' => $family->id]);
+        $recipient = User::factory()->create(['family_id' => $family->id]);
+        ['import' => $import] = $this->createPendingImportForUser($payer, 'txn-split-family-transfer-1');
+        $categoryA = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+        $categoryB = Category::factory()->create([
+            'family_id' => $family->id,
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $this->actingAs($payer)
+            ->postJson("/plaid/pending-imports/{$import->id}/confirm-split", [
+                'lines' => [
+                    [
+                        'amount' => 20.00,
+                        'type' => 'expense',
+                        'category_id' => $categoryA->id,
+                        'transfer_to_user_id' => $recipient->id,
+                    ],
+                    [
+                        'amount' => 22.50,
+                        'type' => 'expense',
+                        'category_id' => $categoryB->id,
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('count', 2);
+
+        $transferExpense = Transaction::query()
+            ->where('plaid_pending_import_id', $import->id)
+            ->where('is_debt_payment', true)
+            ->where('type', 'expense')
+            ->sole();
+        $this->assertSame('20.00', $transferExpense->amount);
+        $income = Transaction::query()->where('user_id', $recipient->id)->where('type', 'income')->sole();
+        $this->assertTrue($income->is_debt_payment);
+        $this->assertSame($transferExpense->debt_id, $income->debt_id);
+    }
+
     public function test_dismiss_pending_import_sets_status_to_dismissed(): void
     {
         $user = $this->familyUser();

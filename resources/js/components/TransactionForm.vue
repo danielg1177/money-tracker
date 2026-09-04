@@ -507,6 +507,14 @@
       </div>
     </div>
 
+    <FamilyTransferOptions
+      v-if="form.type === 'expense' && !isEditMode"
+      v-model:enabled="sendToFamily"
+      v-model:user-id="form.transfer_to_user_id"
+      :family-members="otherFamilyMembers"
+      :disabled="isInteractionBlocked || submitLoading"
+    />
+
     <!-- Split Toggle (expense only) -->
     <div
       v-if="form.type === 'expense'"
@@ -551,7 +559,7 @@
     </div>
 
     <!-- Advance Against Fund -->
-    <div v-if="form.type === 'expense' && !payTowardDebt" class="space-y-2">
+    <div v-if="form.type === 'expense' && !payTowardDebt && !sendToFamily" class="space-y-2">
       <div
         @click="!isInteractionBlocked && toggleAdvanceFund()"
         class="flex items-center justify-between p-3 bg-gray-800 border border-gray-700 rounded-lg transition-colors hover:border-gray-600"
@@ -654,6 +662,7 @@ import { mobileDecimalNumberAttrs } from '../support/mobileNumericInputAttrs.js'
 import { allowsExpenseBasisExclusion } from '../support/closeoutMode.js';
 import SplitEditor from './SplitEditor.vue';
 import DebtRepaymentReceivedOptions from './DebtRepaymentReceivedOptions.vue';
+import FamilyTransferOptions from './FamilyTransferOptions.vue';
 import {
   equalSplitPayloadForFamilyUsers,
   hasPositiveSplitShares,
@@ -693,6 +702,7 @@ const { post: postCloseoutStatus } = useApi();
 const { user } = useAuth();
 const formError = ref(null);
 const payTowardDebt = ref(false);
+const sendToFamily = ref(false);
 const selectedDateCloseoutStatus = ref(null);
 let closeoutStatusRequestId = 0;
 
@@ -708,6 +718,7 @@ const form = ref({
   exclude_from_expense_basis: false,
   is_necessity: true,
   debt_id: null,
+  transfer_to_user_id: null,
   income_debt_mode: 'none',
   income_existing_debt_id: null,
   income_new_is_family_debt: false,
@@ -727,6 +738,10 @@ const form = ref({
 
 const repayableExpenses = ref([]);
 const repayableExpensesLoading = ref(false);
+
+const otherFamilyMembers = computed(() =>
+  (props.familyUsers || []).filter((member) => Number(member.id) !== Number(user.value?.id)),
+);
 
 const payableDebts = computed(() => {
   const list = [
@@ -978,6 +993,7 @@ watch(
         exclude_from_expense_basis: newTransaction.exclude_from_expense_basis ?? false,
         is_necessity: newTransaction.is_necessity ?? true,
         debt_id: newTransaction.debt_id ?? null,
+        transfer_to_user_id: null,
         income_debt_mode: newTransaction.is_loan_receipt
           ? 'receipt'
           : newTransaction.type === 'income' && newTransaction.debt_id
@@ -1052,11 +1068,25 @@ watch(payTowardDebt, (on) => {
 
     return;
   }
+  sendToFamily.value = false;
+  form.value.transfer_to_user_id = null;
   form.value.advance_fund_id = null;
   form.value.exclude_from_expense_basis = false;
   if (payableDebts.value.length === 1) {
     form.value.debt_id = payableDebts.value[0].id;
   }
+});
+
+watch(sendToFamily, (on) => {
+  if (!on) {
+    form.value.transfer_to_user_id = null;
+
+    return;
+  }
+  payTowardDebt.value = false;
+  form.value.debt_id = null;
+  form.value.advance_fund_id = null;
+  form.value.exclude_from_expense_basis = false;
 });
 
 watch(() => form.value.is_split, (newVal) => {
@@ -1084,7 +1114,9 @@ watch(() => form.value.type, (newType) => {
     form.value.is_split = false;
     form.value.split_data = [];
     payTowardDebt.value = false;
+    sendToFamily.value = false;
     form.value.debt_id = null;
+    form.value.transfer_to_user_id = null;
     return;
   }
 
@@ -1140,7 +1172,7 @@ watch(() => form.value.income_debt_mode, (mode) => {
 });
 
 watch(() => form.value.category_id, () => {
-  if (form.value.type !== 'expense' || payTowardDebt.value) {
+  if (form.value.type !== 'expense' || payTowardDebt.value || sendToFamily.value) {
     return;
   }
   if (selectedCategory.value?.is_split_default && selectedCategory.value?.split_default?.length) {
@@ -1228,6 +1260,7 @@ watch(
 
 function resetForm() {
   payTowardDebt.value = false;
+  sendToFamily.value = false;
   const today = new Date().toISOString().split('T')[0];
   form.value = {
     type: 'expense',
@@ -1241,6 +1274,7 @@ function resetForm() {
     exclude_from_expense_basis: false,
     is_necessity: true,
     debt_id: null,
+    transfer_to_user_id: null,
     income_debt_mode: 'none',
     income_existing_debt_id: null,
     income_new_is_family_debt: false,
@@ -1300,6 +1334,13 @@ async function handleSubmit() {
   if (form.value.type === 'expense' && payTowardDebt.value) {
     if (!form.value.debt_id) {
       formError.value = 'Select which debt you are paying toward';
+      return;
+    }
+  }
+
+  if (form.value.type === 'expense' && sendToFamily.value) {
+    if (!form.value.transfer_to_user_id) {
+      formError.value = 'Select which family member you sent money to';
       return;
     }
   }
@@ -1376,11 +1417,14 @@ async function handleSubmit() {
       transaction_date: form.value.transaction_date,
       is_split: form.value.type === 'expense' && form.value.is_split,
       advance_fund_id:
-        form.value.type === 'expense' && !payTowardDebt.value ? (form.value.advance_fund_id || null) : null,
+        form.value.type === 'expense' && !payTowardDebt.value && !sendToFamily.value
+          ? (form.value.advance_fund_id || null)
+          : null,
       exclude_from_expense_basis:
         allowExpenseBasisExclusion.value &&
         form.value.type === 'expense' &&
         !payTowardDebt.value &&
+        !sendToFamily.value &&
         !form.value.is_split &&
         form.value.advance_fund_id !== null &&
         selectedFundHasRemainingPercentageRule.value
@@ -1392,6 +1436,9 @@ async function handleSubmit() {
         : {}),
       ...(form.value.type === 'expense' && payTowardDebt.value && form.value.debt_id
         ? { debt_id: form.value.debt_id }
+        : {}),
+      ...(form.value.type === 'expense' && sendToFamily.value && form.value.transfer_to_user_id
+        ? { transfer_to_user_id: form.value.transfer_to_user_id }
         : {}),
       ...(form.value.type === 'income'
         ? {

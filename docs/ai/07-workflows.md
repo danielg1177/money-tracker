@@ -77,6 +77,8 @@ Detailed step-by-step flows for the most complex operations in the app.
 
 **Note:** Debt records with `balance = 0` remain in the database — there is no auto-deletion or "paid" status flag.
 
+**From the create-expense form (or Plaid import review):** instead of picking a tracked debt, the payer can mark **Sent to a family member** and choose the recipient (`transfer_to_user_id`). That is create-only. The server finds an open personal in-family debt the payer already owes that person (`balance > 0`) or creates one for the payment amount, then runs the same `createDebtRepaymentExpense` pair as step 7 onward. Advance fund is cleared; family split is still allowed. Plaid confirm does not learn `is_debt_payment` / `debt_id` from this path.
+
 Newly added fields track:
 - **`paid_by_user_id`:** Which user initiated the payment (important for multi-user families)
 - **`is_closeout_initiated`:** Whether the payment came from a manual entry (`false`) or a month closeout rule (`true`)
@@ -385,7 +387,7 @@ Known limitations:
 1. User links a bank or taps **Sync** (`POST /plaid/items/{id}/sync` or webhook) → `PlaidTransactionSyncService::syncItem` (`/transactions/sync` + cursor). **Sync this month / last month** uses `/transactions/get` + `ingestPlaidRowsAsPending` (same **added** path, **no** `modified`/`removed`).
 2. For each new Plaid payload, `processAddedRow` **returns immediately when `pending` is `true`** (wait until the bank posts). Otherwise it extracts `transaction_id` and skips only if that **exact string** already exists on `plaid_pending_imports` or `transactions.plaid_transaction_id` for the family.
 3. Otherwise a `plaid_pending_imports` row is created (`status=pending`, or dismissed/auto-created/auto-linked per merchant rule / ledger score).
-4. User confirms on Import Review (`POST …/confirm`): `TransactionService::createTransaction`, then copies `pendingImport.plaid_transaction_id` onto the ledger row and sets import `status=confirmed`. Description edits live on the ledger row only.
+4. User confirms on Import Review (`POST …/confirm`): `TransactionService::createTransaction`, then copies `pendingImport.plaid_transaction_id` onto the ledger row and sets import `status=confirmed`. Description edits live on the ledger row only. Expense confirm may include `debt_id` or create-only `transfer_to_user_id` (same in-family debt-payment pair; merchant learning skips `is_debt_payment` / `debt_id` for family transfers).
 5. **Same Plaid id later:** `modified` updates amount/date on leftover still-pending imports and on ledger rows keyed by that id. If a **posted** `modified` arrives and nothing was ingested yet (pending was skipped), `processAddedRow` runs. `removed` deletes only still-`pending` imports.
 6. **Pending → posted (most US institutions):** Plaid **removes** the pending `transaction_id` and **adds** a new posted id. Because pending `added` rows are no longer stored, the posted `added` row is the first Review item. **Leftover** confirms from before this skip can still duplicate: `pending_transaction_id` is unused, ledger auto-match ignores already-linked rows, and confirming the new Review item creates a second ledger transaction.
 7. Institutions that keep the same id and send `modified` with `pending: false` ingest at modification time.

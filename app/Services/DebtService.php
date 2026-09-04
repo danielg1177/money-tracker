@@ -167,6 +167,58 @@ class DebtService
     }
 
     /**
+     * Find an open personal in-family running debt the payer owes the recipient, or create
+     * one for $amount so a family transfer can reuse the debt-payment transaction pair.
+     */
+    public function findOrCreatePayableInterFamilyDebt(
+        User $payer,
+        User $recipient,
+        float $amount,
+        ?string $description = null,
+    ): Debt {
+        if ($payer->family_id === null || (int) $payer->family_id !== (int) $recipient->family_id) {
+            throw new InvalidArgumentException('Recipient must be a family member.');
+        }
+
+        if ((int) $payer->id === (int) $recipient->id) {
+            throw new InvalidArgumentException('You cannot send money to yourself.');
+        }
+
+        $amount = round($amount, 2);
+        if ($amount < 0.01) {
+            throw new InvalidArgumentException('Transfer amount must be at least 0.01.');
+        }
+
+        $existing = Debt::query()
+            ->where('family_id', $payer->family_id)
+            ->where('debtor_id', $payer->id)
+            ->where('creditor_id', $recipient->id)
+            ->where('is_pending_closeout', false)
+            ->where('is_family_debt', false)
+            ->whereNull('transaction_id')
+            ->where('balance', '>', 0)
+            ->orderByDesc('balance')
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        return Debt::query()->create([
+            'family_id' => $payer->family_id,
+            'debtor_id' => $payer->id,
+            'creditor_id' => $recipient->id,
+            'amount' => $amount,
+            'balance' => $amount,
+            'description' => $description ?: ('Sent to '.$recipient->name),
+            'is_pending_closeout' => false,
+            'is_family_debt' => false,
+        ]);
+    }
+
+    /**
      * Pay a debt by creating corresponding transactions and updating the debt balance.
      *
      * @param  Debt  $debt  The debt record to pay
