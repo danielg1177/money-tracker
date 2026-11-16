@@ -86,9 +86,12 @@ class MonthSummaryController extends Controller
             'title_savings' => $titleSavings,
         ];
 
-        if ($user->view_family_expenses) {
+        if ($user->view_family_expenses || $closeoutResolved['mode'] === CloseoutMode::FamilyPooled) {
             $payload['family_category_totals'] = $this->getFamilyCategoryTotals($user, $year, $month);
             $payload['family_category_transactions'] = $this->getFamilyCategoryTransactions($user, $year, $month);
+        }
+
+        if ($user->view_family_expenses) {
             $payload['debt_repayments']['family_debt_paid'] = $this->getFamilyDebtPaidSummary($user, $year, $month);
         }
 
@@ -839,6 +842,10 @@ class MonthSummaryController extends Controller
      *     description: string|null,
      *     amount: float,
      *     is_split: bool,
+     *     is_necessity: bool,
+     *     category_id: int|null,
+     *     category_name: string,
+     *     category_icon: string|null,
      *     user_id: int|null,
      *     user_name: string|null,
      *     split_breakdown: array<int, array{
@@ -862,7 +869,7 @@ class MonthSummaryController extends Controller
             ->whereNotRepaymentIncome()
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
-            ->with(['splits.user', 'user'])
+            ->with(['splits.user', 'user', 'category'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -881,7 +888,7 @@ class MonthSummaryController extends Controller
             ->whereNotRepaidExpense()
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
-            ->with(['splits.user', 'user'])
+            ->with(['splits.user', 'user', 'category'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -900,7 +907,7 @@ class MonthSummaryController extends Controller
                 ->whereNotRepaidExpense()
                 ->whereYear('transaction_date', $year)
                 ->whereMonth('transaction_date', $month))
-            ->with(['transaction.splits.user', 'transaction.user'])
+            ->with(['transaction.splits.user', 'transaction.user', 'transaction.category'])
             ->get();
 
         foreach ($viewerSplitShares as $split) {
@@ -928,6 +935,10 @@ class MonthSummaryController extends Controller
      *     description: string|null,
      *     amount: float,
      *     is_split: bool,
+     *     is_necessity: bool,
+     *     category_id: int|null,
+     *     category_name: string,
+     *     category_icon: string|null,
      *     user_id: int|null,
      *     user_name: string|null,
      *     split_breakdown: array<int, array{
@@ -950,7 +961,7 @@ class MonthSummaryController extends Controller
             ->whereNotRepaymentIncome()
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
-            ->with(['splits.user', 'user'])
+            ->with(['splits.user', 'user', 'category'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -968,7 +979,7 @@ class MonthSummaryController extends Controller
             ->whereNotRepaidExpense()
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
-            ->with(['splits.user', 'user'])
+            ->with(['splits.user', 'user', 'category'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -985,7 +996,7 @@ class MonthSummaryController extends Controller
             ->whereNotRepaidExpense()
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
-            ->with(['splits.user', 'user'])
+            ->with(['splits.user', 'user', 'category'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -1057,6 +1068,10 @@ class MonthSummaryController extends Controller
      *     description: string|null,
      *     amount: float,
      *     is_split: bool,
+     *     is_necessity: bool,
+     *     category_id: int|null,
+     *     category_name: string,
+     *     category_icon: string|null,
      *     user_id: int|null,
      *     user_name: string|null,
      *     split_breakdown: array<int, array{
@@ -1091,10 +1106,25 @@ class MonthSummaryController extends Controller
             'description' => $transaction->description,
             'amount' => round($amount, 2),
             'is_split' => (bool) $transaction->is_split,
+            'is_necessity' => (bool) $transaction->is_necessity,
+            'category_id' => $categoryId,
+            'category_name' => $this->categoryTransactionName($categoryId, $transaction),
+            'category_icon' => $categoryId === self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID
+                ? null
+                : $transaction->category?->icon,
             'user_id' => $transaction->user_id !== null ? (int) $transaction->user_id : null,
             'user_name' => $transaction->user?->name,
             'split_breakdown' => $transaction->is_split ? $this->serializeSplitBreakdown($transaction) : [],
         ];
+    }
+
+    private function categoryTransactionName(?int $categoryId, Transaction $transaction): string
+    {
+        if ($categoryId === self::SYNTHETIC_DEBT_PAYMENT_CATEGORY_ID) {
+            return 'Uncategorized Debt Payments';
+        }
+
+        return $transaction->category?->name ?? 'Uncategorized';
     }
 
     /**
@@ -1104,6 +1134,10 @@ class MonthSummaryController extends Controller
      *     description: string|null,
      *     amount: float,
      *     is_split: bool,
+     *     is_necessity: bool,
+     *     category_id: int|null,
+     *     category_name: string,
+     *     category_icon: string|null,
      *     user_id: int|null,
      *     user_name: string|null,
      *     split_breakdown: array<int, array{
@@ -1126,7 +1160,7 @@ class MonthSummaryController extends Controller
             ->where('is_closeout_initiated', false)
             ->whereYear('transaction_date', $year)
             ->whereMonth('transaction_date', $month)
-            ->with(['splits.user', 'user'])
+            ->with(['splits.user', 'user', 'category'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();
@@ -1147,7 +1181,7 @@ class MonthSummaryController extends Controller
                 ->where('is_closeout_initiated', false)
                 ->whereYear('transaction_date', $year)
                 ->whereMonth('transaction_date', $month))
-            ->with(['transaction.splits.user', 'transaction.user'])
+            ->with(['transaction.splits.user', 'transaction.user', 'transaction.category'])
             ->get();
 
         foreach ($splitShares as $split) {
@@ -1168,6 +1202,10 @@ class MonthSummaryController extends Controller
      *     description: string|null,
      *     amount: float,
      *     is_split: bool,
+     *     is_necessity: bool,
+     *     category_id: int|null,
+     *     category_name: string,
+     *     category_icon: string|null,
      *     user_id: int|null,
      *     user_name: string|null,
      *     split_breakdown: array<int, array{
@@ -1181,7 +1219,7 @@ class MonthSummaryController extends Controller
     private function mergeFamilyDebtRepaymentCategoryTransactions(array &$grouped, User $viewer, int $year, int $month): void
     {
         $rows = $this->familyExternalDebtPaymentExpensesQuery($viewer, $year, $month)
-            ->with(['splits.user', 'user'])
+            ->with(['splits.user', 'user', 'category'])
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get();

@@ -945,4 +945,97 @@ class MonthSummaryViewerCategoryTotalsTest extends TestCase
             0.001,
         );
     }
+
+    public function test_family_pooled_month_summary_includes_household_rows_and_necessity_flags(): void
+    {
+        $family = Family::factory()->create(['closeout_mode' => 'family_pooled']);
+        $alice = User::factory()->create([
+            'family_id' => $family->id,
+            'view_family_expenses' => false,
+        ]);
+        $bob = User::factory()->create([
+            'family_id' => $family->id,
+            'view_family_expenses' => false,
+        ]);
+
+        $groceries = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Groceries',
+            'icon' => '🥬',
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        $dining = Category::factory()->create([
+            'family_id' => $family->id,
+            'name' => 'Dining',
+            'is_expense' => true,
+            'is_income' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => $groceries->id,
+            'type' => 'expense',
+            'amount' => 40,
+            'description' => 'Market',
+            'transaction_date' => '2026-11-03',
+            'is_split' => false,
+            'is_necessity' => true,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $alice->id,
+            'category_id' => $dining->id,
+            'type' => 'expense',
+            'amount' => 15,
+            'description' => 'Dinner out',
+            'transaction_date' => '2026-11-04',
+            'is_split' => false,
+            'is_necessity' => false,
+        ]);
+
+        Transaction::query()->create([
+            'family_id' => $family->id,
+            'user_id' => $bob->id,
+            'category_id' => $groceries->id,
+            'type' => 'expense',
+            'amount' => 25,
+            'description' => 'Bob market',
+            'transaction_date' => '2026-11-05',
+            'is_split' => false,
+            'is_necessity' => true,
+        ]);
+
+        $summary = $this->actingAs($alice)->getJson('/month-summary?year=2026&month=11')->assertOk();
+
+        $summary->assertJsonPath('closeout_preview.mode', 'family_pooled');
+        $summary->assertJsonMissingPath('debt_repayments.family_debt_paid');
+
+        $personal = collect($summary->json('category_transactions'))
+            ->filter(fn ($rows, $key) => str_starts_with((string) $key, 'expense_'))
+            ->flatten(1);
+        $familyRows = collect($summary->json('family_category_transactions'))
+            ->filter(fn ($rows, $key) => str_starts_with((string) $key, 'expense_'))
+            ->flatten(1);
+
+        $this->assertEqualsWithDelta(40.0, (float) $personal->where('is_necessity', true)->sum('amount'), 0.001);
+        $this->assertEqualsWithDelta(15.0, (float) $personal->where('is_necessity', false)->sum('amount'), 0.001);
+        $this->assertEqualsWithDelta(65.0, (float) $familyRows->where('is_necessity', true)->sum('amount'), 0.001);
+        $this->assertEqualsWithDelta(15.0, (float) $familyRows->where('is_necessity', false)->sum('amount'), 0.001);
+
+        $dinner = $personal->firstWhere('description', 'Dinner out');
+        $this->assertIsArray($dinner);
+        $this->assertFalse($dinner['is_necessity']);
+        $this->assertSame('Dining', $dinner['category_name']);
+
+        $market = $personal->firstWhere('description', 'Market');
+        $this->assertIsArray($market);
+        $this->assertTrue($market['is_necessity']);
+        $this->assertSame('Groceries', $market['category_name']);
+        $this->assertSame('🥬', $market['category_icon']);
+        $this->assertSame($groceries->id, $market['category_id']);
+    }
 }

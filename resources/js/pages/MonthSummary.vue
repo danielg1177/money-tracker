@@ -288,6 +288,7 @@ const TOP_CATEGORY_ROWS = 4;
 const showAllExpenseCategories = ref(false);
 const showAllIncomeCategories = ref(false);
 const selectedCategory = ref(null);
+const necessityModalScope = ref('you');
 const isCategoryTransactionsModalOpen = ref(false);
 const selectedFundAdvanceRule = ref(null);
 const isFundAdvanceTransactionsModalOpen = ref(false);
@@ -447,6 +448,7 @@ const expenseCloseoutBasisLines = computed(() => summary.value?.rule_preview?.ex
 const closeoutPreview = computed(() => summary.value?.closeout_preview ?? null);
 
 const isFamilyPooledCloseout = computed(() => closeoutModeIsFamilyPooled(closeoutPreview.value?.mode));
+const showNecessityDualAmounts = computed(() => isFamilyPooledCloseout.value || isFamilyExpenseView.value);
 const familyCloseout = computed(() => closeoutPreview.value?.family ?? null);
 const familyCharityNonNecessities = computed(() => Number(familyCloseout.value?.basis?.non_necessity_expenses ?? 0));
 const hasFamilyCharityNonNecessities = computed(() => familyCharityNonNecessities.value > 0.005);
@@ -471,13 +473,58 @@ function categoryTransactionsKey(category) {
   return `${category?.type}_${categoryIdKey}`;
 }
 
+function expenseTransactionsFromMap(map) {
+  if (!map || typeof map !== 'object') {
+    return [];
+  }
+
+  return Object.entries(map)
+    .filter(([key]) => key.startsWith('expense_'))
+    .flatMap(([, rows]) => (Array.isArray(rows) ? rows : []));
+}
+
+function sumNecessityTransactions(rows, isNecessity) {
+  return rows.reduce((sum, row) => {
+    if ((row?.is_necessity !== false) !== isNecessity) {
+      return sum;
+    }
+
+    return sum + Number(row?.amount || 0);
+  }, 0);
+}
+
+const personalExpenseTransactions = computed(() =>
+  expenseTransactionsFromMap(summary.value?.category_transactions),
+);
+
+const familyExpenseTransactions = computed(() =>
+  expenseTransactionsFromMap(summary.value?.family_category_transactions),
+);
+
+const necessityYouTotal = computed(() => sumNecessityTransactions(personalExpenseTransactions.value, true));
+const nonNecessityYouTotal = computed(() => sumNecessityTransactions(personalExpenseTransactions.value, false));
+const necessityFamilyTotal = computed(() => sumNecessityTransactions(familyExpenseTransactions.value, true));
+const nonNecessityFamilyTotal = computed(() => sumNecessityTransactions(familyExpenseTransactions.value, false));
+
 function openCategoryTransactions(category) {
+  necessityModalScope.value = 'you';
   selectedCategory.value = category;
+  isCategoryTransactionsModalOpen.value = true;
+}
+
+function openNecessityTransactions(isNecessity) {
+  necessityModalScope.value = 'you';
+  selectedCategory.value = {
+    type: 'expense',
+    category_name: isNecessity ? 'Necessities' : 'Non-necessities',
+    necessity_bucket: isNecessity ? 'necessity' : 'non_necessity',
+  };
   isCategoryTransactionsModalOpen.value = true;
 }
 
 function closeCategoryTransactionsModal() {
   isCategoryTransactionsModalOpen.value = false;
+  necessityModalScope.value = 'you';
 }
 
 function openFundAdvanceTransactions(rule) {
@@ -590,12 +637,26 @@ const selectedCategoryTransactions = computed(() => {
     return [];
   }
 
+  if (selectedCategory.value.necessity_bucket) {
+    const wantNecessity = selectedCategory.value.necessity_bucket === 'necessity';
+    const useFamily = showNecessityDualAmounts.value && necessityModalScope.value === 'family';
+    const source = useFamily ? familyExpenseTransactions.value : personalExpenseTransactions.value;
+
+    return source
+      .filter((row) => (row?.is_necessity !== false) === wantNecessity)
+      .sort((a, b) => String(a.transaction_date).localeCompare(String(b.transaction_date)) || Number(a.id) - Number(b.id));
+  }
+
   const key = categoryTransactionsKey(selectedCategory.value);
   if (isFamilyExpenseView.value) {
     return summary.value?.family_category_transactions?.[key] ?? [];
   }
   return summary.value?.category_transactions?.[key] ?? [];
 });
+
+const selectedCategoryTransactionsTotal = computed(() =>
+  selectedCategoryTransactions.value.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+);
 
 const selectedFundAdvanceTransactions = computed(() => {
   const fundId = ruleDestinationFundId(selectedFundAdvanceRule.value);
@@ -761,6 +822,8 @@ function movementTypeLabel(type) {
           <span v-else> Family pooled closeout uses household income and expenses in the section below — not this personal category total. Exclude-from-remaining does not apply.</span>
           Hard-close-generated ledger entries (fund transfers, debt payments) are excluded here; they appear in Fund In/Out and Debt Repayments below.
           <span v-if="isFamilyExpenseView" class="block mt-1">Family amounts are the household combined total for each category (splits counted once at the full amount). Payments from one family member to another are not counted as family expenses.</span>
+          <span class="block mt-1">Total necessities and total non-necessities are above total expenses. Tap either one to see those transactions.</span>
+          <span v-if="showNecessityDualAmounts && !isFamilyExpenseView" class="block mt-1">Those two totals show your share and the family pooled household total.</span>
         </p>
 
         <div v-if="sortedExpenseCategories.length === 0" class="text-sm text-gray-500">
@@ -797,6 +860,36 @@ function movementTypeLabel(type) {
             @click="showAllExpenseCategories = !showAllExpenseCategories"
           >
             {{ showAllExpenseCategories ? 'Show top categories only' : `Show ${hiddenExpenseCategoryCount} more` }}
+          </button>
+
+          <button
+            type="button"
+            class="w-full text-left flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-900/80 rounded-lg border border-gray-600 hover:bg-gray-800 transition-colors min-h-11"
+            @click="openNecessityTransactions(true)"
+          >
+            <span class="text-sm font-semibold text-gray-200">Total necessities</span>
+            <span v-if="showNecessityDualAmounts" class="text-right shrink-0">
+              <span class="block text-sm font-semibold text-red-400 tabular-nums">You −{{ formatCurrency(necessityYouTotal) }}</span>
+              <span class="block text-[10px] text-gray-400 tabular-nums">Family −{{ formatCurrency(necessityFamilyTotal) }}</span>
+            </span>
+            <span v-else class="text-sm font-semibold shrink-0 text-red-400 tabular-nums">
+              −{{ formatCurrency(necessityYouTotal) }}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            class="w-full text-left flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-900/80 rounded-lg border border-gray-600 hover:bg-gray-800 transition-colors min-h-11"
+            @click="openNecessityTransactions(false)"
+          >
+            <span class="text-sm font-semibold text-gray-200">Total non-necessities</span>
+            <span v-if="showNecessityDualAmounts" class="text-right shrink-0">
+              <span class="block text-sm font-semibold text-violet-300 tabular-nums">You −{{ formatCurrency(nonNecessityYouTotal) }}</span>
+              <span class="block text-[10px] text-gray-400 tabular-nums">Family −{{ formatCurrency(nonNecessityFamilyTotal) }}</span>
+            </span>
+            <span v-else class="text-sm font-semibold shrink-0 text-violet-300 tabular-nums">
+              −{{ formatCurrency(nonNecessityYouTotal) }}
+            </span>
           </button>
 
           <div
@@ -1465,18 +1558,39 @@ function movementTypeLabel(type) {
           @click.self="closeCategoryTransactionsModal"
         >
           <div class="fixed inset-x-0 bottom-0 max-h-[82vh] overflow-hidden rounded-t-2xl border-t border-gray-700 bg-gray-900">
-            <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-              <div class="min-w-0">
+            <div class="flex items-start justify-between gap-2 px-4 py-3 border-b border-gray-800">
+              <div class="min-w-0 flex-1">
                 <h3 class="text-sm font-semibold text-gray-100 truncate">
                   {{ selectedCategory?.category_name }}
                 </h3>
                 <p class="text-xs text-gray-400">
                   {{ monthLabel.replace(' Summary', '') }} transactions
                 </p>
+                <div
+                  v-if="selectedCategory?.necessity_bucket && showNecessityDualAmounts"
+                  class="mt-2 flex gap-1"
+                >
+                  <button
+                    type="button"
+                    class="min-h-9 flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors"
+                    :class="necessityModalScope === 'you' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'"
+                    @click="necessityModalScope = 'you'"
+                  >
+                    You
+                  </button>
+                  <button
+                    type="button"
+                    class="min-h-9 flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors"
+                    :class="necessityModalScope === 'family' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'"
+                    @click="necessityModalScope = 'family'"
+                  >
+                    Family
+                  </button>
+                </div>
               </div>
               <button
                 type="button"
-                class="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+                class="shrink-0 rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
                 @click="closeCategoryTransactionsModal"
               >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1487,7 +1601,7 @@ function movementTypeLabel(type) {
 
             <div class="overflow-y-auto px-4 py-3 space-y-2 max-h-[calc(82vh-4rem)]">
               <div v-if="selectedCategoryTransactions.length === 0" class="text-sm text-gray-500 py-8 text-center">
-                No transactions found for this category in this month.
+                {{ selectedCategory?.necessity_bucket ? 'No transactions in this group for this month.' : 'No transactions found for this category in this month.' }}
               </div>
 
               <div
@@ -1512,7 +1626,13 @@ function movementTypeLabel(type) {
                   </p>
                   <p v-else-if="row.user_name" class="text-[11px] text-gray-400 truncate">{{ row.user_name }}</p>
                   <p class="text-sm text-gray-200 truncate">
-                    {{ row.description || selectedCategory?.category_name || 'No description' }}
+                    {{ row.description || row.category_name || selectedCategory?.category_name || 'No description' }}
+                  </p>
+                  <p
+                    v-if="selectedCategory?.necessity_bucket && row.description && row.category_name"
+                    class="text-[11px] text-gray-400 truncate"
+                  >
+                    <span v-if="row.category_icon">{{ row.category_icon }} </span>{{ row.category_name }}
                   </p>
                   <div v-if="row.is_split" class="mt-1">
                     <p class="text-[11px] text-purple-300">Split transaction</p>
@@ -1527,13 +1647,28 @@ function movementTypeLabel(type) {
                 </div>
                 <span
                   class="text-sm font-medium shrink-0 tabular-nums"
-                  :class="selectedCategory?.type === 'expense' ? 'text-red-400' : 'text-green-400'"
+                  :class="selectedCategory?.necessity_bucket === 'non_necessity' ? 'text-violet-300' : (selectedCategory?.type === 'expense' ? 'text-red-400' : 'text-green-400')"
                 >
                   {{ selectedCategory?.type === 'expense' ? '−' : '+' }}{{ formatCurrency(row.amount) }}
                 </span>
                 </div>
                 <div class="h-2 w-full" :style="categoryRowTypeBarStyle(row, selectedCategory?.type)"></div>
                 </div>
+              </div>
+
+              <div
+                v-if="selectedCategory?.necessity_bucket && selectedCategoryTransactions.length > 0"
+                class="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-900/80 rounded-lg border border-gray-600"
+              >
+                <span class="text-sm font-semibold text-gray-200">
+                  {{ necessityModalScope === 'family' && showNecessityDualAmounts ? 'Family total' : 'Your total' }}
+                </span>
+                <span
+                  class="text-sm font-semibold shrink-0 tabular-nums"
+                  :class="selectedCategory?.necessity_bucket === 'non_necessity' ? 'text-violet-300' : 'text-red-400'"
+                >
+                  −{{ formatCurrency(selectedCategoryTransactionsTotal) }}
+                </span>
               </div>
             </div>
           </div>

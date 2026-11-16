@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-11-16 — Month summary necessity totals
+
+- Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/{01-architecture,02-backend-laravel,03-frontend-vue,06-feature-map,08-api-routes,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: **Your Expenses** shows tappable **Total necessities** and **Total non-necessities** above **Total expenses**. Amounts follow the same category-expense rows, split by `is_necessity`. When the month is family pooled, or **View all family expenses** is on, each row shows **You** and **Family**; otherwise a single personal total. Tapping opens those transactions (Personal / Family switch when both amounts are shown). `GET /month-summary` category transaction rows include `is_necessity`, `category_id`, `category_name`, and `category_icon`. Household category totals and transactions are also returned when the month’s closeout mode is `family_pooled`, even if the Settings overlay is off. `debt_repayments.family_debt_paid` stays limited to that Settings toggle.
+
 ## 2026-09-04 — Mark an expense as sent to a family member
 
 - Files touched: `app/Services/DebtService.php`, `app/Services/TransactionService.php`, `app/Http/Requests/Concerns/TransactionPayloadValidationRules.php`, `app/Http/Requests/{StoreTransactionRequest,StoreImportConfirmRequest,CorrectAutoCreatedImportRequest,RestoreDismissedImportRequest,ConfirmSplitImportRequest}.php`, `app/Http/Controllers/PlaidImportController.php`, `resources/js/components/{FamilyTransferOptions,TransactionForm,PlaidImportSplitLineOptions}.vue`, `resources/js/pages/PlaidImportReview.vue`, `tests/Feature/{DebtRepaymentTransactionTest,PlaidImportTest}.php`, `docs/ai/{00-repo-overview,02-backend-laravel,03-frontend-vue,06-feature-map,07-workflows,08-api-routes,09-known-decisions,10-ai-change-log}.md`
