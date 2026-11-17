@@ -179,7 +179,7 @@ Use case: B owes A money; B covers A's rent and marks the bank charge as paying 
 
 Triggered during `MonthCloseoutService::hardClose()`, not on individual income transactions.
 
-`hardClose` picks `ClassicCloseoutEngine` or `FamilyPooledCloseoutEngine` from `families.closeout_mode`. Classic math is unchanged (below). After either engine, `applyFundAdvances` (per user), `consolidatePendingSplitDebts`, and `applyMonthlyDebtInterest` run, then `MonthHardClose` stores `closeout_mode`, `settings_snapshot`, and `results_snapshot`. Viewing that month later (Month Summary **Closeout Results**, fund balances, closeout ledger rows) uses the snapshot — or classic reconstruction if a snapshot is missing — even if the family later switches modes. Undo hard close deletes that row (snapshot included); re-closing then uses the **current** mode.
+`hardClose` picks `ClassicCloseoutEngine` or `FamilyPooledCloseoutEngine` from `families.closeout_mode`. After either engine, `applyFundAdvances` (per user), `consolidatePendingSplitDebts`, and `applyMonthlyDebtInterest` run, then `MonthHardClose` stores `closeout_mode`, `settings_snapshot`, and `results_snapshot` (including `shortfall`). Viewing that month later (Month Summary **Closeout Results**, fund balances, closeout ledger rows) uses the snapshot — or classic reconstruction if a snapshot is missing — even if the family later switches modes. Undo hard close deletes that row (snapshot included); later **open** months then see no carry from it. Already hard-closed later months are not rewritten. Re-closing uses the **current** mode.
 
 ### Classic engine
 
@@ -187,15 +187,17 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
 2. Separates rules into two groups:
    - **Gross-based rules**: `allocation_base` = `gross_income` or `net_income` (processed first)
    - **Remaining-based rules**: `allocation_base` = `remaining` (processed after expenses)
-3. **Gross-based rules loop:**
+3. **Allocation pool:** `income − non-advance expenses − shortfall brought forward` from the immediately previous hard-closed month. Advances are left out because `applyFundAdvances` deducts them in full after rules. If this pool is `≤ 0`, every rule allocates `$0` and the positive hole is `shortfall_carried_forward`. A positive leftover is not a shortfall.
+4. **Gross-based rules loop** (only when the pool is positive):
    a. Calculates allocation amount from gross income or net income:
       - `percentage`: `round(grossIncome * rule.amount / 100, 2)`
       - `fixed`: `min(rule.amount, $grossRemaining)`
-   b. Applies rule to destination (fund, debt, or title) — returns **actual** allocated amount (may be less if debt was underfunded)
-   c. Subtracts **actual** allocated amount from `$grossRemaining`
-   d. If `$grossRemaining ≤ 0`: stops
-4. **Calculate remaining pool:** `remainingPool = grossIncome - grossAllocations - totalExpenses`
-5. **Remaining-based rules loop:**
+   b. Caps that amount by the allocation-pool ceiling, then by any debt balance. Unused ceiling is returned when a debt pays less than requested.
+   c. Applies rule to destination (fund, debt, or title) — returns **actual** allocated amount (may be less if debt was underfunded)
+   d. Subtracts **actual** allocated amount from `$grossRemaining`
+   e. If `$grossRemaining ≤ 0`: stops (later gross rules stay in the preview at `$0`)
+5. **Remaining pool** is whatever ceiling is left after those full deposits (not deposit minus advances).
+6. **Remaining-based rules loop:**
    a. Calculates allocation amount from remaining pool:
       - `percentage`: `round(remainingPool * rule.amount / 100, 2)` using the same shared `remainingPool` basis for every percentage rule in this phase
       - `fixed`: `min(rule.amount, $remainingAvailablePool)` (fixed allocations consume the available pool)
@@ -203,7 +205,9 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
    c. Subtracts **actual** allocated amount from `$remainingAvailablePool`
    d. If `$remainingAvailablePool ≤ 0`: stops
 
-**Important:** If a debt rule allocates $500 but the debt balance is only $200, only $200 is allocated, and the remaining $300 stays available for subsequent rules (as of 2026-05-04 fix).
+**Important:** If a debt rule allocates $500 but the debt balance is only $200, only $200 is allocated, and the remaining $300 stays available for subsequent rules (as of 2026-05-04 fix). The same refund applies when the allocation-pool ceiling is what limited the request.
+
+**Shortfall carry:** `results_snapshot.shortfall` stores `mode`, `amount`, `brought_forward`, and per-user `members` (classic). Family pooled stores one family `amount`. The next open month reads only the previous hard close. No hard close, or a snapshot without `shortfall`, carries `$0`. Pooled → classic splits that family amount equally across current members. Classic → pooled sums the member amounts. Net fund change is the closeout deposit minus the full advance settlement. Example: income `$5,000`, ordinary expenses `$5,700`, advance `$300` → fund `−$300`, carry `$700`. Break-even plus a `$300` advance → fund `−$300`, carry `$0`.
 
 **Debt allocation details:** When a rule's destination is a debt (`destination_type = 'debt'`):
 - An `expense` transaction is created for the allocating user with `is_debt_payment=true` and `is_closeout_initiated=true`
@@ -222,11 +226,12 @@ Triggered during `MonthCloseoutService::hardClose()`, not on individual income t
 
 ### Family pooled engine
 
-1. **Stage A — surplus (charity):** `charity_base = family_earned_income − family_necessary_expenses` (expenses with `is_necessity=true`). Active `FamilyCloseoutRule` rows with `stage=surplus` allocate from that base (shared-percentage behavior). If `charity_base <= 0`, surplus rules allocate 0.
-2. **Stage B — remaining after charity:** `remaining_after_charity = family_earned_income − family_all_expenses − surplus_allocations` (**all** closeout-eligible expenses, including `is_necessity=false`; **`exclude_from_expense_basis` is ignored**). Inter-member debt payments are omitted from family income and family expenses. If `remaining_after_charity <= 0`, skip remaining family rules and leftover split.
-3. **Stage C — family remaining % rules:** `stage=remaining_after_charity` rules share the same remaining-after-charity basis.
-4. **Stage D — leftover split:** `leftover = remaining_after_charity − stage_C_actuals`. For each member, `burden = split_spend / own_earned_income` (split shares only; solo bills ignored), `weight = max(0, 1 − burden)`, `share = weight / sum(weights)`, `member_pool = leftover * share`. Zero income or split > income → weight 0. All weights 0 → leftover unallocated.
-5. **Stage E — personal leftover rules:** each member’s remaining-base `FundRule`s run against `member_pool`. Personal gross/net rules are skipped. Family-rule fund allocations are attributed to the user who hard-closed with `closeout_scope=family`. **`exclude_from_expense_basis` is ignored** (classic remaining-exclusion only).
+1. **Unfunded pool:** `family_earned_income − non-advance expenses − shortfall brought forward`. Advances are settled in full by `applyFundAdvances` and are not in this pool. If the pool is `≤ 0`, charity base is `$0`, surplus / remaining / leftover rules allocate `$0`, and the positive hole is carried. Inter-member debt payments stay omitted from family income and expenses. **`exclude_from_expense_basis` is ignored.**
+2. **Stage A — surplus (charity):** when the pool is positive, `charity_base = max(0, family_earned_income − non-advance necessities − shortfall brought forward)` (`is_necessity=true`). Surplus rules still use that base, but applied amounts cannot exceed the pool.
+3. **Stage B — remaining after charity:** `remaining_after_charity = unfunded pool − surplus allocations`. If that is `≤ 0`, skip remaining family rules and leftover split.
+4. **Stage C — family remaining % rules:** `stage=remaining_after_charity` rules share the same remaining-after-charity basis.
+5. **Stage D — leftover split:** `leftover = remaining_after_charity − stage_C_actuals`. For each member, `burden = split_spend / own_earned_income` (split shares only; solo bills ignored), `weight = max(0, 1 − burden)`, `share = weight / sum(weights)`, `member_pool = leftover * share`. Zero income or split > income → weight 0. All weights 0 → leftover unallocated.
+6. **Stage E — personal leftover rules:** each member’s remaining-base `FundRule`s run against `member_pool`. Personal gross/net rules are skipped. Family-rule fund allocations are attributed to the user who hard-closed with `closeout_scope=family`. **`exclude_from_expense_basis` is ignored** (classic remaining-exclusion only).
 
 **After rule processing:** `hardClose` runs `consolidatePendingSplitDebts`, which nets pending split debts for the closed month—including pending rows with a null `transaction_id` so they are not skipped—then applies each pair net via `DebtService::applyInterFamilyPairNet` (also nets against opposite-direction confirmed debts) before deleting the pending rows.
 

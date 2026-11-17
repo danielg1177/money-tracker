@@ -199,6 +199,49 @@ class CloseoutTotals
         return round($total, 2);
     }
 
+    public function advanceExpensesForUser(User $user, int $year, int $month): float
+    {
+        if (! $user->family_id) {
+            return 0.0;
+        }
+
+        return round(
+            $this->userAdvanceExpenses($user, $year, $month, true)
+            + $this->userAdvanceExpenses($user, $year, $month, false),
+            2
+        );
+    }
+
+    public function nonAdvanceExpensesForPool(User $user, int $year, int $month): float
+    {
+        return round(
+            $this->expenseTotalTowardRemainingBasis($user, $year, $month, false)
+            - $this->advanceExpensesForUser($user, $year, $month),
+            2
+        );
+    }
+
+    public function familyAdvanceExpenses(Family $family, int $year, int $month, ?bool $isNecessity = null): float
+    {
+        if ($isNecessity === null) {
+            return round(
+                $this->familyAdvanceExpenses($family, $year, $month, true)
+                + $this->familyAdvanceExpenses($family, $year, $month, false),
+                2
+            );
+        }
+
+        $family->loadMissing('users');
+        $total = 0.0;
+
+        foreach ($family->users as $user) {
+            $total += $this->userAdvanceExpenses($user, $year, $month, $isNecessity)
+                - $this->interMemberAdvanceExpenses($user, $year, $month, $isNecessity);
+        }
+
+        return round($total, 2);
+    }
+
     public function splitSpend(User $user, int $year, int $month): float
     {
         if (! $user->family_id) {
@@ -217,5 +260,85 @@ class CloseoutTotals
                     ->whereNotRepaidExpense();
             })
             ->sum('amount');
+    }
+
+    private function userAdvanceExpenses(User $user, int $year, int $month, bool $isNecessity): float
+    {
+        if (! $user->family_id) {
+            return 0.0;
+        }
+
+        $solo = (float) Transaction::query()
+            ->where('family_id', $user->family_id)
+            ->where('user_id', $user->id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_closeout_initiated', false)
+            ->where('is_borrow', false)
+            ->whereNotNull('advance_fund_id')
+            ->where('is_necessity', $isNecessity)
+            ->whereNotRepaidExpense()
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->sum('amount');
+
+        $split = (float) TransactionSplit::query()
+            ->where('user_id', $user->id)
+            ->whereHas('transaction', function ($q) use ($user, $year, $month, $isNecessity): void {
+                $q->where('family_id', $user->family_id)
+                    ->whereYear('transaction_date', $year)
+                    ->whereMonth('transaction_date', $month)
+                    ->where('type', 'expense')
+                    ->where('is_closeout_initiated', false)
+                    ->where('is_borrow', false)
+                    ->whereNotNull('advance_fund_id')
+                    ->where('is_necessity', $isNecessity)
+                    ->whereNotRepaidExpense();
+            })
+            ->sum('amount');
+
+        return $solo + $split;
+    }
+
+    private function interMemberAdvanceExpenses(User $user, int $year, int $month, bool $isNecessity): float
+    {
+        if (! $user->family_id) {
+            return 0.0;
+        }
+
+        $solo = (float) Transaction::query()
+            ->where('family_id', $user->family_id)
+            ->where('user_id', $user->id)
+            ->where('type', 'expense')
+            ->where('is_split', false)
+            ->where('is_debt_payment', true)
+            ->where('is_closeout_initiated', false)
+            ->where('is_borrow', false)
+            ->whereNotNull('advance_fund_id')
+            ->whereNotRepaidExpense()
+            ->whereYear('transaction_date', $year)
+            ->whereMonth('transaction_date', $month)
+            ->whereHas('debt', fn ($q) => $q->whereNotNull('creditor_id'))
+            ->where('is_necessity', $isNecessity)
+            ->sum('amount');
+
+        $split = (float) TransactionSplit::query()
+            ->where('user_id', $user->id)
+            ->whereHas('transaction', function ($q) use ($user, $year, $month, $isNecessity): void {
+                $q->where('family_id', $user->family_id)
+                    ->whereYear('transaction_date', $year)
+                    ->whereMonth('transaction_date', $month)
+                    ->where('type', 'expense')
+                    ->where('is_debt_payment', true)
+                    ->where('is_closeout_initiated', false)
+                    ->where('is_borrow', false)
+                    ->whereNotNull('advance_fund_id')
+                    ->whereNotRepaidExpense()
+                    ->whereHas('debt', fn ($dq) => $dq->whereNotNull('creditor_id'))
+                    ->where('is_necessity', $isNecessity);
+            })
+            ->sum('amount');
+
+        return $solo + $split;
     }
 }

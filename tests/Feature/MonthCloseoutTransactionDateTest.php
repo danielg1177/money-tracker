@@ -959,6 +959,8 @@ class MonthCloseoutTransactionDateTest extends TestCase
         $this->assertEqualsWithDelta(100.00, (float) $titleRow['net_after_advances'], 0.01);
 
         $this->assertEqualsWithDelta(450.00, (float) $response->json('rule_preview.basis.gross_allocations_total'), 0.01);
+        $this->assertEqualsWithDelta(0.00, (float) $response->json('rule_preview.basis.non_advance_expenses'), 0.01);
+        $this->assertEqualsWithDelta(700.00, (float) $response->json('rule_preview.basis.gross_taken_from_pool'), 0.01);
         $this->assertEqualsWithDelta(6300.00, (float) $response->json('rule_preview.basis.remaining_after_expenses'), 0.01);
     }
 
@@ -1126,7 +1128,7 @@ class MonthCloseoutTransactionDateTest extends TestCase
         $this->assertCount(0, data_get($maySummary->json(), 'fund_movements.by_fund', []));
     }
 
-    public function test_preview_gross_percentage_rules_stop_after_remaining_is_exhausted(): void
+    public function test_preview_gross_percentage_rules_are_capped_at_the_allocation_pool(): void
     {
         Carbon::setTestNow(Carbon::create(2026, 11, 20, 12, 0, 0));
 
@@ -1200,9 +1202,9 @@ class MonthCloseoutTransactionDateTest extends TestCase
         $rules = collect($preview->json('rule_preview.rules'));
 
         $this->assertEqualsWithDelta(600.0, (float) $rules->firstWhere('rule_id', $rule1->id)['projected_amount'], 0.01);
-        $this->assertEqualsWithDelta(600.0, (float) $rules->firstWhere('rule_id', $rule2->id)['projected_amount'], 0.01);
+        $this->assertEqualsWithDelta(400.0, (float) $rules->firstWhere('rule_id', $rule2->id)['projected_amount'], 0.01);
         $this->assertEqualsWithDelta(0.0, (float) $rules->firstWhere('rule_id', $rule3->id)['projected_amount'], 0.01);
-        $this->assertEqualsWithDelta(1200.0, (float) $preview->json('rule_preview.basis.gross_allocations_total'), 0.01);
+        $this->assertEqualsWithDelta(1000.0, (float) $preview->json('rule_preview.basis.gross_allocations_total'), 0.01);
 
         $this->actingAs($alice)->postJson('/closeout/soft-close', [
             'year' => 2026,
@@ -1222,7 +1224,7 @@ class MonthCloseoutTransactionDateTest extends TestCase
         $fundC->refresh();
 
         $this->assertEqualsWithDelta(600.0, (float) $fundA->balance, 0.01);
-        $this->assertEqualsWithDelta(600.0, (float) $fundB->balance, 0.01);
+        $this->assertEqualsWithDelta(400.0, (float) $fundB->balance, 0.01);
         $this->assertEqualsWithDelta(0.0, (float) $fundC->balance, 0.01);
     }
 

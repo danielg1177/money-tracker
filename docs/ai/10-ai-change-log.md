@@ -11,6 +11,16 @@ Format:
 
 ---
 
+## 2026-11-16 — Closeout summary row matches Remaining
+
+- Files touched: `app/Services/Closeout/{CloseoutRulePreviewBuilder,FamilyPooledCloseoutEngine}.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/{CloseoutShortfallCarryTest,FamilyPooledCloseoutTest,MonthCloseoutTransactionDateTest}.php`, `docs/ai/{03-frontend-vue,06-feature-map,10-ai-change-log}.md`
+- Behavioral impact: The classic closeout summary row now subtracts spending no fund covered and the full gross-base deposits, so those figures plus any shortfall brought forward add up to Remaining. Advances stay in **Total expenses** at the top of the month and are listed separately on the closeout row. Each fund rule still shows deposit minus advances. Family pooled **Necessary expenses** in the closeout box is necessities the funds did not cover, so it matches the charity base when the month is not short.
+
+## 2026-11-16 — Closeout shortfall carry and advance pool
+
+- Files touched: `app/Services/Closeout/{CloseoutShortfallCarry,CloseoutTotals,CloseoutRulePreviewBuilder,ClassicCloseoutEngine,FamilyPooledCloseoutEngine}.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/{CloseoutShortfallCarryTest,FamilyPooledCloseoutTest,MonthCloseoutTransactionDateTest}.php`, `docs/ai/{01-architecture,02-backend-laravel,03-frontend-vue,06-feature-map,07-workflows,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: Hard close no longer lets rules add money when the household (or classic user) spent more than it earned after advances. The allocation pool is income minus expenses that are not advances, minus any shortfall brought forward from the previous hard-closed month. If that pool is zero or negative, charity, gross, remaining, and leftover rules allocate nothing and the hole carries to the next month. Advances still settle in full against their fund and are not counted again in that hole, so a fund changes by the new deposit minus the full advance. A positive leftover does not carry. Family pooled stores one shortfall; classic stores each member. Switching modes splits or sums that amount. Undo drops the snapshot so later open months no longer see it; already closed later months stay frozen. Month Summary shows the brought-forward and carried amounts.
+
 ## 2026-11-16 — Month summary necessity totals
 
 - Files touched: `app/Http/Controllers/MonthSummaryController.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/MonthSummaryViewerCategoryTotalsTest.php`, `docs/ai/{01-architecture,02-backend-laravel,03-frontend-vue,06-feature-map,08-api-routes,09-known-decisions,10-ai-change-log}.md`

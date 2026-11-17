@@ -442,21 +442,38 @@ const isNegativeRemainingAfterExpenses = computed(() => {
   return remainingAfterExpenses.value < -0.005;
 });
 
-const grossAllocationsTotal = computed(() => Number(rulePreviewBasis.value?.gross_allocations_total ?? 0));
-const showGrossAllocationsInPreview = computed(() => grossAllocationsTotal.value > 0.005);
+const classicUnfundedExpenses = computed(() => Number(
+  rulePreviewBasis.value?.non_advance_expenses ?? rulePreviewBasis.value?.total_expenses ?? 0,
+));
+const classicGrossTakenFromPool = computed(() => Number(
+  rulePreviewBasis.value?.gross_taken_from_pool ?? rulePreviewBasis.value?.gross_allocations_total ?? 0,
+));
+const showClassicGrossTaken = computed(() => classicGrossTakenFromPool.value > 0.005);
 const expenseCloseoutBasisLines = computed(() => summary.value?.rule_preview?.expense_closeout_basis?.lines ?? []);
 const closeoutPreview = computed(() => summary.value?.closeout_preview ?? null);
 
 const isFamilyPooledCloseout = computed(() => closeoutModeIsFamilyPooled(closeoutPreview.value?.mode));
 const showNecessityDualAmounts = computed(() => isFamilyPooledCloseout.value || isFamilyExpenseView.value);
 const familyCloseout = computed(() => closeoutPreview.value?.family ?? null);
+const familyCharityNecessities = computed(() => Number(
+  familyCloseout.value?.basis?.non_advance_necessary_expenses
+  ?? familyCloseout.value?.basis?.necessary_expenses
+  ?? 0,
+));
 const familyCharityNonNecessities = computed(() => Number(familyCloseout.value?.basis?.non_necessity_expenses ?? 0));
 const hasFamilyCharityNonNecessities = computed(() => familyCharityNonNecessities.value > 0.005);
 const leftoverSplitMembers = computed(() => familyCloseout.value?.leftover_split?.members ?? []);
 const isReconstructedCloseout = computed(() => closeoutPreview.value?.source === 'reconstructed');
 const hasViewerIncome = computed(() => Number(summary.value?.rule_preview?.basis?.gross_income ?? 0) > 0);
 const hasFamilyCloseoutIncome = computed(() => Number(familyCloseout.value?.basis?.earned_income ?? 0) > 0);
-const showClassicNoIncome = computed(() => !isFamilyPooledCloseout.value && !hasViewerIncome.value);
+const classicShortfallBroughtForward = computed(() => Number(rulePreviewBasis.value?.shortfall_brought_forward ?? 0));
+const classicShortfallCarriedForward = computed(() => Number(rulePreviewBasis.value?.shortfall_carried_forward ?? 0));
+const showClassicNoIncome = computed(() =>
+  !isFamilyPooledCloseout.value
+  && !hasViewerIncome.value
+  && classicShortfallBroughtForward.value <= 0.005
+  && classicShortfallCarriedForward.value <= 0.005,
+);
 
 const expenseBasisExclusions = computed(() => Number(
   rulePreviewBasis.value?.expense_basis_exclusions ?? rulePreviewBasis.value?.non_necessity_expenses ?? 0,
@@ -1217,16 +1234,25 @@ function movementTypeLabel(type) {
           <div class="px-3 py-2 mb-4 text-xs text-gray-400 bg-gray-800 rounded-lg space-y-1.5">
             <p class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Family pooled</p>
             <div>Family income: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.earned_income) }}</span></div>
-            <div>Necessary expenses: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.necessary_expenses) }}</span></div>
+            <div>Necessary expenses: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCharityNecessities) }}</span></div>
             <div v-if="hasFamilyCharityNonNecessities">
               Not necessities: <span class="text-violet-300 tabular-nums">{{ formatCurrency(familyCharityNonNecessities) }}</span>
             </div>
             <div>All expenses: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.all_expenses) }}</span></div>
-            <div>Charity base: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.charity_base) }}</span> <span class="text-gray-600">(income − necessities)</span></div>
+            <div v-if="Number(familyCloseout.basis.advances || 0) > 0.005">
+              Advances covered by funds: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.advances) }}</span>
+            </div>
+            <div v-if="Number(familyCloseout.basis.shortfall_brought_forward || 0) > 0.005">
+              Shortfall brought forward: <span class="text-amber-300 tabular-nums">{{ formatCurrency(familyCloseout.basis.shortfall_brought_forward) }}</span>
+            </div>
+            <div>Charity base: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.charity_base) }}</span> <span class="text-gray-600">(income − necessities − shortfall brought forward, or $0 if the month is short)</span></div>
             <div>Surplus allocated: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.surplus_allocations_total) }}</span></div>
-            <div>Remaining after charity: <span class="tabular-nums font-medium" :class="familyCloseout.basis.remaining_after_charity < 0 ? 'text-amber-300' : 'text-gray-200'">{{ formatCurrency(familyCloseout.basis.remaining_after_charity) }}</span> <span class="text-gray-600">(income − all expenses − surplus)</span></div>
+            <div>Remaining after charity: <span class="tabular-nums font-medium" :class="familyCloseout.basis.remaining_after_charity < 0 ? 'text-amber-300' : 'text-gray-200'">{{ formatCurrency(familyCloseout.basis.remaining_after_charity) }}</span> <span class="text-gray-600">(income − non-advance expenses − shortfall brought forward − surplus)</span></div>
             <div>After-charity allocated: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.remaining_allocations_total) }}</span></div>
             <div>Leftover to split: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.leftover) }}</span></div>
+            <div v-if="Number(familyCloseout.basis.shortfall_carried_forward || 0) > 0.005">
+              Shortfall carried to next month: <span class="text-amber-300 tabular-nums font-medium">{{ formatCurrency(familyCloseout.basis.shortfall_carried_forward) }}</span>
+            </div>
           </div>
 
           <div v-if="familyCloseout.surplus_rules?.length" class="mb-4 space-y-2">
@@ -1306,9 +1332,9 @@ function movementTypeLabel(type) {
               Remaining is negative this month
             </p>
             <p class="mt-1 text-xs text-amber-100/90 leading-relaxed">
-              After gross income, gross-base closeout allocations, and eligible expenses, the amount left for
-              “remaining after expenses” rules is below zero. Rules that use that pool allocate nothing until the
-              math is positive; consider adjusting income, spending, or your closeout rules.
+              After income, spending that no fund covered, and any shortfall brought forward, nothing is left
+              to allocate. Closeout rules add no money to funds this month. Advances still settle against their
+              funds. This unfunded shortfall carries into next month.
             </p>
           </div>
 
@@ -1331,13 +1357,16 @@ function movementTypeLabel(type) {
             </p>
             <p v-else class="mt-2 text-xs text-gray-500 leading-relaxed">
               <span class="text-gray-300">Remaining</span>
-              uses gross income, minus the
-              <span class="text-gray-300">Gross-base rules</span>
-              figure above (rules on
-              <span class="text-gray-300">gross</span>
-              /
-              <span class="text-gray-300">net income</span>
-              bases; fund destinations net out month advances tagged to that fund so advance expenses are not double-counted), minus this expense total.
+              is gross income, minus any shortfall brought forward, minus
+              <span class="text-gray-300">Expenses</span>,
+              minus
+              <span class="text-gray-300">Gross-base rules</span>.
+              Expenses here is spending no fund covered.
+              <span class="text-gray-300">Total expenses</span>
+              above still includes advances.
+              Advances covered by funds are listed on this row and are not subtracted again.
+              Each fund rule below still shows that fund's own change, the deposit minus its advances.
+              A negative remaining carries to next month.
             </p>
           </div>
 
@@ -1347,18 +1376,28 @@ function movementTypeLabel(type) {
               <span>Your leftover share: <span class="text-gray-200 tabular-nums font-medium">{{ formatCurrency(remainingAfterExpenses) }}</span></span>
             </div>
             <div v-else class="flex flex-wrap items-center gap-x-1 gap-y-1">
+              <span v-if="classicShortfallBroughtForward > 0.005">Shortfall brought forward: <span class="text-amber-300 tabular-nums">{{ formatCurrency(classicShortfallBroughtForward) }}</span></span>
+              <span v-if="classicShortfallBroughtForward > 0.005" class="text-gray-600" aria-hidden="true">|</span>
               <span>Gross Income: <span class="text-gray-200 tabular-nums">{{ formatCurrency(summary.rule_preview.basis.gross_income) }}</span></span>
               <span class="text-gray-600" aria-hidden="true">|</span>
-              <span>{{ hasExpenseBasisExclusions ? 'Remaining expenses:' : 'Expenses:' }} <span class="text-gray-200 tabular-nums">{{ formatCurrency(summary.rule_preview.basis.total_expenses) }}</span></span>
-              <template v-if="showGrossAllocationsInPreview">
+              <span>Expenses: <span class="text-gray-200 tabular-nums">{{ formatCurrency(classicUnfundedExpenses) }}</span></span>
+              <template v-if="Number(summary.rule_preview.basis.advances || 0) > 0.005">
                 <span class="text-gray-600" aria-hidden="true">|</span>
-                <span>Gross-base rules: <span class="text-gray-200 tabular-nums">−{{ formatCurrency(grossAllocationsTotal) }}</span></span>
+                <span>Advances covered by funds: <span class="text-gray-200 tabular-nums">{{ formatCurrency(summary.rule_preview.basis.advances) }}</span></span>
+              </template>
+              <template v-if="showClassicGrossTaken">
+                <span class="text-gray-600" aria-hidden="true">|</span>
+                <span>Gross-base rules: <span class="text-gray-200 tabular-nums">−{{ formatCurrency(classicGrossTakenFromPool) }}</span></span>
               </template>
               <span class="text-gray-600" aria-hidden="true">|</span>
               <span>Remaining: <span
                 class="tabular-nums font-medium"
                 :class="isNegativeRemainingAfterExpenses ? 'text-amber-300' : 'text-gray-200'"
               >{{ formatCurrency(remainingAfterExpenses) }}</span></span>
+              <template v-if="classicShortfallCarriedForward > 0.005">
+                <span class="text-gray-600" aria-hidden="true">|</span>
+                <span>Carried to next month: <span class="text-amber-300 tabular-nums">{{ formatCurrency(classicShortfallCarriedForward) }}</span></span>
+              </template>
             </div>
           </div>
 

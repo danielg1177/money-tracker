@@ -10,7 +10,10 @@ use App\Models\User;
 
 class CloseoutRulePreviewBuilder
 {
-    public function __construct(private CloseoutTotals $totals) {}
+    public function __construct(
+        private CloseoutTotals $totals,
+        private CloseoutShortfallCarry $shortfallCarry,
+    ) {}
 
     /**
      * @return list<string>
@@ -25,6 +28,7 @@ class CloseoutRulePreviewBuilder
 
         if ($includeRemainingExclusion) {
             $lines[] = 'Advances marked exclude-from-remaining are excluded from this total; they are settled directly against their target fund at closeout.';
+            $lines[] = 'Every advance is paid by its fund at closeout. Only spending that no fund absorbed, plus any shortfall brought forward, can carry into next month.';
         }
 
         return $lines;
@@ -43,6 +47,11 @@ class CloseoutRulePreviewBuilder
                 'non_necessity_expenses' => 0.0,
                 'gross_allocations_total' => 0.0,
                 'remaining_after_expenses' => 0.0,
+                'advances' => 0.0,
+                'non_advance_expenses' => 0.0,
+                'gross_taken_from_pool' => 0.0,
+                'shortfall_brought_forward' => 0.0,
+                'shortfall_carried_forward' => 0.0,
             ],
             'expense_closeout_basis' => [
                 'lines' => $this->expenseCloseoutBasisLines(),
@@ -59,6 +68,47 @@ class CloseoutRulePreviewBuilder
     public function applyGrossIncome(User $user, int $year, int $month): float
     {
         return $this->previewGrossIncome($user, $year, $month);
+    }
+
+    /**
+     * Cash left after non-advance expenses and any shortfall brought forward from last month.
+     * Advances are omitted because closeout settles them against the fund.
+     *
+     * @return array{
+     *     pool: float,
+     *     brought_forward: float,
+     *     carried_forward: float,
+     *     advances: float,
+     *     non_advance_expenses: float
+     * }
+     */
+    public function allocationPoolForUser(User $user, int $year, int $month): array
+    {
+        $income = $this->previewGrossIncome($user, $year, $month);
+        $nonAdvanceExpenses = $this->totals->nonAdvanceExpensesForPool($user, $year, $month);
+        $advances = $this->totals->advanceExpensesForUser($user, $year, $month);
+        $broughtForward = $this->shortfallCarry->broughtForwardForUser($user, $year, $month);
+        $pool = round($income - $nonAdvanceExpenses - $broughtForward, 2);
+
+        return [
+            'pool' => $pool,
+            'brought_forward' => round($broughtForward, 2),
+            'carried_forward' => $pool < -0.004 ? round(-$pool, 2) : 0.0,
+            'advances' => round($advances, 2),
+            'non_advance_expenses' => round($nonAdvanceExpenses, 2),
+        ];
+    }
+
+    public function takeFromCeiling(float $amount, float &$ceiling): float
+    {
+        if ($amount <= 0 || $ceiling <= 0) {
+            return 0.0;
+        }
+
+        $taken = round(min($amount, $ceiling), 2);
+        $ceiling = round($ceiling - $taken, 2);
+
+        return $taken;
     }
 
     public function expenseBasisExclusions(User $user, int $year, int $month): float
@@ -255,9 +305,20 @@ class CloseoutRulePreviewBuilder
     public function classicPreviewForUser(User $user, int $year, int $month): array
     {
         $grossIncome = $this->previewGrossIncome($user, $year, $month);
+        $allocationPool = $this->allocationPoolForUser($user, $year, $month);
+        $ceiling = max(0.0, $allocationPool['pool']);
 
         if ($grossIncome <= 0) {
-            return $this->emptyUserPreview();
+            $preview = $this->emptyUserPreview();
+            $preview['basis']['advances'] = $allocationPool['advances'];
+            $preview['basis']['non_advance_expenses'] = $allocationPool['non_advance_expenses'];
+            $preview['basis']['gross_taken_from_pool'] = 0.0;
+            $preview['basis']['shortfall_brought_forward'] = $allocationPool['brought_forward'];
+            $preview['basis']['shortfall_carried_forward'] = $allocationPool['carried_forward'];
+            $preview['basis']['total_expenses'] = $allocationPool['non_advance_expenses'];
+            $preview['basis']['remaining_after_expenses'] = $allocationPool['pool'];
+
+            return $preview;
         }
 
         $totalExpenses = $this->totals->expenseTotalTowardRemainingBasis($user, $year, $month);
@@ -283,6 +344,7 @@ class CloseoutRulePreviewBuilder
 
         $grossRemaining = $grossIncome;
         $grossAllocationsTotal = 0;
+        $grossTakenFromPool = 0.0;
         $ruleResults = [];
 
         $grossRuleList = $grossRules->values()->all();
@@ -293,12 +355,18 @@ class CloseoutRulePreviewBuilder
                 $nominalGrossAllocation = min((float) $rule->amount, $grossRemaining);
             }
 
+            $takenFromCeiling = $this->takeFromCeiling($nominalGrossAllocation, $ceiling);
             $appliedGrossAllocation = $this->applyDebtBalanceCap(
                 $rule->destination_type,
                 $rule->destination_id ? (int) $rule->destination_id : null,
-                $nominalGrossAllocation,
+                $takenFromCeiling,
                 $previewDebtBalances,
             );
+            $unspentCeiling = round($takenFromCeiling - $appliedGrossAllocation, 2);
+            if ($unspentCeiling > 0) {
+                $ceiling = round($ceiling + $unspentCeiling, 2);
+            }
+            $grossTakenFromPool += $appliedGrossAllocation;
 
             $towardRemainingPool = $appliedGrossAllocation;
             if ($rule->destination_type === 'fund' && $rule->destination_id) {
@@ -331,7 +399,7 @@ class CloseoutRulePreviewBuilder
             }
         }
 
-        $remainingBasePool = max(0, $grossIncome - $grossAllocationsTotal - $totalExpenses);
+        $remainingBasePool = max(0, $ceiling);
         $remainingAvailablePool = $remainingBasePool;
 
         foreach ($remainingRules as $rule) {
@@ -362,7 +430,7 @@ class CloseoutRulePreviewBuilder
             );
         }
 
-        $rawRemaining = round($grossIncome - $grossAllocationsTotal - $totalExpenses, 2);
+        $rawRemaining = round($allocationPool['pool'] - $grossTakenFromPool, 2);
 
         return [
             'basis' => [
@@ -372,6 +440,11 @@ class CloseoutRulePreviewBuilder
                 'non_necessity_expenses' => round($expenseBasisExclusions, 2),
                 'gross_allocations_total' => round($grossAllocationsTotal, 2),
                 'remaining_after_expenses' => $rawRemaining,
+                'advances' => $allocationPool['advances'],
+                'non_advance_expenses' => $allocationPool['non_advance_expenses'],
+                'gross_taken_from_pool' => round($grossTakenFromPool, 2),
+                'shortfall_brought_forward' => $allocationPool['brought_forward'],
+                'shortfall_carried_forward' => $allocationPool['carried_forward'],
             ],
             'expense_closeout_basis' => [
                 'lines' => $this->expenseCloseoutBasisLines(),

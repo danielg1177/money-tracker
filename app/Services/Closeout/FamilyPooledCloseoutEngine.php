@@ -14,6 +14,7 @@ class FamilyPooledCloseoutEngine implements CloseoutEngine
         private CloseoutRulePreviewBuilder $previewBuilder,
         private CloseoutAllocationWriter $allocationWriter,
         private CloseoutTotals $totals,
+        private CloseoutShortfallCarry $shortfallCarry,
     ) {}
 
     public function preview(Family $family, int $year, int $month): array
@@ -37,8 +38,16 @@ class FamilyPooledCloseoutEngine implements CloseoutEngine
         $necessaryExpenses = $this->totals->familyNecessaryExpenses($family, $year, $month);
         $allExpenses = $this->totals->familyAllExpenses($family, $year, $month);
         $nonNecessity = $this->totals->familyNonNecessityExpenses($family, $year, $month);
-
-        $charityBase = round($earnedIncome - $necessaryExpenses, 2);
+        $advances = $this->totals->familyAdvanceExpenses($family, $year, $month);
+        $necessaryAdvances = $this->totals->familyAdvanceExpenses($family, $year, $month, true);
+        $broughtForward = $this->shortfallCarry->broughtForwardForFamily($family, $year, $month);
+        $nonAdvanceAll = round($allExpenses - $advances, 2);
+        $nonAdvanceNecessary = round($necessaryExpenses - $necessaryAdvances, 2);
+        $unfundedPool = round($earnedIncome - $nonAdvanceAll - $broughtForward, 2);
+        $carriedForward = $unfundedPool < -0.004 ? round(-$unfundedPool, 2) : 0.0;
+        $charityBase = $unfundedPool > 0
+            ? max(0.0, round($earnedIncome - $nonAdvanceNecessary - $broughtForward, 2))
+            : 0.0;
 
         $surplusRules = FamilyCloseoutRule::query()
             ->where('family_id', $family->id)
@@ -58,7 +67,7 @@ class FamilyPooledCloseoutEngine implements CloseoutEngine
 
         $surplusRuleRows = [];
         $surplusAllocationsTotal = 0.0;
-        $surplusRemaining = max(0.0, $charityBase);
+        $surplusRemaining = $unfundedPool > 0 ? min($charityBase, $unfundedPool) : 0.0;
 
         foreach ($surplusRules as $rule) {
             $nominal = 0.0;
@@ -114,7 +123,9 @@ class FamilyPooledCloseoutEngine implements CloseoutEngine
             );
         }
 
-        $remainingAfterCharity = round($earnedIncome - $allExpenses - $surplusAllocationsTotal, 2);
+        $remainingAfterCharity = $unfundedPool > 0
+            ? round($unfundedPool - $surplusAllocationsTotal, 2)
+            : $unfundedPool;
 
         $remainingRuleRows = [];
         $remainingAllocationsTotal = 0.0;
@@ -202,8 +213,12 @@ class FamilyPooledCloseoutEngine implements CloseoutEngine
                 'basis' => [
                     'earned_income' => $earnedIncome,
                     'necessary_expenses' => $necessaryExpenses,
+                    'non_advance_necessary_expenses' => $nonAdvanceNecessary,
                     'all_expenses' => $allExpenses,
                     'non_necessity_expenses' => $nonNecessity,
+                    'advances' => $advances,
+                    'shortfall_brought_forward' => $broughtForward,
+                    'shortfall_carried_forward' => $carriedForward,
                     'charity_base' => $charityBase,
                     'surplus_allocations_total' => round($surplusAllocationsTotal, 2),
                     'remaining_after_charity' => $remainingAfterCharity,
@@ -217,6 +232,12 @@ class FamilyPooledCloseoutEngine implements CloseoutEngine
                 ],
             ],
             'members' => $members,
+            'shortfall' => $this->shortfallCarry->snapshot(
+                CloseoutMode::FamilyPooled,
+                $carriedForward,
+                $broughtForward,
+                [],
+            ),
         ];
     }
 

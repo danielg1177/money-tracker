@@ -12,6 +12,7 @@ class ClassicCloseoutEngine implements CloseoutEngine
         private CloseoutRulePreviewBuilder $previewBuilder,
         private CloseoutAllocationWriter $allocationWriter,
         private CloseoutTotals $totals,
+        private CloseoutShortfallCarry $shortfallCarry,
     ) {}
 
     public function preview(Family $family, int $year, int $month): array
@@ -19,14 +20,25 @@ class ClassicCloseoutEngine implements CloseoutEngine
         $family->loadMissing('users');
 
         $members = [];
+        $memberShortfalls = [];
+        $broughtForward = 0.0;
         foreach ($family->users as $user) {
-            $members[(string) $user->id] = $this->previewBuilder->classicPreviewForUser($user, $year, $month);
+            $preview = $this->previewBuilder->classicPreviewForUser($user, $year, $month);
+            $members[(string) $user->id] = $preview;
+            $memberShortfalls[(string) $user->id] = round((float) ($preview['basis']['shortfall_carried_forward'] ?? 0), 2);
+            $broughtForward += (float) ($preview['basis']['shortfall_brought_forward'] ?? 0);
         }
 
         return [
             'mode' => CloseoutMode::Classic,
             'family' => null,
             'members' => $members,
+            'shortfall' => $this->shortfallCarry->snapshot(
+                CloseoutMode::Classic,
+                array_sum($memberShortfalls),
+                $broughtForward,
+                $memberShortfalls,
+            ),
         ];
     }
 
@@ -42,8 +54,10 @@ class ClassicCloseoutEngine implements CloseoutEngine
     private function applyUserRules(User $user, int $year, int $month): void
     {
         $grossIncome = $this->previewBuilder->applyGrossIncome($user, $year, $month);
+        $allocationPool = $this->previewBuilder->allocationPoolForUser($user, $year, $month);
+        $ceiling = max(0.0, $allocationPool['pool']);
 
-        if ($grossIncome <= 0) {
+        if ($grossIncome <= 0 || $ceiling <= 0) {
             return;
         }
 
@@ -61,10 +75,7 @@ class ClassicCloseoutEngine implements CloseoutEngine
             ->orderBy('order')
             ->get();
 
-        $fundAdvanceRemaining = $this->totals->fundAdvanceOutstandingByFundForUserMonth($user, $year, $month);
-
         $grossRemaining = $grossIncome;
-        $grossAllocationsTotal = 0;
 
         foreach ($grossRules as $rule) {
             if ($rule->allocation_type === 'percentage') {
@@ -72,6 +83,8 @@ class ClassicCloseoutEngine implements CloseoutEngine
             } else {
                 $allocate = min((float) $rule->amount, $grossRemaining);
             }
+
+            $allocate = $this->previewBuilder->takeFromCeiling($allocate, $ceiling);
 
             if ($allocate <= 0) {
                 continue;
@@ -84,28 +97,18 @@ class ClassicCloseoutEngine implements CloseoutEngine
                 $month,
                 $allocate,
             );
-            $grossRemaining -= $actualAllocated;
-
-            $towardRemainingPool = $actualAllocated;
-            if ($rule->destination_type === 'fund' && $rule->destination_id) {
-                $fundId = (int) $rule->destination_id;
-                if ($fundId > 0) {
-                    $outstanding = (float) ($fundAdvanceRemaining[$fundId] ?? 0.0);
-                    $towardRemainingPool = max(0.0, $actualAllocated - $outstanding);
-                    $fundAdvanceRemaining[$fundId] = max(0.0, $outstanding - $actualAllocated);
-                }
+            $unspentCeiling = round($allocate - $actualAllocated, 2);
+            if ($unspentCeiling > 0) {
+                $ceiling = round($ceiling + $unspentCeiling, 2);
             }
-
-            $grossAllocationsTotal += $towardRemainingPool;
+            $grossRemaining -= $actualAllocated;
 
             if ($grossRemaining <= 0) {
                 break;
             }
         }
 
-        $totalExpenses = $this->totals->expenseTotalTowardRemainingBasis($user, $year, $month);
-
-        $remainingBasePool = $grossIncome - $grossAllocationsTotal - $totalExpenses;
+        $remainingBasePool = $ceiling;
         $remainingAvailablePool = $remainingBasePool;
 
         if ($remainingAvailablePool > 0) {

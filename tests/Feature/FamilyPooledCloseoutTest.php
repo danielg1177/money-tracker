@@ -185,23 +185,26 @@ class FamilyPooledCloseoutTest extends TestCase
         $basis = $preview->json('closeout_preview.family.basis');
         $this->assertEqualsWithDelta(15000.0, (float) $basis['earned_income'], 0.01);
         $this->assertEqualsWithDelta(10000.0, (float) $basis['necessary_expenses'], 0.01);
+        $this->assertEqualsWithDelta(10000.0, (float) $basis['non_advance_necessary_expenses'], 0.01);
         $this->assertEqualsWithDelta(10700.0, (float) $basis['all_expenses'], 0.01);
+        $this->assertEqualsWithDelta(700.0, (float) $basis['advances'], 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) $basis['shortfall_carried_forward'], 0.01);
         $this->assertEqualsWithDelta(5000.0, (float) $basis['charity_base'], 0.01);
         $this->assertEqualsWithDelta(500.0, (float) $basis['surplus_allocations_total'], 0.01);
-        $this->assertEqualsWithDelta(3800.0, (float) $basis['remaining_after_charity'], 0.01);
-        $this->assertEqualsWithDelta(1900.0, (float) $basis['leftover'], 0.01);
+        $this->assertEqualsWithDelta(4500.0, (float) $basis['remaining_after_charity'], 0.01);
+        $this->assertEqualsWithDelta(2250.0, (float) $basis['leftover'], 0.01);
 
         $members = collect($preview->json('closeout_preview.family.leftover_split.members'));
         $aSplit = $members->firstWhere('user_id', $personA->id);
         $bSplit = $members->firstWhere('user_id', $personB->id);
         $this->assertEqualsWithDelta(0.4286, (float) $aSplit['share'], 0.0001);
         $this->assertEqualsWithDelta(0.5714, (float) $bSplit['share'], 0.0001);
-        $this->assertEqualsWithDelta(814.29, (float) $aSplit['member_pool'], 0.01);
-        $this->assertEqualsWithDelta(1085.71, (float) $bSplit['member_pool'], 0.01);
+        $this->assertEqualsWithDelta(964.29, (float) $aSplit['member_pool'], 0.01);
+        $this->assertEqualsWithDelta(1285.71, (float) $bSplit['member_pool'], 0.01);
 
         $this->assertEqualsWithDelta(7700.0, (float) $preview->json('rule_preview.basis.total_expenses'), 0.01);
         $this->assertEqualsWithDelta(0.0, (float) $preview->json('rule_preview.basis.expense_basis_exclusions'), 0.01);
-        $this->assertEqualsWithDelta(814.29, (float) $preview->json('rule_preview.basis.remaining_after_expenses'), 0.01);
+        $this->assertEqualsWithDelta(964.29, (float) $preview->json('rule_preview.basis.remaining_after_expenses'), 0.01);
         $this->assertNotEqualsWithDelta(
             (float) $preview->json('rule_preview.basis.gross_income') - (float) $preview->json('rule_preview.basis.total_expenses'),
             (float) $preview->json('rule_preview.basis.remaining_after_expenses'),
@@ -210,16 +213,17 @@ class FamilyPooledCloseoutTest extends TestCase
 
         $this->assertCount(1, $preview->json('rule_preview.rules'));
         $this->assertSame('A leftover 50', $preview->json('rule_preview.rules.0.rule_name'));
-        $this->assertEqualsWithDelta(407.15, (float) $preview->json('rule_preview.rules.0.projected_amount'), 0.01);
+        $this->assertEqualsWithDelta(482.15, (float) $preview->json('rule_preview.rules.0.projected_amount'), 0.01);
 
         $this->actingAs($personA)->postJson('/closeout/soft-close', ['year' => 2026, 'month' => 8])->assertOk();
         $this->actingAs($personB)->postJson('/closeout/soft-close', ['year' => 2026, 'month' => 8])->assertOk();
         $this->actingAs($personA)->postJson('/closeout/hard-close', ['year' => 2026, 'month' => 8])->assertOk();
 
         $this->assertEqualsWithDelta(500.0, (float) $charityFund->fresh()->balance, 0.01);
-        $this->assertEqualsWithDelta(760.0, (float) $xFund->fresh()->balance, 0.01);
-        $this->assertEqualsWithDelta(1140.0, (float) $yFund->fresh()->balance, 0.01);
-        $this->assertEqualsWithDelta(407.15, (float) $aPersonal->fresh()->balance, 0.01);
+        $this->assertEqualsWithDelta(900.0, (float) $xFund->fresh()->balance, 0.01);
+        $this->assertEqualsWithDelta(1350.0, (float) $yFund->fresh()->balance, 0.01);
+        $this->assertEqualsWithDelta(482.15, (float) $aPersonal->fresh()->balance, 0.01);
+        $this->assertEqualsWithDelta(300.0, (float) $advanceFund->fresh()->balance, 0.01);
 
         $this->assertDatabaseHas('transactions', [
             'user_id' => $personA->id,
