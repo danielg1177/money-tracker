@@ -1245,7 +1245,7 @@ function movementTypeLabel(type) {
             <div v-if="Number(familyCloseout.basis.shortfall_brought_forward || 0) > 0.005">
               Shortfall brought forward: <span class="text-amber-300 tabular-nums">{{ formatCurrency(familyCloseout.basis.shortfall_brought_forward) }}</span>
             </div>
-            <div>Charity base: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.charity_base) }}</span> <span class="text-gray-600">(income − necessities − shortfall brought forward, or $0 if the month is short)</span></div>
+            <div>Charity base: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.charity_base) }}</span> <span class="text-gray-600">(income − necessities − shortfall brought forward)</span></div>
             <div>Surplus allocated: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.surplus_allocations_total) }}</span></div>
             <div>Remaining after charity: <span class="tabular-nums font-medium" :class="familyCloseout.basis.remaining_after_charity < 0 ? 'text-amber-300' : 'text-gray-200'">{{ formatCurrency(familyCloseout.basis.remaining_after_charity) }}</span> <span class="text-gray-600">(income − non-advance expenses − shortfall brought forward − surplus)</span></div>
             <div>After-charity allocated: <span class="text-gray-200 tabular-nums">{{ formatCurrency(familyCloseout.basis.remaining_allocations_total) }}</span></div>

@@ -11,6 +11,11 @@ Format:
 
 ---
 
+## 2026-11-16 — Charity still runs when income covers necessities
+
+- Files touched: `app/Services/Closeout/FamilyPooledCloseoutEngine.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/CloseoutShortfallCarryTest.php`, `docs/ai/{02-backend-laravel,03-frontend-vue,07-workflows,09-known-decisions,10-ai-change-log}.md`
+- Behavioral impact: Family charity is no longer skipped just because other spending makes the month short. If income still covers necessities the funds did not pay for, after any shortfall brought forward, charity allocates from that base. The charity amount is added to the carried shortfall. Rules that run after charity still allocate nothing once that larger hole is negative.
+
 ## 2026-11-16 — Closeout summary row matches Remaining
 
 - Files touched: `app/Services/Closeout/{CloseoutRulePreviewBuilder,FamilyPooledCloseoutEngine}.php`, `resources/js/pages/MonthSummary.vue`, `tests/Feature/{CloseoutShortfallCarryTest,FamilyPooledCloseoutTest,MonthCloseoutTransactionDateTest}.php`, `docs/ai/{03-frontend-vue,06-feature-map,10-ai-change-log}.md`

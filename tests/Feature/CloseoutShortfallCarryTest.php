@@ -56,6 +56,29 @@ class CloseoutShortfallCarryTest extends TestCase
         $this->assertEqualsWithDelta(0.0, (float) $basis['shortfall_carried_forward'], 0.01);
     }
 
+    public function test_charity_still_allocates_when_income_covers_necessities_and_increases_the_shortfall(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 9, 20, 12, 0, 0));
+
+        [$family, $head, $member, $charity] = $this->familyWithCharityAndAdvanceFund();
+
+        $this->income($family, $head, 5000, '2026-09-01');
+        $this->expense($family, $head, 4000, '2026-09-05');
+        $this->expense($family, $head, 2000, '2026-09-06', null, false);
+
+        $preview = $this->actingAs($head)->getJson('/month-summary?year=2026&month=9')->assertOk();
+        $basis = $preview->json('closeout_preview.family.basis');
+        $this->assertEqualsWithDelta(1000.0, (float) $basis['charity_base'], 0.01);
+        $this->assertEqualsWithDelta(100.0, (float) $basis['surplus_allocations_total'], 0.01);
+        $this->assertEqualsWithDelta(-1100.0, (float) $basis['remaining_after_charity'], 0.01);
+        $this->assertEqualsWithDelta(1100.0, (float) $basis['shortfall_carried_forward'], 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) $basis['leftover'], 0.01);
+
+        $this->hardClose($head, $member, 2026, 9);
+
+        $this->assertEqualsWithDelta(100.0, (float) $charity->fresh()->balance, 0.01);
+    }
+
     public function test_profitable_month_with_advance_nets_the_fund_and_carries_nothing(): void
     {
         Carbon::setTestNow(Carbon::create(2026, 9, 20, 12, 0, 0));
@@ -302,7 +325,7 @@ class CloseoutShortfallCarryTest extends TestCase
         ]);
     }
 
-    private function expense(Family $family, User $user, float $amount, string $date, ?int $advanceFundId = null): void
+    private function expense(Family $family, User $user, float $amount, string $date, ?int $advanceFundId = null, bool $isNecessity = true): void
     {
         Transaction::query()->create([
             'family_id' => $family->id,
@@ -311,7 +334,7 @@ class CloseoutShortfallCarryTest extends TestCase
             'amount' => $amount,
             'transaction_date' => $date,
             'is_split' => false,
-            'is_necessity' => true,
+            'is_necessity' => $isNecessity,
             'advance_fund_id' => $advanceFundId,
         ]);
     }
